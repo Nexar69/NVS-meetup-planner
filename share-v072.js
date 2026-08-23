@@ -6,6 +6,7 @@
   const TIMING_KEY = "meet-schwerin-timing-v1";
   const STORAGE_KEYS = [GROUP_KEY, APP_KEY, OPT_KEY, TIMING_KEY];
   const COLORS = ["#2563eb", "#db2777", "#7c3aed", "#ea580c", "#0891b2", "#65a30d"];
+  const config = window.NVSConfig || {};
 
   const personA = document.getElementById("personA");
   const personB = document.getElementById("personB");
@@ -20,6 +21,7 @@
   let restoreTimer = null;
   let originalStorage = null;
   let restored = false;
+  let shortPlanCache = null;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -129,7 +131,9 @@
   }
 
   function bootstrap() {
-    const plan = validatePlan(decode(new URLSearchParams(window.location.search).get(PLAN_PARAM)));
+    const injected = window.__NVS_SHORT_PLAN__ || null;
+    const encoded = decode(new URLSearchParams(window.location.search).get(PLAN_PARAM));
+    const plan = validatePlan(injected || encoded);
     if (!plan) return null;
     originalStorage = snapshotStorage();
     document.body.classList.add("shared-viewer");
@@ -212,11 +216,59 @@
   function buildShareUrl(focus = -1) {
     const payload = currentPayload(focus);
     if (!payload) return null;
-    const url = new URL(window.location.href);
+    const url = new URL(config.appUrl || window.location.href);
     url.search = "";
     url.hash = "";
     url.searchParams.set(PLAN_PARAM, encode(payload));
-    return { url: url.toString(), payload };
+    return { url: url.toString(), payload, short: false };
+  }
+
+  function planSignature(plan) {
+    return JSON.stringify({
+      members: plan.members,
+      destination: plan.destination,
+      priority: plan.priority,
+      mode: plan.mode,
+      timing: plan.timing,
+      date: plan.date,
+      time: plan.time,
+    });
+  }
+
+  async function ensureShortPlan() {
+    if (!config.backendUrl) return null;
+    const payload = currentPayload(-1);
+    if (!payload) return null;
+    const signature = planSignature(payload);
+    if (shortPlanCache?.signature === signature) return shortPlanCache;
+
+    const response = await fetch(`${config.backendUrl}/api/plans`, {
+      method: "POST",
+      mode: "cors",
+      credentials: "omit",
+      headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
+      body: JSON.stringify({ plan: payload }),
+    });
+    if (!response.ok) throw new Error(`SHORT_LINK_HTTP_${response.status}`);
+    const data = await response.json();
+    if (!data?.id || !data?.url) throw new Error("SHORT_LINK_BAD_RESPONSE");
+    shortPlanCache = { signature, id: data.id, url: data.url, expiresIn: data.expiresIn || config.shareTtlSeconds || 259200 };
+    return shortPlanCache;
+  }
+
+  async function buildBestShareUrl(focus = -1) {
+    const fallback = buildShareUrl(focus);
+    if (!fallback || !config.backendUrl) return fallback;
+    try {
+      const stored = await ensureShortPlan();
+      if (!stored) return fallback;
+      const url = new URL(stored.url);
+      if (focus >= 0) url.searchParams.set("me", String(focus + 1));
+      return { url: url.toString(), payload: fallback.payload, short: true, expiresIn: stored.expiresIn };
+    } catch (error) {
+      console.warn("Short-link backend unavailable; using encoded link:", error);
+      return fallback;
+    }
   }
 
   function shareDialog() {
@@ -237,14 +289,16 @@
   }
 
   async function deliver(focus = -1) {
-    const built = buildShareUrl(focus);
+    const built = await buildBestShareUrl(focus);
     if (!built) { showToast("Find a live group recommendation before sharing it."); return; }
     const person = focus >= 0 ? built.payload.members[focus] : null;
     const text = person ? `${person.name}'s read-only Meet Schwerin route to ${built.payload.destination.label}.` : `Read-only Meet Schwerin group plan to ${built.payload.destination.label}.`;
     try {
       if (navigator.share) await navigator.share({ title: person ? `${person.name} · Meet Schwerin` : "Meet Schwerin group plan", text, url: built.url });
-      else if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(built.url); showToast(person ? `${person.name}'s link copied.` : "Read-only group link copied."); }
-      else window.prompt("Copy this link:", built.url);
+      else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(built.url);
+        showToast(built.short ? (person ? `${person.name}'s short link copied.` : "Short group link copied.") : "Link copied.");
+      } else window.prompt("Copy this link:", built.url);
     } catch (error) {
       if (error?.name !== "AbortError") showToast("Could not share the link.");
     }
@@ -256,10 +310,11 @@
     if (!built) { showToast("Find a live group recommendation before sharing it."); return; }
     const dialog = shareDialog();
     const person = focus >= 0 ? built.payload.members[focus] : null;
+    const expiry = config.backendUrl ? `<p><strong>Short link:</strong> stored for about 72 hours, then it expires automatically.</p>` : `<p><strong>Fallback mode:</strong> the plan is encoded directly in the URL until the short-link backend is configured.</p>`;
     dialog.querySelector("#groupShareTitle").textContent = person ? `Share ${person.name}'s view` : "Share whole group map";
     dialog.querySelector("#groupShareCopy").innerHTML = person
-      ? `<p>This opens a <strong>read-only personal view</strong> with ${escapeHtml(person.name)} highlighted.</p><p class="group-share-warning">To rebuild ★ join points, the link contains the group names, starting locations, meetup place/time and route preferences.</p>`
-      : `<p>This opens the complete group map and recommendation in a <strong>read-only viewer</strong>.</p><p class="group-share-warning">The link contains everyone's names and starting locations, plus the meetup place/time and route preferences.</p>`;
+      ? `<p>This opens a <strong>read-only personal view</strong> for ${escapeHtml(person.name)}.</p>${expiry}<p class="group-share-warning">The shared plan contains group names, starting locations, meetup place/time and route preferences so ★ joins can be rebuilt.</p>`
+      : `<p>This opens the complete group map and recommendation in a <strong>read-only viewer</strong>.</p>${expiry}<p class="group-share-warning">The shared plan contains everyone's names and starting locations, plus the meetup place/time and route preferences.</p>`;
     dialog.querySelector(".group-share-confirm").onclick = async () => { dialog.close(); await deliver(focus); };
     dialog.showModal();
   }
@@ -333,7 +388,8 @@
     const banner = document.createElement("section");
     banner.id = "sharedViewerBanner";
     banner.className = "shared-viewer-banner";
-    banner.innerHTML = `<div><span class="shared-viewer-lock">🔒 Read-only shared plan</span><strong>${person ? `${escapeHtml(person.name)}'s personal view` : "Whole group view"}</strong><small>${person ? "Their route is highlighted; the rest of the group stays visible for join context." : "Everyone's live routes, ★ joins and meetup timing are visible but cannot be edited."}</small></div><a class="shared-viewer-exit" href="${escapeHtml(window.location.pathname)}">Open planner</a>`;
+    const plannerUrl = window.__NVS_APP_URL__ || config.appUrl || "/";
+    banner.innerHTML = `<div><span class="shared-viewer-lock">🔒 Read-only shared plan</span><strong>${person ? `${escapeHtml(person.name)}'s personal view` : "Whole group view"}</strong><small>${person ? "Their route is highlighted; the rest of the group stays visible for join context." : "Everyone's live routes, ★ joins and meetup timing are visible but cannot be edited."}</small></div><a class="shared-viewer-exit" href="${escapeHtml(plannerUrl)}">Open planner</a>`;
     hero.insertAdjacentElement("afterend", banner);
   }
 
@@ -343,7 +399,7 @@
       decorateCards();
       personalFocus();
       const version = document.getElementById("versionLabel");
-      if (version) version.textContent = "v0.7.3 · Stable map + meaningful joins";
+      if (version) version.textContent = "v0.8 · VMV routing + short share links";
     }, 35);
   }
 
@@ -352,9 +408,9 @@
   decorate();
 
   window.addEventListener("nvs-group-recommendations-rendered", () => { if (sharedPlan) restoreStorage(); decorate(); });
-  window.addEventListener("nvs-group-change", decorate);
-  window.addEventListener("nvs-priority-change", decorate);
-  window.addEventListener("nvs-timing-change", decorate);
+  window.addEventListener("nvs-group-change", () => { shortPlanCache = null; decorate(); });
+  window.addEventListener("nvs-priority-change", () => { shortPlanCache = null; decorate(); });
+  window.addEventListener("nvs-timing-change", () => { shortPlanCache = null; decorate(); });
   window.addEventListener("load", decorate);
   window.addEventListener("beforeunload", restoreStorage);
   if (results) new MutationObserver(decorate).observe(results, { childList: true, subtree: true });
@@ -366,5 +422,6 @@
     shareGroup: () => confirmShare(-1),
     sharePerson: (index) => confirmShare(Number(index)),
     buildShareUrl: (index = -1) => buildShareUrl(Number(index)),
+    buildBestShareUrl: (index = -1) => buildBestShareUrl(Number(index)),
   });
 })();
