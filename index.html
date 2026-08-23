@@ -15,8 +15,15 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  >
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="live.css">
+  <link rel="stylesheet" href="map.css">
 </head>
 
 <body>
@@ -56,7 +63,7 @@
           <h1 id="page-title">Arrive together, not just <em>there</em>.</h1>
           <p class="subtitle">
             Pick two starting points, one meeting place and a target time.
-            The planner checks real public transport and finds the fairest pair.
+            The planner checks real public transport, matches both journeys and now puts them on a map.
           </p>
         </div>
 
@@ -154,8 +161,8 @@
           <div class="live-note">
             <span aria-hidden="true">●</span>
             <div>
-              <strong>v0.2 uses real routing.</strong>
-              Two Transitous requests are made per search — one for each person — then the meetup matcher compares the returned journeys locally on your device.
+              <strong>v0.3 adds real route maps.</strong>
+              Transitous still handles the two journey searches; the map draws the returned MOTIS route geometry and lets you compare Early, Best and Later visually.
             </div>
           </div>
 
@@ -164,6 +171,42 @@
             <span aria-hidden="true">→</span>
           </button>
         </form>
+      </section>
+
+      <section class="map-section" aria-labelledby="map-title">
+        <div class="map-heading">
+          <div>
+            <p class="section-kicker">Map</p>
+            <h2 id="map-title">See both journeys converge</h2>
+            <p class="map-subtitle">Blue is you, pink is your friend, and M is the meetup point.</p>
+          </div>
+
+          <div class="map-tabs" aria-label="Choose which meetup option to show">
+            <button type="button" data-map-pair="early" aria-pressed="false">Early</button>
+            <button type="button" data-map-pair="best" class="active" aria-pressed="true">Best</button>
+            <button type="button" data-map-pair="later" aria-pressed="false">Later</button>
+          </div>
+        </div>
+
+        <div class="map-card">
+          <div class="map-toolbar">
+            <div class="map-legend" aria-label="Map legend">
+              <span class="map-legend-item"><span class="map-legend-swatch you" aria-hidden="true"></span>You</span>
+              <span class="map-legend-item"><span class="map-legend-swatch friend" aria-hidden="true"></span>Friend</span>
+              <span class="map-legend-item"><span class="map-legend-swatch meet" aria-hidden="true"></span>Meet</span>
+            </div>
+            <button class="map-fit-button" id="mapFitButton" type="button">Fit both routes</button>
+          </div>
+
+          <div id="meetupMap" role="region" aria-label="Interactive map of both meetup journeys"></div>
+          <div class="map-fallback" id="mapFallback">
+            <div>
+              <strong>Map unavailable</strong>
+              <p>The journey cards still work. Reconnect and reload to restore the interactive map.</p>
+            </div>
+          </div>
+          <p class="map-status" id="mapStatus" aria-live="polite">Preparing map…</p>
+        </div>
       </section>
 
       <section class="results-section" aria-labelledby="results-title">
@@ -192,7 +235,7 @@
 
       <footer>
         <p>Unofficial prototype · Not affiliated with Nahverkehr Schwerin.</p>
-        <p id="versionLabel">v0.2.0 · Real routing via Transitous</p>
+        <p id="versionLabel">v0.3.0 · Real routing + interactive maps</p>
         <div class="source-links" aria-label="Data and source links">
           <a href="https://transitous.org/" target="_blank" rel="noopener">Routing: Transitous</a>
           <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transit data sources</a>
@@ -232,7 +275,13 @@
     <div class="noscript">This app needs JavaScript enabled to compare journeys.</div>
   </noscript>
 
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
   <script src="transit.js"></script>
+  <script src="map.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
