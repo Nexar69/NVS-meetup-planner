@@ -16,11 +16,16 @@
     window.NVSGroup.search({ scrollToResults: true });
   }, true);
 
-  document.getElementById("resetButton")?.addEventListener("click", () => {
+  document.getElementById("resetButton")?.addEventListener("click", (event) => {
+    if (!window.NVSGroup) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
     try {
       localStorage.removeItem("meet-schwerin-group-v1");
+      localStorage.removeItem("nvs-meetup-planner-state-v2");
     } catch {
       // Reset still works without storage access.
     }
+    window.location.reload();
   }, true);
 })();
