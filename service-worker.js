@@ -1,4 +1,4 @@
-const CACHE_NAME = "meet-schwerin-v0.4.0";
+const CACHE_NAME = "meet-schwerin-v0.5.0";
 
 const APP_SHELL = [
   "./",
@@ -7,10 +7,14 @@ const APP_SHELL = [
   "./live.css",
   "./map.css",
   "./places.css",
+  "./fair.css",
+  "./journey.css",
   "./transit.js",
   "./places.js",
   "./map.js",
   "./app.js",
+  "./fair.js",
+  "./journey.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/icon-192.png",
@@ -46,9 +50,9 @@ self.addEventListener("fetch", (event) => {
 
   const requestUrl = new URL(event.request.url);
 
-  // Never cache Transitous, Photon, map tiles, Leaflet CDN files, or other
-  // third-party requests. Timetables/search/maps keep normal network caching
-  // and are intentionally not downloaded for offline use.
+  // Never cache Transitous, Photon, map tiles, Leaflet CDN files, or any other
+  // third-party request. Live timetable/place/map data keeps normal browser
+  // caching behavior and is never downloaded by the PWA for offline use.
   if (requestUrl.origin !== self.location.origin) return;
 
   if (event.request.mode === "navigate") {
