@@ -1,4 +1,4 @@
-/* v0.5.2: shared optimisation control + two recommendation layout. */
+/* v0.6: timing choice + shared optimisation control + two recommendation layout. */
 
 .optimization-control {
   margin-top: 14px;
@@ -8,17 +8,16 @@
   background: #f8fafc;
 }
 
+.v060-control-block { display: grid; gap: 8px; }
+.v060-control-divider { height: 1px; margin: 14px 0; background: #e5e9f0; }
+
 .optimization-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
 }
 
-.optimization-heading > div {
-  display: grid;
-  gap: 2px;
-}
+.optimization-heading > div { display: grid; gap: 2px; }
 
 .optimization-kicker {
   color: #667085;
@@ -28,20 +27,21 @@
   text-transform: uppercase;
 }
 
-.optimization-heading strong {
-  color: #101828;
-  font-size: 14px;
-}
+.optimization-heading strong { color: #101828; font-size: 14px; }
 
-.optimization-options {
+.optimization-options,
+.meet-when-options {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 
-.optimization-options button {
+.optimization-options { grid-template-columns: repeat(3, 1fr); }
+.meet-when-options { grid-template-columns: repeat(2, 1fr); }
+
+.optimization-options button,
+.meet-when-options button {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 10px;
   min-height: 64px;
@@ -55,17 +55,18 @@
   transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease, background 140ms ease;
 }
 
-.optimization-options button:hover {
-  border-color: #b6c2d4;
-}
+.optimization-options button:hover,
+.meet-when-options button:hover { border-color: #b6c2d4; }
 
-.optimization-options button.active {
+.optimization-options button.active,
+.meet-when-options button.active {
   border-color: #2563eb;
   background: #f5f8ff;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
-.optimization-options button.active::after {
+.optimization-options button.active::after,
+.meet-when-options button.active::after {
   content: "✓";
   align-self: start;
   color: #2563eb;
@@ -73,9 +74,8 @@
   font-weight: 900;
 }
 
-.optimization-options button:active {
-  transform: scale(0.995);
-}
+.optimization-options button:active,
+.meet-when-options button:active { transform: scale(0.995); }
 
 .optimization-icon {
   display: grid;
@@ -87,27 +87,32 @@
   font-size: 17px;
 }
 
-.optimization-options button > span:nth-child(2) {
+.optimization-options button > span:nth-child(2),
+.meet-when-options button > span:nth-child(2) {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
 
-.optimization-options strong {
-  font-size: 12px;
-}
-
-.optimization-options small {
-  color: #667085;
-  font-size: 10px;
-}
+.optimization-options strong,
+.meet-when-options strong { font-size: 12px; }
+.optimization-options small,
+.meet-when-options small { color: #667085; font-size: 10px; }
 
 .optimization-description {
-  margin: 9px 2px 0;
+  margin: 0 2px;
   color: #667085;
   font-size: 11px;
   line-height: 1.4;
 }
+
+.asap-time-muted {
+  opacity: 0.46;
+  filter: saturate(0.65);
+}
+
+.asap-time-muted input,
+.asap-time-muted button { cursor: not-allowed !important; }
 
 .results.v052-recommendations {
   grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
@@ -129,14 +134,9 @@
   content: "";
 }
 
-.result.v052-backup {
-  opacity: 0.88;
-}
-
+.result.v052-backup { opacity: 0.88; }
 .result.v052-backup:hover,
-.result.v052-backup.map-selected {
-  opacity: 1;
-}
+.result.v052-backup.map-selected { opacity: 1; }
 
 .v052-mode-badge {
   display: inline-flex;
@@ -158,6 +158,30 @@
   line-height: 1.4;
 }
 
+.v060-why {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid #e4e9f0;
+  border-radius: 12px;
+  background: #fbfcfe;
+}
+
+.v060-why span {
+  color: #667085;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.v060-why strong {
+  color: #344054;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .result[data-map-pair="primary"].map-selected {
   border-color: #039855 !important;
   box-shadow: 0 0 0 3px rgba(3, 152, 85, 0.15), 0 18px 42px rgba(16, 24, 40, 0.12) !important;
@@ -168,11 +192,8 @@
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15), 0 16px 38px rgba(16, 24, 40, 0.10) !important;
 }
 
-.map-tabs {
-  grid-template-columns: repeat(2, 1fr) !important;
-}
+.map-tabs { grid-template-columns: repeat(2, 1fr) !important; }
 
-/* v0.5.1 focus mode originally assumed three result cards. v0.5.2 only has two. */
 @media (min-width: 761px) {
   .results.v052-recommendations.v051-focus-mode {
     grid-template-columns: minmax(140px, 0.24fr) minmax(520px, 1fr) !important;
@@ -191,20 +212,17 @@
   }
 }
 
+@media (max-width: 900px) {
+  .optimization-options { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 760px) {
-  .results.v052-recommendations {
-    grid-template-columns: 1fr;
-  }
-
-  .results.v052-recommendations.v051-focus-mode {
-    grid-template-columns: 1fr !important;
-  }
-
+  .results.v052-recommendations { grid-template-columns: 1fr; }
+  .results.v052-recommendations.v051-focus-mode { grid-template-columns: 1fr !important; }
   .results.v052-recommendations.v051-focus-mode .v051-focused {
     grid-column: 1 !important;
     grid-row: 2 !important;
   }
-
   .results.v052-recommendations.v051-focus-mode .v051-compact-left,
   .results.v052-recommendations.v051-focus-mode .v051-compact-right {
     grid-column: 1 !important;
@@ -212,8 +230,6 @@
   }
 }
 
-@media (max-width: 520px) {
-  .optimization-options {
-    grid-template-columns: 1fr;
-  }
+@media (max-width: 560px) {
+  .meet-when-options { grid-template-columns: 1fr; }
 }
