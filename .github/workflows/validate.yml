@@ -1,0 +1,51 @@
+name: Validate app
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Syntax-check JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            echo "Checking $file"
+            node --check "$file"
+          done < <(find . -maxdepth 1 -type f -name '*.js' -print0 | sort -z)
+
+      - name: Validate web manifest
+        run: node -e "JSON.parse(require('fs').readFileSync('manifest.webmanifest', 'utf8')); console.log('manifest.webmanifest is valid JSON')"
+
+      - name: Verify local app-shell files exist
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const sw = fs.readFileSync('service-worker.js', 'utf8');
+          const refs = [...sw.matchAll(/\"(\.\/[^"]+)\"/g)].map((match) => match[1]);
+          const missing = refs
+            .filter((ref) => ref !== './')
+            .map((ref) => ref.replace(/^\.\//, ''))
+            .filter((file) => !fs.existsSync(file));
+          if (missing.length) {
+            console.error('Missing app-shell files:', missing.join(', '));
+            process.exit(1);
+          }
+          console.log(`Verified ${refs.length} app-shell entries.`);
+          NODE
