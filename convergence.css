@@ -1,0 +1,201 @@
+/* v0.7.1 route convergence */
+
+.convergence-marker-wrap {
+  background: transparent;
+  border: 0;
+}
+
+.convergence-marker {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 3px solid #fff;
+  border-radius: 999px;
+  background: #101828;
+  box-shadow: 0 6px 16px rgba(16, 24, 40, 0.3);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.convergence-marker.everyone {
+  width: 34px;
+  height: 34px;
+  background: #039855;
+  font-size: 14px;
+}
+
+.convergence-popup {
+  display: grid;
+  min-width: 190px;
+  gap: 4px;
+}
+
+.convergence-popup strong {
+  color: #101828;
+  font-size: 13px;
+}
+
+.convergence-popup span,
+.convergence-popup small {
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.convergence-popup .convergence-popup-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.convergence-popup-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: 1px solid #e4e7ec;
+  border-radius: 999px;
+  background: #f9fafb;
+  color: #344054;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.convergence-popup-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+}
+
+.convergence-shared-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #475467;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.convergence-shared-line {
+  width: 20px;
+  border-top: 4px dashed #101828;
+  opacity: 0.55;
+}
+
+.timeline-convergence-event {
+  display: grid;
+  grid-template-columns: 48px 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+
+.timeline-convergence-time {
+  padding-top: 7px;
+  color: #475467;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.timeline-convergence-rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-height: 38px;
+}
+
+.timeline-convergence-rail::before {
+  position: absolute;
+  top: -8px;
+  bottom: -10px;
+  width: 2px;
+  background: #d0d5dd;
+  content: "";
+}
+
+.timeline-convergence-star {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  margin-top: 5px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #101828;
+  box-shadow: 0 0 0 2px #101828;
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.timeline-convergence-event.everyone .timeline-convergence-star {
+  background: #039855;
+  box-shadow: 0 0 0 2px #039855;
+}
+
+.timeline-convergence-copy {
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 1px solid #d0d5dd;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.timeline-convergence-event.join .timeline-convergence-copy {
+  border-color: #b2ddff;
+  background: #eff8ff;
+}
+
+.timeline-convergence-event.everyone .timeline-convergence-copy {
+  border-color: #abefc6;
+  background: #ecfdf3;
+}
+
+.timeline-convergence-copy strong {
+  color: #101828;
+  font-size: 11px;
+}
+
+.timeline-convergence-copy span,
+.timeline-convergence-copy small {
+  color: #667085;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.group-first-meetup .convergence-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 750;
+}
+
+.group-first-meetup .convergence-inline-star {
+  display: inline-grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border-radius: 999px;
+  background: #101828;
+  color: #fff;
+  font-size: 9px;
+}
+
+@media (max-width: 620px) {
+  .timeline-convergence-event {
+    grid-template-columns: 42px 16px minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .timeline-convergence-copy {
+    padding: 6px 8px;
+  }
+}
