@@ -1,43 +1,72 @@
-# NVS Meetup Planner
+# NVS Meetup Planner / Meet Schwerin
 
-A small, unofficial Schwerin-focused meetup planner that helps two people arrive at the same place at roughly the same time.
+An unofficial, mobile-first Schwerin meetup planner that helps two people arrive at the same place at roughly the same time by public transport.
 
-> **Status:** early idea-project prototype. It is not affiliated with Nahverkehr Schwerin (NVS).
+> This project is not affiliated with Nahverkehr Schwerin (NVS).
 
-## Current version: v0.1.1 PWA
+## v0.2 — real routing
 
-The prototype currently uses generated/demo timetable data. The important part that already works is the meetup-matching concept:
+The app now uses the public **Transitous / MOTIS v6** routing API for real timetable searches.
 
-- choose two starting points
-- choose one meetup destination
-- choose a target arrival date/time
-- compare all possible route pairs
-- show three coordinated suggestions: **Early**, **Best**, and **Later**
-- penalize route pairs that make one person wait much longer than the other
+Core flow:
 
-### Mobile / tablet support
+1. choose two starting stops
+2. choose one meetup stop
+3. choose a target arrival date/time
+4. request a two-hour route window for each person
+5. normalize the returned MOTIS itineraries
+6. compare every possible route pair locally
+7. show **Early**, **Best**, and **Later** coordinated meetup suggestions
 
-The interface is mobile-first and responsive for Android phones, Samsung Internet/Chrome, iPad, desktop and other modern browsers.
+The matching score currently prioritizes:
 
-v0.1.1 adds:
+- closeness to the requested meetup time
+- minimizing how long one person waits for the other
 
-- installable Progressive Web App (PWA) metadata
-- Android/Samsung home-screen installation support where the browser exposes it
-- iPad/iPhone Add to Home Screen guidance
-- safe-area handling for modern phones/tablets
-- sticky mobile action button
-- 16px form controls to avoid unwanted iOS/iPadOS input zoom
-- offline app-shell caching
-- remembered planner choices using local storage
-- quick target-time buttons
-- swap-starting-points action
+## Current Schwerin presets
+
+- Lankow-Siedlung
+- Hegelstraße
+- Dreescher Markt
+- Marienplatz
+- Hauptbahnhof
+
+The coordinates are based on current DELFI/OpenStreetMap stop positions. Free-text stop/address search is planned for a later milestone.
+
+## Data source and API etiquette
+
+Routing is performed by [Transitous](https://transitous.org/) using MOTIS. Transitous is community-run, so the app deliberately keeps requests small: one request per person per search, with a short in-memory cache to avoid repeated identical requests.
+
+Transit and OpenStreetMap attribution links are visible in the app footer. Transitous data-source details are available at <https://transitous.org/sources/>.
+
+If live routing fails because the device is offline, the API is unavailable, or a browser blocks the request, the app switches to an **explicitly labelled demo fallback**. Demo results are never presented as real journeys.
+
+## PWA / device support
+
+The project is a static Progressive Web App and is designed for:
+
+- Samsung / Android phones
+- iPhone
+- iPad / Android tablets
+- desktop browsers
+
+It includes:
+
+- responsive phone/tablet/desktop layouts
+- installable web-app manifest
+- app icons
+- iOS home-screen metadata
+- offline caching for the app shell
+- device-local planner preferences
 - online/offline status
+
+Real journey searches still require an internet connection.
 
 ## Run locally
 
-Opening `index.html` directly is enough for the basic demo UI, but PWA features such as the service worker require HTTP/HTTPS.
+Because service workers and cross-origin API requests work best from an HTTP origin, don't just double-click `index.html` for full PWA testing.
 
-For local PWA testing, run a simple static server in this folder, for example:
+For example:
 
 ```bash
 python -m http.server 8000
@@ -45,37 +74,41 @@ python -m http.server 8000
 
 Then open `http://localhost:8000`.
 
-## GitHub Pages
-
-This repository is designed to work as a static GitHub Pages site from the repository root.
-
-In GitHub:
-
-1. **Settings**
-2. **Pages**
-3. Under **Build and deployment**, choose **Deploy from a branch**
-4. Select `main`
-5. Select `/ (root)`
-6. Save
-
-When Pages finishes deploying, the same HTTPS site can be opened on Samsung, iPad, PC, or shared with a friend.
+The public deployment uses GitHub Pages.
 
 ## Project structure
 
-- `index.html` — semantic app/page structure
-- `styles.css` — responsive phone/tablet/desktop design
-- `app.js` — demo route source, pairing algorithm, UI state and PWA install handling
-- `manifest.webmanifest` — installable web-app metadata
-- `service-worker.js` — lightweight offline app-shell cache
-- `icons/` — PWA/home-screen icons
+- `index.html` — page structure and accessibility markup
+- `styles.css` — main responsive UI
+- `live.css` — v0.2 live-routing states and loading UI
+- `transit.js` — Transitous client, Schwerin presets and response normalization
+- `app.js` — meetup pairing/scoring, UI state and PWA install UX
+- `manifest.webmanifest` — PWA metadata
+- `service-worker.js` — offline app-shell cache (third-party timetable requests are intentionally not cached)
+- `icons/` — home-screen/app icons
 
 ## Roadmap
 
-### v0.2 — real Schwerin journeys
-Replace the `generateDemoRoutes()` boundary with real public-transport routing results while keeping the pairing/scoring engine.
+### v0.2.x
 
-### v0.3 — location search
-Use real stops/places and autocomplete instead of the small demo dropdowns.
+- validate live routes across more Schwerin stop combinations
+- improve route-detail rendering and realtime delay indicators
+- tune the meetup score using real-world cases
 
-### v0.4 — sharing and live features
-Possible ideas: shareable meetup links, current location, delay-aware recalculation, groups, and fair-meeting-point discovery.
+### v0.3
+
+- stop/address autocomplete instead of fixed presets
+- current-location starting point
+- clearer stop/platform selection
+
+### Later
+
+- shareable meetup links
+- more than two people
+- map view
+- missed-connection/live re-planning
+- fair meeting-place discovery
+
+## License
+
+MIT. See `LICENSE`.
