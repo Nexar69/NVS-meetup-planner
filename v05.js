@@ -34,14 +34,33 @@
 
   function updateReleaseCopy() {
     const version = document.getElementById("versionLabel");
-    if (version) version.textContent = "v0.5.0 · Live departure board + fair meetup beta";
+    if (version) version.textContent = "v0.5.1 · Stop-aware search + focused journey view";
 
     const liveNote = document.querySelector(".live-note div");
     if (liveNote) {
-      liveNote.innerHTML = `<strong>v0.5 turns the planner into a live meetup companion.</strong> The best pair gets live leave countdowns and detailed journey timelines. If a departure has already passed, stale routes are ignored and you can recalculate. Fair Meetup compares a small set of central Schwerin hubs only when you explicitly ask it to.`;
+      liveNote.innerHTML = `<strong>v0.5.1 polishes the live companion.</strong> Starting points are search-first, search results clearly distinguish transit stops from streets/places, same-name stops are prioritised, and opening a journey timeline now focuses that option instead of squeezing it into one-third of the screen.`;
+    }
+  }
+
+  function loadV051UX() {
+    if (!document.querySelector('link[data-v051-ux="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./ux-v051.css";
+      link.dataset.v051Ux = "true";
+      document.head.appendChild(link);
+    }
+
+    if (!document.querySelector('script[data-v051-ux="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./ux-v051.js";
+      script.defer = true;
+      script.dataset.v051Ux = "true";
+      document.body.appendChild(script);
     }
   }
 
   installDepartureGuard();
   updateReleaseCopy();
+  loadV051UX();
 })();
