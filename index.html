@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101828">
   <meta name="color-scheme" content="light">
-  <meta name="description" content="An unofficial Schwerin meetup planner that coordinates real public-transport arrival times for two people.">
+  <meta name="description" content="An unofficial Schwerin meetup planner that coordinates real public-transport arrival times for groups.">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Meet Schwerin">
@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="fair.css">
   <link rel="stylesheet" href="journey.css">
   <link rel="stylesheet" href="recommend.css">
+  <link rel="stylesheet" href="group.css">
 </head>
 
 <body>
@@ -63,11 +64,11 @@
     <main class="app">
       <section class="hero" aria-labelledby="page-title">
         <div>
-          <p class="eyebrow">Schwerin · Two starts · One meetup</p>
+          <p class="eyebrow">Schwerin · Many starts · One meetup</p>
           <h1 id="page-title">Arrive together, not just <em>there</em>.</h1>
           <p class="subtitle">
-            Search real Schwerin places, compare live public transport, see both journeys on the map,
-            know when to leave — and choose whether less waiting or less travel time matters more.
+            Plan real public-transport meetups for two to six people, choose what “best” means,
+            and optionally decide who should meet first before the whole group comes together.
           </p>
         </div>
 
@@ -168,8 +169,8 @@
           <div class="live-note">
             <span aria-hidden="true">●</span>
             <div>
-              <strong>v0.5.2 lets you choose what “best” means.</strong>
-              Optimise for arriving together with less waiting, or for getting there faster. The cards, map and live departure board all use the same recommendation engine.
+              <strong>v0.7 coordinates the whole group.</strong>
+              Add up to six people, rename and colour-code them, choose who should meet first, and keep using Together, Fastest, Easy or ASAP recommendations.
             </div>
           </div>
 
@@ -184,8 +185,8 @@
         <div class="map-heading">
           <div>
             <p class="section-kicker">Map</p>
-            <h2 id="map-title">See the recommended journeys</h2>
-            <p class="map-subtitle">Blue is you, pink is your friend, and M is the meetup point.</p>
+            <h2 id="map-title">See the group converge</h2>
+            <p class="map-subtitle">Each person keeps their own colour; M is the shared meetup point.</p>
           </div>
 
           <div class="map-tabs" aria-label="Choose which recommendation to show">
@@ -201,10 +202,10 @@
               <span class="map-legend-item"><span class="map-legend-swatch friend" aria-hidden="true"></span>Friend</span>
               <span class="map-legend-item"><span class="map-legend-swatch meet" aria-hidden="true"></span>Meet</span>
             </div>
-            <button class="map-fit-button" id="mapFitButton" type="button">Fit both routes</button>
+            <button class="map-fit-button" id="mapFitButton" type="button">Fit all routes</button>
           </div>
 
-          <div id="meetupMap" role="region" aria-label="Interactive map of both meetup journeys"></div>
+          <div id="meetupMap" role="region" aria-label="Interactive map of group meetup journeys"></div>
           <div class="map-fallback" id="mapFallback">
             <div>
               <strong>Map unavailable</strong>
@@ -219,7 +220,7 @@
         <div class="results-heading">
           <div>
             <p class="section-kicker">Recommendations</p>
-            <h2 id="results-title">Best matches</h2>
+            <h2 id="results-title">Best group matches</h2>
           </div>
           <p class="summary" id="summary" aria-live="polite"></p>
         </div>
@@ -232,16 +233,15 @@
         <div>
           <strong>What makes this different?</strong>
           <p>
-            Normal journey planners optimise one route at a time. Meet Schwerin scores
-            <em>pairs</em> of real journeys and now lets you decide whether synchronised arrival
-            or minimum travel time should matter more.
+            Meet Schwerin scores combinations of real journeys across the whole group instead of optimising one person at a time.
+            It can balance arrival spread, travel time, easy routes, target time and an optional “meet first” priority group.
           </p>
         </div>
       </section>
 
       <footer>
         <p>Unofficial prototype · Not affiliated with Nahverkehr Schwerin.</p>
-        <p id="versionLabel">v0.5.2 · Adjustable recommendations + restored route details</p>
+        <p id="versionLabel">v0.7.0 · Group planning + first-meet priorities</p>
         <div class="source-links" aria-label="Data and source links">
           <a href="https://transitous.org/" target="_blank" rel="noopener">Routing: Transitous</a>
           <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transit data sources</a>
@@ -290,11 +290,13 @@
   <script src="transit.js"></script>
   <script src="places.js"></script>
   <script src="recommend.js"></script>
+  <script src="group-engine.js"></script>
   <script src="map.js"></script>
   <script src="v05.js"></script>
   <script src="app.js"></script>
   <script src="results-v052.js"></script>
   <script src="fair.js"></script>
   <script src="journey.js"></script>
+  <script src="group.js"></script>
 </body>
 </html>
