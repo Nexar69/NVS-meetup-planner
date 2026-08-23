@@ -33,6 +33,7 @@
   }
 
   function formatTime(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
     return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(date);
   }
 
@@ -75,6 +76,16 @@
       html: `<span class="meet-marker ${meet ? "meet" : ""}" style="background:${escapeHtml(background)}">${escapeHtml(label)}</span>`,
       iconSize: [32, 32],
       iconAnchor: [16, 16],
+      popupAnchor: [0, -18],
+    });
+  }
+
+  function convergenceIcon(everyone = false) {
+    return window.L.divIcon({
+      className: "convergence-marker-wrap",
+      html: `<span class="convergence-marker ${everyone ? "everyone" : ""}">${everyone ? "👥" : "★"}</span>`,
+      iconSize: everyone ? [34, 34] : [30, 30],
+      iconAnchor: everyone ? [17, 17] : [15, 15],
       popupAnchor: [0, -18],
     });
   }
@@ -131,6 +142,38 @@
     return marker;
   }
 
+  function convergencePeopleHtml(event) {
+    return (event.members || []).map((member) => `
+      <span class="convergence-popup-person">
+        <span class="convergence-popup-dot" style="background:${escapeHtml(member.color || "#667085")}"></span>
+        ${escapeHtml(member.name)}
+      </span>
+    `).join("");
+  }
+
+  function addConvergenceMarker(event) {
+    if (!Array.isArray(event?.point) || event.point.length < 2 || event.final || !state.routeLayer) return null;
+    const marker = window.L.marker(event.point, {
+      icon: convergenceIcon(false),
+      keyboard: true,
+      title: event.title,
+      zIndexOffset: 800,
+    }).addTo(state.routeLayer);
+
+    const shared = event.sharedTransit
+      ? `<small>Continue together on <strong>${escapeHtml(event.sharedTransit.label)}</strong></small>`
+      : "";
+    marker.bindPopup(`
+      <div class="convergence-popup">
+        <strong>★ ${escapeHtml(event.title)}</strong>
+        <span>${escapeHtml(event.label)} · ${formatTime(event.time)}</span>
+        <div class="convergence-popup-people">${convergencePeopleHtml(event)}</div>
+        ${shared}
+      </div>
+    `);
+    return marker;
+  }
+
   function validGeometry(route) {
     if (!Array.isArray(route?.geometry)) return [];
     return route.geometry.filter((point) => Array.isArray(point) && point.length >= 2 && Number.isFinite(point[0]) && Number.isFinite(point[1]));
@@ -146,14 +189,30 @@
     const approximate = geometry.length < 2;
     const line = window.L.polyline(points, {
       color: color || "#667085",
-      weight: 6,
-      opacity: 0.86,
+      weight: 5,
+      opacity: 0.78,
       lineCap: "round",
       lineJoin: "round",
       dashArray: approximate ? "9 9" : null,
     }).addTo(state.routeLayer);
     line.bindTooltip(`${escapeHtml(label)} · ${formatTime(route.departure)} → ${formatTime(route.arrival)}`, { sticky: true });
     return { bounds: points, approximate };
+  }
+
+  function drawSharedLeg(shared) {
+    const geometry = Array.isArray(shared?.geometry) ? shared.geometry.filter((point) => Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1])) : [];
+    if (geometry.length < 2 || !state.routeLayer) return [];
+    const names = (shared.members || []).map((member) => member.name).join(" + ");
+    const line = window.L.polyline(geometry, {
+      color: "#101828",
+      weight: 9,
+      opacity: 0.34,
+      lineCap: "round",
+      lineJoin: "round",
+      dashArray: "4 7",
+    }).addTo(state.routeLayer);
+    line.bindTooltip(`${escapeHtml(names)} together · ${escapeHtml(shared.label)}`, { sticky: true });
+    return geometry;
   }
 
   function fitPoints(points) {
@@ -165,11 +224,14 @@
     state.map.fitBounds(bounds, { padding: [34, 34], maxZoom: 15, animate: true });
   }
 
-  function updateLegend(members) {
+  function updateLegend(members, hasConvergence = false, hasShared = false) {
     if (!legend) return;
     legend.innerHTML = members.map((member) => `
       <span class="map-legend-item"><span class="group-map-legend-dot" style="background:${escapeHtml(member.color)}"></span>${escapeHtml(member.name)}</span>
-    `).join("") + `<span class="map-legend-item"><span class="map-legend-swatch meet" aria-hidden="true"></span>Meet</span>`;
+    `).join("") +
+      (hasConvergence ? `<span class="map-legend-item"><span class="convergence-marker" style="width:18px;height:18px;font-size:9px;border-width:2px">★</span>Join</span>` : "") +
+      (hasShared ? `<span class="map-legend-item convergence-shared-key"><span class="convergence-shared-line"></span>Together</span>` : "") +
+      `<span class="map-legend-item"><span class="map-legend-swatch meet" aria-hidden="true"></span>Meet</span>`;
   }
 
   function updateTabs() {
@@ -194,7 +256,7 @@
     if (!state.map || !state.routeLayer) return;
     clearRoutes();
     const context = getContext();
-    updateLegend(context.members);
+    updateLegend(context.members, false, false);
     const points = [];
     const destination = latLngFor(context.destination);
 
@@ -216,7 +278,7 @@
     const meet = addMeetMarker(context.destination, "Meetup point");
     if (meet) points.push(meet.getLatLng());
     fitPoints(points);
-    if (mapStatus) mapStatus.innerHTML = "Choose your meetup preferences to load the <strong>recommended group routes</strong>. Dashed lines are only a preview.";
+    if (mapStatus) mapStatus.innerHTML = "Choose your meetup preferences to load <strong>every group route</strong>. Dashed lines are only a preview.";
   }
 
   function modeLabel(recommendations) {
@@ -233,14 +295,24 @@
     ].filter((assignment) => assignment.member && assignment.route);
   }
 
+  function convergenceFor(group, context) {
+    const destination = locationFor(context.destination);
+    return window.NVSConvergence?.analyze?.(group, {
+      destinationPoint: destination ? [destination.lat, destination.lon] : null,
+      destinationLabel: destination?.label || context.destination,
+    }) || { events: [], sharedLegs: [] };
+  }
+
   function drawSelectedPair() {
     const group = state.recommendations?.[state.selectedType];
     const context = state.context;
     if (!state.map || !group || !context) { renderPreview(); return; }
 
     clearRoutes();
-    updateLegend(context.members);
     const assignments = assignmentsFor(group, context);
+    const convergence = convergenceFor(group, context);
+    const visibleEvents = convergence.events.filter((event) => !event.final && Array.isArray(event.point));
+    updateLegend(context.members, visibleEvents.length > 0, convergence.sharedLegs.length > 0);
     const bounds = [];
     let approximate = false;
 
@@ -254,6 +326,12 @@
       approximate = approximate || drawn.approximate;
     });
 
+    convergence.sharedLegs.forEach((shared) => bounds.push(...drawSharedLeg(shared)));
+    visibleEvents.forEach((event) => {
+      const marker = addConvergenceMarker(event);
+      if (marker) bounds.push(marker.getLatLng());
+    });
+
     const meet = addMeetMarker(
       context.destination,
       `${state.recommendations.timingMode === "asap" ? "Everyone there by" : "Whole group together around"} ${formatTime(group.latestArrival)}`,
@@ -265,10 +343,13 @@
     tagResultCards();
 
     const label = state.selectedType === "primary" ? modeLabel(state.recommendations) : "Backup group recommendation";
+    const joinText = visibleEvents.length
+      ? ` · ${visibleEvents.length} intermediate join${visibleEvents.length === 1 ? "" : "s"} marked ★`
+      : "";
     if (mapStatus) {
       mapStatus.innerHTML = approximate
-        ? `<strong>${label}</strong> · Some route geometry was unavailable, so dashed sections are approximate.`
-        : `<strong>${label}</strong> · ${assignments.length} live journeys converge on the meetup point.`;
+        ? `<strong>${label}</strong> · All ${assignments.length} journeys are shown; some geometry is approximate${joinText}.`
+        : `<strong>${label}</strong> · All ${assignments.length} live journeys are shown${joinText}.`;
     }
   }
 
@@ -345,9 +426,7 @@
   });
 
   if (dataBadge) new MutationObserver(() => scheduleRefresh(120)).observe(dataBadge, { attributes: true, attributeFilter: ["class"] });
-  if (results) new MutationObserver(() => {
-    tagResultCards();
-  }).observe(results, { childList: true });
+  if (results) new MutationObserver(() => { tagResultCards(); }).observe(results, { childList: true });
 
   window.addEventListener("resize", () => state.map?.invalidateSize({ pan: false }));
   initMap();
