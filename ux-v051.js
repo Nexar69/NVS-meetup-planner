@@ -15,7 +15,8 @@
   const searchCache = new Map();
   const controllerState = new Map();
   let photonController = null;
-  let activeDestinationDialog = null;
+  let destinationDialog = null;
+  let destinationChip = null;
 
   const PRESET_KINDS = Object.freeze({
     "Lankow-Siedlung": { kind: "tram", icon: "🚋", label: "Tram stop" },
@@ -77,28 +78,28 @@
       (key === "public_transport" && ["platform", "stop_position", "station"].includes(value)) ||
       /osm\.public_transport\.(platform|stop_position|station)/.test(categories);
 
-    if (isTram) return { kind: "tram", icon: "🚋", label: "Tram stop", isStop: true };
-    if (isBus) return { kind: "bus", icon: "🚌", label: "Bus stop", isStop: true };
-    if (isRail) return { kind: "rail", icon: "🚆", label: "Station", isStop: true };
-    if (isTransit) return { kind: "transit", icon: "🚏", label: "Transit stop", isStop: true };
+    if (isTram) return { kind: "tram", icon: "🚋", kindLabel: "Tram stop", isStop: true };
+    if (isBus) return { kind: "bus", icon: "🚌", kindLabel: "Bus stop", isStop: true };
+    if (isRail) return { kind: "rail", icon: "🚆", kindLabel: "Station", isStop: true };
+    if (isTransit) return { kind: "transit", icon: "🚏", kindLabel: "Transit stop", isStop: true };
 
     if (properties.housenumber || type === "house") {
-      return { kind: "address", icon: "⌂", label: "Address", isStop: false };
+      return { kind: "address", icon: "⌂", kindLabel: "Address", isStop: false };
     }
 
     if (type === "street" || key === "highway") {
-      return { kind: "street", icon: "↔", label: "Street", isStop: false };
+      return { kind: "street", icon: "↔", kindLabel: "Street", isStop: false };
     }
 
     if (key === "shop" || key === "amenity" || key === "tourism" || key === "leisure") {
-      return { kind: "place", icon: "📍", label: "Place", isStop: false };
+      return { kind: "place", icon: "📍", kindLabel: "Place", isStop: false };
     }
 
     if (/bus|tram|station|stop|platform/.test(combined)) {
-      return { kind: "transit", icon: "🚏", label: "Transit stop", isStop: true };
+      return { kind: "transit", icon: "🚏", kindLabel: "Transit stop", isStop: true };
     }
 
-    return { kind: "place", icon: "📍", label: "Place", isStop: false };
+    return { kind: "place", icon: "📍", kindLabel: "Place", isStop: false };
   }
 
   function featureLabel(feature) {
@@ -127,8 +128,6 @@
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
     const { label, detail } = featureLabel(feature);
-    const classification = classifyFeature(feature.properties || {});
-
     return {
       label,
       detail,
@@ -136,15 +135,29 @@
       lon,
       source: "photon-v051",
       originalIndex,
-      ...classification,
+      ...classifyFeature(feature.properties || {}),
     };
   }
 
   function localKind(key, location) {
-    if (PRESET_KINDS[key]) return PRESET_KINDS[key];
-    if (location?.source === "gps") return { kind: "location", icon: "◎", label: "Current location" };
-    if (location?.source === "shared") return { kind: "place", icon: "↗", label: "Shared place" };
-    return { kind: "place", icon: "📍", label: "Saved place" };
+    if (PRESET_KINDS[key]) {
+      const preset = PRESET_KINDS[key];
+      return {
+        ...preset,
+        kindLabel: preset.label,
+        isStop: ["tram", "bus", "rail", "transit"].includes(preset.kind),
+      };
+    }
+
+    if (location?.source === "gps") {
+      return { kind: "location", icon: "◎", kindLabel: "Current location", isStop: false };
+    }
+
+    if (location?.source === "shared") {
+      return { kind: "place", icon: "↗", kindLabel: "Shared place", isStop: false };
+    }
+
+    return { kind: "place", icon: "📍", kindLabel: "Saved place", isStop: false };
   }
 
   function localMatches(query) {
@@ -152,10 +165,7 @@
     if (!clean) return [];
 
     return Object.entries(window.NVSTransit?.LOCATIONS || {})
-      .filter(([key, location]) => {
-        const haystack = normalizeText(`${key} ${location?.label || ""}`);
-        return haystack.includes(clean);
-      })
+      .filter(([key, location]) => normalizeText(`${key} ${location?.label || ""}`).includes(clean))
       .slice(0, 7)
       .map(([key, location], index) => ({
         key,
@@ -166,7 +176,6 @@
         source: location.source || "local",
         originalIndex: index - 100,
         isLocal: true,
-        isStop: ["tram", "bus", "rail", "transit"].includes(localKind(key, location).kind),
         ...localKind(key, location),
       }));
   }
@@ -175,9 +184,9 @@
     const groups = new Map();
 
     items.forEach((item, index) => {
-      const key = normalizeText(item.label);
-      if (!groups.has(key)) groups.set(key, { firstIndex: index, items: [] });
-      groups.get(key).items.push(item);
+      const name = normalizeText(item.label);
+      if (!groups.has(name)) groups.set(name, { firstIndex: index, items: [] });
+      groups.get(name).items.push(item);
     });
 
     return [...groups.values()]
@@ -248,41 +257,6 @@
     }
   }
 
-  function resultHtml(item) {
-    return `
-      <span class="v051-result-icon" aria-hidden="true">${escapeHtml(item.icon)}</span>
-      <span class="v051-result-copy">
-        <strong>${escapeHtml(item.label)}</strong>
-        <small>${escapeHtml(item.detail || "Schwerin")}</small>
-      </span>
-      <span class="v051-place-kind" data-kind="${escapeHtml(item.kind)}">${escapeHtml(item.icon)} ${escapeHtml(item.label === item.kindLabel ? item.kindLabel : item.kindLabel || item.kindName || item.labelType || item.kindLabelText || item.typeLabel || item.classificationLabel || item._kindLabel || item.kindDisplay || item.kindTitle || item.kindCaption || item.kindDescription || item.kindHuman || item.kindReadable || item.kindText || item.kindFriendly || item.kindUi || item.kindTag || item.kindBadge || item.kindChip || item.kindStatus || item.kindCategory || item.kindGroup || item.kindRole || item.kindValue || item.kindLabelValue || item.kindLabelName || item.kindLabelDisplay || item.kindLabelUi || item.kindLabelFriendly || item.kindLabelTextValue || item.kindLabelTextDisplay || item.kindLabelTextUi || item.kindLabelTextFriendly || item.kindLabelTextHuman || item.kindLabelTextReadable || item.kindLabelTextTitle || item.kindLabelTextCaption || item.kindLabelTextDescription || item.kindLabelTextStatus || item.kindLabelTextCategory || item.kindLabelTextGroup || item.kindLabelTextRole || item.kindLabelTextValue || item.kindLabelTextName || item.kindLabelTextLabel || item.kindLabelTextKind || item.kindLabelTextType || item.kindLabelTextClass || item.kindLabelTextTag || item.kindLabelTextBadge || item.kindLabelTextChip || item.kindLabelTextDisplayName || item.kindLabelTextDisplayLabel || item.kindLabelTextDisplayText || item.kindLabelTextDisplayValue || item.kindLabelTextDisplayKind || item.kindLabelTextDisplayType || item.kindLabelTextDisplayClass || item.kindLabelTextDisplayTag || item.kindLabelTextDisplayBadge || item.kindLabelTextDisplayChip || item.kindLabelTextDisplayStatus || item.kindLabelTextDisplayCategory || item.kindLabelTextDisplayGroup || item.kindLabelTextDisplayRole || item.kindLabelTextDisplayHuman || item.kindLabelTextDisplayReadable || item.kindLabelTextDisplayFriendly || item.kindLabelTextDisplayUi || item.kindLabelTextDisplayTitle || item.kindLabelTextDisplayCaption || item.kindLabelTextDisplayDescription || item.kindLabelTextDisplayNameText || item.kindLabelTextDisplayLabelText || item.kindLabelTextDisplayTextValue || item.kindLabelTextDisplayTextKind || item.kindLabelTextDisplayTextType || item.kindLabelTextDisplayTextClass || item.kindLabelTextDisplayTextTag || item.kindLabelTextDisplayTextBadge || item.kindLabelTextDisplayTextChip || item.kindLabelTextDisplayTextStatus || item.kindLabelTextDisplayTextCategory || item.kindLabelTextDisplayTextGroup || item.kindLabelTextDisplayTextRole || item.kindLabelTextDisplayTextHuman || item.kindLabelTextDisplayTextReadable || item.kindLabelTextDisplayTextFriendly || item.kindLabelTextDisplayTextUi || item.kindLabelTextDisplayTextTitle || item.kindLabelTextDisplayTextCaption || item.kindLabelTextDisplayTextDescription || item.kindLabelTextDisplayTextName || item.kindLabelTextDisplayTextLabel || item.kindLabelTextDisplayTextText || item.kindLabelTextDisplayTextDisplay || item.kindLabelTextDisplayTextValueText || item.kindLabelTextDisplayTextKindText || item.kindLabelTextDisplayTextTypeText || item.kindLabelTextDisplayTextClassText || item.kindLabelTextDisplayTextTagText || item.kindLabelTextDisplayTextBadgeText || item.kindLabelTextDisplayTextChipText || item.kindLabelTextDisplayTextStatusText || item.kindLabelTextDisplayTextCategoryText || item.kindLabelTextDisplayTextGroupText || item.kindLabelTextDisplayTextRoleText || item.kindLabelTextDisplayTextHumanText || item.kindLabelTextDisplayTextReadableText || item.kindLabelTextDisplayTextFriendlyText || item.kindLabelTextDisplayTextUiText || item.kindLabelTextDisplayTextTitleText || item.kindLabelTextDisplayTextCaptionText || item.kindLabelTextDisplayTextDescriptionText || item.kindLabelTextDisplayTextNameTextValue || item.kindLabelTextDisplayTextLabelTextValue || item.kindLabelTextDisplayTextTextValueText || item.kindLabelTextDisplayTextDisplayText || item.kindLabelTextDisplayTextDisplayValue || item.kindLabelTextDisplayTextDisplayKind || item.kindLabelTextDisplayTextDisplayType || item.kindLabelTextDisplayTextDisplayClass || item.kindLabelTextDisplayTextDisplayTag || item.kindLabelTextDisplayTextDisplayBadge || item.kindLabelTextDisplayTextDisplayChip || item.kindLabelTextDisplayTextDisplayStatus || item.kindLabelTextDisplayTextDisplayCategory || item.kindLabelTextDisplayTextDisplayGroup || item.kindLabelTextDisplayTextDisplayRole || item.kindLabelTextDisplayTextDisplayHuman || item.kindLabelTextDisplayTextDisplayReadable || item.kindLabelTextDisplayTextDisplayFriendly || item.kindLabelTextDisplayTextDisplayUi || item.kindLabelTextDisplayTextDisplayTitle || item.kindLabelTextDisplayTextDisplayCaption || item.kindLabelTextDisplayTextDisplayDescription || item.kindLabelTextDisplayTextDisplayName || item.kindLabelTextDisplayTextDisplayLabel || item.kindLabelTextDisplayTextDisplayTextValue || item.kindLabelTextDisplayTextDisplayTextKind || item.kindLabelTextDisplayTextDisplayTextType || item.kindLabelTextDisplayTextDisplayTextClass || item.kindLabelTextDisplayTextDisplayTextTag || item.kindLabelTextDisplayTextDisplayTextBadge || item.kindLabelTextDisplayTextDisplayTextChip || item.kindLabelTextDisplayTextDisplayTextStatus || item.kindLabelTextDisplayTextDisplayTextCategory || item.kindLabelTextDisplayTextDisplayTextGroup || item.kindLabelTextDisplayTextDisplayTextRole || item.kindLabelTextDisplayTextDisplayTextHuman || item.kindLabelTextDisplayTextDisplayTextReadable || item.kindLabelTextDisplayTextDisplayTextFriendly || item.kindLabelTextDisplayTextDisplayTextUi || item.kindLabelTextDisplayTextDisplayTextTitle || item.kindLabelTextDisplayTextDisplayTextCaption || item.kindLabelTextDisplayTextDisplayTextDescription || item.kindLabelTextDisplayTextDisplayTextName || item.kindLabelTextDisplayTextDisplayTextLabel || item.kindLabelTextDisplayTextDisplayTextText || item.kindLabelTextDisplayTextDisplayTextDisplay || item.kindLabelTextDisplayTextDisplayTextValueText || item.kindLabelTextDisplayTextDisplayTextKindText || item.kindLabelTextDisplayTextDisplayTextTypeText || item.kindLabelTextDisplayTextDisplayTextClassText || item.kindLabelTextDisplayTextDisplayTextTagText || item.kindLabelTextDisplayTextDisplayTextBadgeText || item.kindLabelTextDisplayTextDisplayTextChipText || item.kindLabelTextDisplayTextDisplayTextStatusText || item.kindLabelTextDisplayTextDisplayTextCategoryText || item.kindLabelTextDisplayTextDisplayTextGroupText || item.kindLabelTextDisplayTextDisplayTextRoleText || item.kindLabelTextDisplayTextDisplayTextHumanText || item.kindLabelTextDisplayTextDisplayTextReadableText || item.kindLabelTextDisplayTextDisplayTextFriendlyText || item.kindLabelTextDisplayTextDisplayTextUiText || item.kindLabelTextDisplayTextDisplayTextTitleText || item.kindLabelTextDisplayTextDisplayTextCaptionText || item.kindLabelTextDisplayTextDisplayTextDescriptionText || item.kindLabelTextDisplayTextDisplayTextNameText || item.kindLabelTextDisplayTextDisplayTextLabelText || item.kindLabelTextDisplayTextDisplayTextTextText || item.kindLabelTextDisplayTextDisplayTextDisplayText || item.kindLabelTextDisplayTextDisplayTextDisplayValueText || item.kindLabelTextDisplayTextDisplayTextDisplayKindText || item.kindLabelTextDisplayTextDisplayTextDisplayTypeText || item.kindLabelTextDisplayTextDisplayTextDisplayClassText || item.kindLabelTextDisplayTextDisplayTextDisplayTagText || item.kindLabelTextDisplayTextDisplayTextDisplayBadgeText || item.kindLabelTextDisplayTextDisplayTextDisplayChipText || item.kindLabelTextDisplayTextDisplayTextDisplayStatusText || item.kindLabelTextDisplayTextDisplayTextDisplayCategoryText || item.kindLabelTextDisplayTextDisplayTextDisplayGroupText || item.kindLabelTextDisplayTextDisplayTextDisplayRoleText || item.kindLabelTextDisplayTextDisplayTextDisplayHumanText || item.kindLabelTextDisplayTextDisplayTextDisplayReadableText || item.kindLabelTextDisplayTextDisplayTextDisplayFriendlyText || item.kindLabelTextDisplayTextDisplayTextDisplayUiText || item.kindLabelTextDisplayTextDisplayTextDisplayTitleText || item.kindLabelTextDisplayTextDisplayTextDisplayCaptionText || item.kindLabelTextDisplayTextDisplayTextDisplayDescriptionText || item.labelKind || item.kind || "Place")}</span>
-    `;
-  }
-
-  function kindLabelFor(item) {
-    if (item.kind === "tram") return "Tram stop";
-    if (item.kind === "bus") return "Bus stop";
-    if (item.kind === "rail") return "Station";
-    if (item.kind === "transit") return "Transit stop";
-    if (item.kind === "address") return "Address";
-    if (item.kind === "street") return "Street";
-    if (item.kind === "location") return "Current location";
-    return item.source === "shared" ? "Shared place" : "Place";
-  }
-
-  // Keep the result template tiny and predictable. This replacement exists so
-  // the badge text is generated from one canonical function.
-  function cleanResultHtml(item) {
-    return `
-      <span class="v051-result-icon" aria-hidden="true">${escapeHtml(item.icon)}</span>
-      <span class="v051-result-copy">
-        <strong>${escapeHtml(item.label)}</strong>
-        <small>${escapeHtml(item.detail || "Schwerin")}</small>
-      </span>
-      <span class="v051-place-kind" data-kind="${escapeHtml(item.kind)}">${escapeHtml(item.icon)} ${escapeHtml(kindLabelFor(item))}</span>
-    `;
-  }
-
   function renderPlaceButtons(container, items, onSelect) {
     container.innerHTML = "";
 
@@ -295,7 +269,14 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "v051-place-result";
-      button.innerHTML = cleanResultHtml(item);
+      button.innerHTML = `
+        <span class="v051-result-icon" aria-hidden="true">${escapeHtml(item.icon)}</span>
+        <span class="v051-result-copy">
+          <strong>${escapeHtml(item.label)}</strong>
+          <small>${escapeHtml(item.detail || "Schwerin")}</small>
+        </span>
+        <span class="v051-place-kind" data-kind="${escapeHtml(item.kind)}">${escapeHtml(item.icon)} ${escapeHtml(item.kindLabel)}</span>
+      `;
       button.addEventListener("click", () => onSelect(item));
       container.appendChild(button);
     });
@@ -329,22 +310,28 @@
 
     select.value = key;
     select.dataset.v051Kind = item.kind;
-    select.dataset.v051KindLabel = kindLabelFor(item);
+    select.dataset.v051KindLabel = item.kindLabel;
     select.dataset.v051Icon = item.icon;
     select.dispatchEvent(new Event("change", { bubbles: true }));
     return key;
   }
 
-  function updateSelectedKind(select, chip) {
+  function selectedClassification(select) {
     const key = select?.value;
     const location = window.NVSTransit?.LOCATIONS?.[key];
     const fallback = localKind(key, location);
-    const kind = select?.dataset.v051Kind || fallback.kind;
-    const icon = select?.dataset.v051Icon || fallback.icon;
-    const label = select?.dataset.v051KindLabel || fallback.label;
+    return {
+      kind: select?.dataset.v051Kind || fallback.kind,
+      icon: select?.dataset.v051Icon || fallback.icon,
+      kindLabel: select?.dataset.v051KindLabel || fallback.kindLabel,
+    };
+  }
 
-    chip.dataset.kind = kind;
-    chip.textContent = `${icon} ${label}`;
+  function updateKindChip(select, chip) {
+    if (!chip || !select) return;
+    const info = selectedClassification(select);
+    chip.dataset.kind = info.kind;
+    chip.textContent = `${info.icon} ${info.kindLabel}`;
   }
 
   function closeAllOriginResults(except = null) {
@@ -378,7 +365,7 @@
         renderPlaceButtons(state.results, found, (item) => {
           registerAndSelect(state.select, item);
           state.input.value = item.label;
-          updateSelectedKind(state.select, state.chip);
+          updateKindChip(state.select, state.chip);
           state.results.classList.remove("open");
           state.input.setAttribute("aria-expanded", "false");
           plannerForm?.requestSubmit();
@@ -412,50 +399,52 @@
 
     select.insertAdjacentElement("afterend", control);
 
-    const input = control.querySelector(".v051-origin-input");
-    const clear = control.querySelector(".v051-clear-origin");
-    const chip = control.querySelector(".v051-selected-kind");
-    const resultList = control.querySelector(".v051-origin-results");
-    const state = { select, control, input, clear, chip, results: resultList, timer: null };
+    const state = {
+      select,
+      input: control.querySelector(".v051-origin-input"),
+      clear: control.querySelector(".v051-clear-origin"),
+      chip: control.querySelector(".v051-selected-kind"),
+      results: control.querySelector(".v051-origin-results"),
+      timer: null,
+    };
     controllerState.set(select.id, state);
 
     const syncFromSelect = () => {
       const key = select.value;
       const location = window.NVSTransit?.LOCATIONS?.[key];
-      input.value = location?.label || select.selectedOptions?.[0]?.textContent || key || "";
-      updateSelectedKind(select, chip);
+      state.input.value = location?.label || select.selectedOptions?.[0]?.textContent || key || "";
+      updateKindChip(select, state.chip);
     };
 
-    input.addEventListener("focus", () => {
+    state.input.addEventListener("focus", () => {
       closeAllOriginResults(state);
-      input.select();
-      runOriginSearch(state, input.value);
+      state.input.select();
+      runOriginSearch(state, state.input.value);
     });
 
-    input.addEventListener("input", () => {
+    state.input.addEventListener("input", () => {
       closeAllOriginResults(state);
-      runOriginSearch(state, input.value);
+      runOriginSearch(state, state.input.value);
     });
 
-    input.addEventListener("keydown", (event) => {
+    state.input.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
-        resultList.classList.remove("open");
-        input.setAttribute("aria-expanded", "false");
-        input.blur();
+        state.results.classList.remove("open");
+        state.input.setAttribute("aria-expanded", "false");
+        state.input.blur();
       }
     });
 
-    clear.addEventListener("click", () => {
-      input.value = "";
-      input.focus();
+    state.clear.addEventListener("click", () => {
+      state.input.value = "";
+      state.input.focus();
       runOriginSearch(state, "");
     });
 
     select.addEventListener("change", syncFromSelect);
     syncFromSelect();
 
-    const tools = field.querySelector(".location-tools");
-    tools?.querySelectorAll(".location-tool-button").forEach((button) => {
+    field.querySelector(".location-tools")?.querySelectorAll(".location-tool-button").forEach((button) => {
       if (/search place/i.test(button.textContent || "")) button.hidden = true;
     });
   }
@@ -490,6 +479,7 @@
         list.innerHTML = `<div class="v051-search-state">Type a stop, street, address or place.</div>`;
         return;
       }
+
       list.innerHTML = `<div class="v051-search-state">Searching…</div>`;
       timer = setTimeout(async () => {
         try {
@@ -524,27 +514,15 @@
     return dialog;
   }
 
-  let destinationChip = null;
-
   function updateDestinationChip() {
-    if (!destinationChip || !selects.destination) return;
-    const key = selects.destination.value;
-    const location = window.NVSTransit?.LOCATIONS?.[key];
-    const fallback = localKind(key, location);
-    const kind = selects.destination.dataset.v051Kind || fallback.kind;
-    const icon = selects.destination.dataset.v051Icon || fallback.icon;
-    const label = selects.destination.dataset.v051KindLabel || fallback.label;
-    destinationChip.dataset.kind = kind;
-    destinationChip.textContent = `${icon} ${label}`;
+    updateKindChip(selects.destination, destinationChip);
   }
 
   function installDestinationSearch() {
     const select = selects.destination;
     const field = select?.closest(".field");
-    if (!field) return;
-
-    const tools = field.querySelector(".location-tools");
-    if (!tools) return;
+    const tools = field?.querySelector(".location-tools");
+    if (!field || !tools) return;
 
     tools.querySelectorAll(".location-tool-button").forEach((button) => {
       if (/search place/i.test(button.textContent || "")) button.hidden = true;
@@ -554,7 +532,7 @@
     button.type = "button";
     button.className = "location-tool-button v051-destination-search-button";
     button.innerHTML = `<span aria-hidden="true">⌕</span><span>Search stop / place</span>`;
-    button.addEventListener("click", () => activeDestinationDialog?.openSearch?.());
+    button.addEventListener("click", () => destinationDialog?.openSearch?.());
     tools.prepend(button);
 
     destinationChip = document.createElement("span");
@@ -566,9 +544,8 @@
 
   function decorateViewingState() {
     if (!results) return;
-    const cards = [...results.querySelectorAll(":scope > .result[data-map-pair]")];
 
-    cards.forEach((card) => {
+    [...results.querySelectorAll(":scope > .result[data-map-pair]")].forEach((card) => {
       const selected = card.classList.contains("map-selected");
       let chip = card.querySelector(":scope > .v051-viewing-chip");
 
@@ -591,7 +568,6 @@
     results.classList.remove("v051-focus-mode");
     [...results.querySelectorAll(":scope > .result")].forEach((card) => {
       card.classList.remove("v051-focused", "v051-compact", "v051-compact-left", "v051-compact-right");
-      card.style.removeProperty("order");
     });
   }
 
@@ -622,9 +598,8 @@
 
   function bindJourneyFocus() {
     if (!results) return;
-    const cards = [...results.querySelectorAll(":scope > .result")];
 
-    cards.forEach((card) => {
+    [...results.querySelectorAll(":scope > .result")].forEach((card) => {
       const details = card.querySelector(".journey-details");
       if (!details || details.dataset.v051FocusBound === "true") return;
       details.dataset.v051FocusBound = "true";
@@ -652,14 +627,13 @@
 
   function installGlobalClose() {
     document.addEventListener("pointerdown", (event) => {
-      const insideOrigin = event.target.closest(".v051-origin-control");
-      if (!insideOrigin) closeAllOriginResults();
+      if (!event.target.closest(".v051-origin-control")) closeAllOriginResults();
     });
   }
 
   buildOriginSearch(selects.personA, "your starting point");
   buildOriginSearch(selects.personB, "friend's starting point");
-  activeDestinationDialog = buildDestinationDialog();
+  destinationDialog = buildDestinationDialog();
   installDestinationSearch();
   installCompactCardSwitching();
   installGlobalClose();
