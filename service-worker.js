@@ -1,4 +1,4 @@
-const CACHE_NAME = "meet-schwerin-v0.5.2-r3";
+const CACHE_NAME = "meet-schwerin-v0.6.0-r1";
 
 const APP_SHELL = [
   "./",
@@ -55,7 +55,6 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const requestUrl = new URL(event.request.url);
-
   if (requestUrl.origin !== self.location.origin) return;
 
   if (event.request.mode === "navigate") {
