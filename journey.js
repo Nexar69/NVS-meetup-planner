@@ -25,21 +25,21 @@
 
   function formatTime(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
-    return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(date);
-  }
-
-  function getTargetDate() {
-    if (!dateInput?.value || !timeInput?.value) return null;
-    const target = new Date(`${dateInput.value}T${timeInput.value}`);
-    return Number.isNaN(target.getTime()) ? null : target;
+    return new Intl.DateTimeFormat("de-DE", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
   }
 
   function currentContextFromForm() {
+    const target = dateInput?.value && timeInput?.value
+      ? new Date(`${dateInput.value}T${timeInput.value}`)
+      : null;
     return {
       personA: personAInput?.value,
       personB: personBInput?.value,
       destination: destinationInput?.value,
-      target: getTargetDate(),
+      target: target && !Number.isNaN(target.getTime()) ? target : null,
     };
   }
 
@@ -69,6 +69,7 @@
     const heading = resultsSection.querySelector(".results-heading");
     if (heading) heading.insertAdjacentElement("afterend", board);
     else resultsSection.prepend(board);
+
     board.querySelector("#recalculateButton")?.addEventListener("click", () => plannerForm?.requestSubmit());
     return board;
   }
@@ -90,9 +91,13 @@
     return `
       <div class="departure-person ${countdown.state}">
         <div class="departure-person-name">
-          <span class="person-dot ${kind}" aria-hidden="true"></span><span>${escapeHtml(label)}</span>
+          <span class="person-dot ${kind}" aria-hidden="true"></span>
+          <span>${escapeHtml(label)}</span>
         </div>
-        <div class="departure-person-clock"><strong>${formatTime(route.departure)}</strong><span>${escapeHtml(countdown.text)}</span></div>
+        <div class="departure-person-clock">
+          <strong>${formatTime(route.departure)}</strong>
+          <span>${escapeHtml(countdown.text)}</span>
+        </div>
       </div>
     `;
   }
@@ -133,17 +138,41 @@
   function segmentMeta(segment) {
     const items = [];
     if (segment.headsign) items.push(`toward ${segment.headsign}`);
-    if (segment.platformFrom) items.push(`platform ${segment.platformFrom}`);
     const delay = delayLabel(segment);
     if (delay) items.push(delay);
     if (Number.isFinite(segment.duration)) items.push(`${segment.duration} min`);
     return items.join(" · ");
   }
 
+  function withPlatform(name, platform) {
+    const cleanName = String(name || "").trim();
+    const cleanPlatform = String(platform || "").trim();
+    if (!cleanPlatform) return cleanName;
+    if (!cleanName) return `Stop ${cleanPlatform}`;
+
+    const normalizedName = cleanName.toLocaleLowerCase("de-DE");
+    const normalizedPlatform = cleanPlatform.toLocaleLowerCase("de-DE");
+    const suffixPatterns = [
+      ` ${normalizedPlatform}`,
+      `(${normalizedPlatform})`,
+      `platform ${normalizedPlatform}`,
+      `steig ${normalizedPlatform}`,
+      `gleis ${normalizedPlatform}`,
+    ];
+    if (suffixPatterns.some((suffix) => normalizedName.endsWith(suffix))) return cleanName;
+
+    return `${cleanName} ${cleanPlatform}`;
+  }
+
   function intermediateHtml(segment) {
     const stops = Array.isArray(segment.intermediateStops) ? segment.intermediateStops : [];
     if (!stops.length) return "";
-    const names = stops.map((stop) => typeof stop === "string" ? stop : stop?.name).filter(Boolean);
+    const names = stops
+      .map((stop) => {
+        if (typeof stop === "string") return stop;
+        return withPlatform(stop?.name, stop?.track);
+      })
+      .filter(Boolean);
     if (!names.length) return "";
     const visible = names.slice(0, 5);
     const suffix = names.length > visible.length ? ` +${names.length - visible.length} more` : "";
@@ -157,8 +186,8 @@
   }
 
   function renderSegment(segment, isLast, fallback = false) {
-    const from = segment.from || "Start";
-    const to = segment.to || "Next stop";
+    const from = withPlatform(segment.from || "Start", segment.platformFrom);
+    const to = withPlatform(segment.to || "Next stop", segment.platformTo);
     const meta = segmentMeta(segment);
     return `
       <div class="timeline-step ${isLast ? "last" : ""} ${fallback ? "fallback-step" : ""}">
@@ -264,10 +293,9 @@
         window.NVSTransit.fetchRoutes(context.personA, context.destination, context.target),
         window.NVSTransit.fetchRoutes(context.personB, context.destination, context.target),
       ]);
-      const recommendations = window.NVSRecommend.recommend(routesA, routesB, context.target);
-      if (!recommendations.primary) return;
 
-      currentRecommendations = recommendations;
+      currentRecommendations = window.NVSRecommend.recommend(routesA, routesB, context.target);
+      if (!currentRecommendations?.primary) return;
       currentContext = context;
       updateDepartureBoard();
       enrichResultCards();
@@ -282,8 +310,12 @@
   }
 
   if (dataBadge) {
-    new MutationObserver(() => scheduleRefresh(100)).observe(dataBadge, { attributes: true, attributeFilter: ["class"] });
+    new MutationObserver(() => scheduleRefresh(100)).observe(dataBadge, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
   }
+
   if (results) {
     new MutationObserver(() => {
       if (dataBadge?.classList.contains("live")) scheduleRefresh(80);
@@ -293,8 +325,8 @@
   [personAInput, personBInput, destinationInput, dateInput, timeInput].forEach((input) => {
     input?.addEventListener("change", () => scheduleRefresh(180));
   });
-  window.addEventListener("nvs-priority-change", () => scheduleRefresh(20));
-  window.addEventListener("nvs-recommendations-rendered", () => scheduleRefresh(20));
+
+  window.addEventListener("nvs-optimization-change", () => scheduleRefresh(30));
 
   ensureDepartureBoard();
   clearInterval(clockTimer);
