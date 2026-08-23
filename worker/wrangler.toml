@@ -7,8 +7,6 @@ workers_dev = true
 APP_URL = "https://nexar69.github.io/NVS-meetup-planner/"
 PLAN_TTL_SECONDS = "259200"
 
-# Cloudflare fills this namespace id during deployment/setup.
-# Binding name must stay PLANS because worker/src/index.js uses env.PLANS.
-[[kv_namespaces]]
-binding = "PLANS"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+# The PLANS KV binding is added from the Cloudflare dashboard after the
+# first Worker deployment. Keeping the namespace id out of this file lets
+# dashboard/GitHub deployments work without a placeholder id.
