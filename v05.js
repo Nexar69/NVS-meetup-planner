@@ -15,8 +15,6 @@
       const routes = await originalFetchRoutes(origin, destination, target);
       const now = new Date();
 
-      // For a future meetup today, routes that have already departed are no
-      // longer actionable. Keep a 30-second grace period for clock jitter.
       if (target instanceof Date && sameLocalDay(target, now) && target.getTime() > now.getTime()) {
         const minimumDeparture = now.getTime() - 30_000;
         return routes.filter((route) => route.departure?.getTime?.() >= minimumDeparture);
@@ -34,11 +32,11 @@
 
   function updateReleaseCopy() {
     const version = document.getElementById("versionLabel");
-    if (version) version.textContent = "v0.5.1 · Stop-aware search + focused journey view";
+    if (version) version.textContent = "v0.5.2 · Adjustable recommendations + restored route details";
 
     const liveNote = document.querySelector(".live-note div");
     if (liveNote) {
-      liveNote.innerHTML = `<strong>v0.5.1 polishes the live companion.</strong> Starting points are search-first, search results clearly distinguish transit stops from streets/places, same-name stops are prioritised, and opening a journey timeline now focuses that option instead of squeezing it into one-third of the screen.`;
+      liveNote.innerHTML = `<strong>v0.5.2 lets you choose what “best” means.</strong> Optimise for arriving together with less waiting, or for getting there faster. The recommendation cards, map and live departure board now share one scorer, and journey details fall back gracefully if a specific route lacks full leg metadata.`;
     }
   }
 
@@ -89,9 +87,6 @@
       }, 0);
     });
 
-    // The destination remains a normal select in v0.5.1. If the user changes
-    // it manually, clear metadata from a previously searched custom result so
-    // its type badge is recomputed from the newly selected place.
     destination?.addEventListener("change", (event) => {
       if (!event.isTrusted) return;
       applyTypeMetadata(destination, null);
