@@ -1,9 +1,11 @@
-const CACHE_NAME = "meet-schwerin-v0.1.1";
+const CACHE_NAME = "meet-schwerin-v0.2.0";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
+  "./live.css",
+  "./transit.js",
   "./app.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
@@ -39,6 +41,10 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const requestUrl = new URL(event.request.url);
+
+  // Never cache Transitous or any other third-party request. Timetable data
+  // should always come directly from the API so the app doesn't serve stale
+  // journeys from its PWA cache.
   if (requestUrl.origin !== self.location.origin) return;
 
   if (event.request.mode === "navigate") {
