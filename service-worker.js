@@ -1,4 +1,4 @@
-const CACHE_NAME = "meet-schwerin-v0.7.3-r1";
+const CACHE_NAME = "meet-schwerin-v0.7.4-r1";
 
 const APP_SHELL = [
   "./",
@@ -13,12 +13,14 @@ const APP_SHELL = [
   "./group.css",
   "./convergence.css",
   "./share-v072.css",
+  "./personal-v074.css",
   "./ux-v051.css",
   "./transit.js",
   "./places.js",
   "./share-v072.js",
   "./recommend.js",
   "./convergence.js",
+  "./convergence-v074.js",
   "./group-engine.js",
   "./map.js",
   "./v05.js",
@@ -30,6 +32,8 @@ const APP_SHELL = [
   "./group.js",
   "./group-events.js",
   "./convergence-ui.js",
+  "./personal-v074.js",
+  "./release-v074.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/icon-192.png",
