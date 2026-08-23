@@ -32,11 +32,11 @@
 
   function updateReleaseCopy() {
     const version = document.getElementById("versionLabel");
-    if (version) version.textContent = "v0.5.2 · Adjustable recommendations + restored route details";
+    if (version) version.textContent = "v0.7.0 · Group planning + first-meet priorities";
 
     const liveNote = document.querySelector(".live-note div");
     if (liveNote) {
-      liveNote.innerHTML = `<strong>v0.5.2 lets you choose what “best” means.</strong> Optimise for arriving together with less waiting, or for getting there faster. The recommendation cards, map and live departure board now share one scorer, and journey details fall back gracefully if a specific route lacks full leg metadata.`;
+      liveNote.innerHTML = `<strong>v0.7 coordinates the whole group.</strong> Add up to six people, rename and colour-code them, choose who should meet first, and keep using Together, Fastest, Easy or ASAP recommendations.`;
     }
   }
 
@@ -112,8 +112,18 @@
     }
   }
 
+  function loadGroupEventRouter() {
+    if (document.querySelector('script[data-group-events="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "./group-events.js";
+    script.defer = true;
+    script.dataset.groupEvents = "true";
+    document.body.appendChild(script);
+  }
+
   installDepartureGuard();
   updateReleaseCopy();
   installHiddenSelectSync();
   loadV051UX();
+  loadGroupEventRouter();
 })();
