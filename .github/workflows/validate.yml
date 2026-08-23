@@ -31,7 +31,13 @@ jobs:
           done < <(find . -maxdepth 1 -type f -name '*.js' -print0 | sort -z)
 
       - name: Syntax-check Cloudflare Worker
-        run: node --check worker/src/index.js
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            echo "Checking $file"
+            node --check "$file"
+          done < <(find worker/src -type f -name '*.js' -print0 | sort -z)
 
       - name: Validate Worker package JSON
         run: node -e "JSON.parse(require('fs').readFileSync('worker/package.json', 'utf8')); console.log('worker/package.json is valid JSON')"
