@@ -1,0 +1,244 @@
+.map-section {
+  margin-top: 28px;
+}
+
+.map-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.map-heading h2 {
+  margin: 0;
+}
+
+.map-subtitle {
+  margin: 5px 0 0;
+  color: #667085;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.map-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #e4e7ec;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.map-tabs button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #667085;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.map-tabs button.active {
+  background: #101828;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.15);
+}
+
+.map-tabs button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.map-card {
+  overflow: hidden;
+  border: 1px solid #e4e7ec;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 10px 34px rgba(16, 24, 40, 0.06);
+}
+
+.map-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #eaecf0;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.map-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.map-legend-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+.map-legend-swatch.you { background: #2563eb; }
+.map-legend-swatch.friend { background: #db2777; }
+.map-legend-swatch.meet { background: #101828; }
+
+.map-fit-button {
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  background: #fff;
+  color: #344054;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+#meetupMap {
+  width: 100%;
+  height: 440px;
+  background: #eef2f6;
+  z-index: 0;
+}
+
+.map-fallback {
+  display: none;
+  min-height: 260px;
+  place-items: center;
+  padding: 30px;
+  color: #667085;
+  text-align: center;
+}
+
+.map-fallback.visible {
+  display: grid;
+}
+
+.map-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  margin: 0;
+  padding: 10px 14px;
+  border-top: 1px solid #eaecf0;
+  color: #667085;
+  font-size: 12px;
+}
+
+.map-status strong {
+  color: #344054;
+}
+
+.meet-marker-wrap {
+  background: transparent;
+  border: 0;
+}
+
+.meet-marker {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 3px solid #fff;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 850;
+  box-shadow: 0 3px 10px rgba(16, 24, 40, 0.28);
+}
+
+.meet-marker.you { background: #2563eb; }
+.meet-marker.friend { background: #db2777; }
+.meet-marker.meet { background: #101828; }
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  color: #101828;
+}
+
+.map-popup strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.map-popup span {
+  color: #667085;
+  font-size: 12px;
+}
+
+.result[data-map-pair] {
+  cursor: pointer;
+  transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.result[data-map-pair]:active {
+  transform: scale(0.995);
+}
+
+.result.map-selected {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12), 0 10px 34px rgba(16, 24, 40, 0.07);
+}
+
+@media (max-width: 720px) {
+  .map-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .map-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    width: 100%;
+  }
+
+  .map-tabs button {
+    min-height: 44px;
+  }
+
+  #meetupMap {
+    height: 390px;
+  }
+
+  .map-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .map-fit-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 430px) {
+  .map-card {
+    border-radius: 16px;
+  }
+
+  #meetupMap {
+    height: 350px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1180px) {
+  #meetupMap {
+    height: 500px;
+  }
+}
