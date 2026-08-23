@@ -231,7 +231,7 @@
   }
 
   function updateTabs() {
-    document.querySelectorAll("[data-map-pair]").forEach((button) => {
+    document.querySelectorAll(".map-tabs [data-map-pair]").forEach((button) => {
       const type = button.dataset.mapPair;
       const available = Boolean(state.connections?.[type]);
       button.disabled = !available;
@@ -396,7 +396,7 @@
     state.refreshTimer = setTimeout(refreshFromLiveRoutes, delay);
   }
 
-  document.querySelectorAll("[data-map-pair]").forEach((button) => {
+  document.querySelectorAll(".map-tabs [data-map-pair]").forEach((button) => {
     button.addEventListener("click", () => selectPair(button.dataset.mapPair));
   });
 
