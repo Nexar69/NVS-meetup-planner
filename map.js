@@ -1,6 +1,6 @@
 (() => {
   const SCHWERIN_CENTER = [53.628, 11.415];
-  const ROUTE_COLORS = Object.freeze({ you: "#2563eb", friend: "#db2777" });
+  const FALLBACK_COLORS = ["#2563eb", "#db2777", "#7c3aed", "#ea580c", "#0891b2", "#65a30d"];
 
   const state = {
     map: null,
@@ -21,6 +21,7 @@
   const destinationInput = document.getElementById("destination");
   const dateInput = document.getElementById("date");
   const timeInput = document.getElementById("time");
+  const legend = document.querySelector(".map-legend");
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -41,10 +42,21 @@
     return Number.isNaN(target.getTime()) ? null : target;
   }
 
+  function fallbackMembers() {
+    return [
+      { id: "personA", name: "You", color: FALLBACK_COLORS[0], originKey: personAInput?.value, markerLabel: "A" },
+      { id: "personB", name: "Friend", color: FALLBACK_COLORS[1], originKey: personBInput?.value, markerLabel: "B" },
+    ];
+  }
+
+  function groupMembers() {
+    const members = window.NVSGroup?.getMembers?.();
+    return Array.isArray(members) && members.length >= 2 ? members : fallbackMembers();
+  }
+
   function getContext() {
     return {
-      personA: personAInput?.value,
-      personB: personBInput?.value,
+      members: groupMembers(),
       destination: destinationInput?.value,
       target: getTargetDate(),
     };
@@ -56,10 +68,11 @@
     return location ? [location.lat, location.lon] : null;
   }
 
-  function markerIcon(kind, label) {
+  function markerIcon(label, color, meet = false) {
+    const background = meet ? "#101828" : color || "#667085";
     return window.L.divIcon({
       className: "meet-marker-wrap",
-      html: `<span class="meet-marker ${kind}">${escapeHtml(label)}</span>`,
+      html: `<span class="meet-marker ${meet ? "meet" : ""}" style="background:${escapeHtml(background)}">${escapeHtml(label)}</span>`,
       iconSize: [32, 32],
       iconAnchor: [16, 16],
       popupAnchor: [0, -18],
@@ -94,13 +107,27 @@
 
   function clearRoutes() { state.routeLayer?.clearLayers(); }
 
-  function addLocationMarker(key, kind, label, detail) {
-    const point = latLngFor(key);
+  function addMemberMarker(member, detail) {
+    const point = latLngFor(member.originKey);
     if (!point || !state.routeLayer) return null;
     const marker = window.L.marker(point, {
-      icon: markerIcon(kind, label), keyboard: true, title: key,
+      icon: markerIcon(member.markerLabel, member.color, false),
+      keyboard: true,
+      title: member.name,
     }).addTo(state.routeLayer);
-    marker.bindPopup(`<div class="map-popup"><strong>${escapeHtml(key)}</strong><span>${escapeHtml(detail)}</span></div>`);
+    marker.bindPopup(`<div class="map-popup"><strong>${escapeHtml(member.name)}</strong><span>${escapeHtml(detail)}</span></div>`);
+    return marker;
+  }
+
+  function addMeetMarker(destination, detail) {
+    const point = latLngFor(destination);
+    if (!point || !state.routeLayer) return null;
+    const marker = window.L.marker(point, {
+      icon: markerIcon("M", "#101828", true),
+      keyboard: true,
+      title: destination,
+    }).addTo(state.routeLayer);
+    marker.bindPopup(`<div class="map-popup"><strong>${escapeHtml(locationFor(destination)?.label || destination)}</strong><span>${escapeHtml(detail)}</span></div>`);
     return marker;
   }
 
@@ -118,7 +145,12 @@
 
     const approximate = geometry.length < 2;
     const line = window.L.polyline(points, {
-      color, weight: 6, opacity: 0.88, lineCap: "round", lineJoin: "round", dashArray: approximate ? "9 9" : null,
+      color: color || "#667085",
+      weight: 6,
+      opacity: 0.86,
+      lineCap: "round",
+      lineJoin: "round",
+      dashArray: approximate ? "9 9" : null,
     }).addTo(state.routeLayer);
     line.bindTooltip(`${escapeHtml(label)} · ${formatTime(route.departure)} → ${formatTime(route.arrival)}`, { sticky: true });
     return { bounds: points, approximate };
@@ -133,6 +165,13 @@
     state.map.fitBounds(bounds, { padding: [34, 34], maxZoom: 15, animate: true });
   }
 
+  function updateLegend(members) {
+    if (!legend) return;
+    legend.innerHTML = members.map((member) => `
+      <span class="map-legend-item"><span class="group-map-legend-dot" style="background:${escapeHtml(member.color)}"></span>${escapeHtml(member.name)}</span>
+    `).join("") + `<span class="map-legend-item"><span class="map-legend-swatch meet" aria-hidden="true"></span>Meet</span>`;
+  }
+
   function updateTabs() {
     document.querySelectorAll(".map-tabs [data-map-pair]").forEach((button) => {
       const type = button.dataset.mapPair;
@@ -144,8 +183,7 @@
   }
 
   function tagResultCards() {
-    const cards = [...results.querySelectorAll(":scope > .result[data-map-pair]")];
-    cards.forEach((card) => {
+    [...results.querySelectorAll(":scope > .result[data-map-pair]")].forEach((card) => {
       const type = card.dataset.mapPair;
       card.classList.toggle("map-selected", type === state.selectedType);
       card.setAttribute("title", `Show ${type === "primary" ? "best" : "backup"} recommendation on map`);
@@ -156,50 +194,81 @@
     if (!state.map || !state.routeLayer) return;
     clearRoutes();
     const context = getContext();
+    updateLegend(context.members);
     const points = [];
-    const you = addLocationMarker(context.personA, "you", "A", "Your starting point");
-    const friend = addLocationMarker(context.personB, "friend", "B", "Friend's starting point");
-    const meet = addLocationMarker(context.destination, "meet", "M", "Meetup point");
-    [you, friend, meet].forEach((marker) => marker && points.push(marker.getLatLng()));
-
     const destination = latLngFor(context.destination);
-    const fromA = latLngFor(context.personA);
-    const fromB = latLngFor(context.personB);
-    if (fromA && destination) window.L.polyline([fromA, destination], { color: ROUTE_COLORS.you, weight: 4, opacity: 0.42, dashArray: "7 9" }).addTo(state.routeLayer);
-    if (fromB && destination) window.L.polyline([fromB, destination], { color: ROUTE_COLORS.friend, weight: 4, opacity: 0.42, dashArray: "7 9" }).addTo(state.routeLayer);
 
+    context.members.forEach((member) => {
+      if (!member.originKey) return;
+      const marker = addMemberMarker(member, `Starting at ${locationFor(member.originKey)?.label || member.originKey}`);
+      if (marker) points.push(marker.getLatLng());
+      const from = latLngFor(member.originKey);
+      if (from && destination) {
+        window.L.polyline([from, destination], {
+          color: member.color,
+          weight: 4,
+          opacity: 0.38,
+          dashArray: "7 9",
+        }).addTo(state.routeLayer);
+      }
+    });
+
+    const meet = addMeetMarker(context.destination, "Meetup point");
+    if (meet) points.push(meet.getLatLng());
     fitPoints(points);
-    if (mapStatus) mapStatus.innerHTML = "Choose your meetup preferences to load the <strong>recommended pair</strong>. Dashed lines are only a location preview.";
+    if (mapStatus) mapStatus.innerHTML = "Choose your meetup preferences to load the <strong>recommended group routes</strong>. Dashed lines are only a preview.";
   }
 
   function modeLabel(recommendations) {
-    if (recommendations?.mode === "fastest") return "⚡ Fastest practical match";
-    if (recommendations?.mode === "easy") return "😌 Easiest practical match";
-    return "🤝 Best together";
+    if (recommendations?.mode === "fastest") return "⚡ Fastest group match";
+    if (recommendations?.mode === "easy") return "😌 Easiest group match";
+    return "🤝 Best group match";
+  }
+
+  function assignmentsFor(group, context) {
+    if (Array.isArray(group?.assignments) && group.assignments.length) return group.assignments;
+    return [
+      { member: context.members[0], route: group?.routeA },
+      { member: context.members[1], route: group?.routeB },
+    ].filter((assignment) => assignment.member && assignment.route);
   }
 
   function drawSelectedPair() {
-    const pair = state.recommendations?.[state.selectedType];
+    const group = state.recommendations?.[state.selectedType];
     const context = state.context;
-    if (!state.map || !pair || !context) { renderPreview(); return; }
+    if (!state.map || !group || !context) { renderPreview(); return; }
 
     clearRoutes();
-    addLocationMarker(context.personA, "you", "A", `You leave ${formatTime(pair.routeA.departure)}`);
-    addLocationMarker(context.personB, "friend", "B", `Friend leaves ${formatTime(pair.routeB.departure)}`);
-    addLocationMarker(context.destination, "meet", "M", `${state.recommendations.timingMode === "asap" ? "Both there by" : "Together around"} ${formatTime(pair.latestArrival)}`);
+    updateLegend(context.members);
+    const assignments = assignmentsFor(group, context);
+    const bounds = [];
+    let approximate = false;
 
-    const routeA = drawRoute(pair.routeA, context.personA, context.destination, ROUTE_COLORS.you, "You");
-    const routeB = drawRoute(pair.routeB, context.personB, context.destination, ROUTE_COLORS.friend, "Friend");
-    fitPoints([...routeA.bounds, ...routeB.bounds]);
+    assignments.forEach((assignment) => {
+      const member = assignment.member;
+      const route = assignment.route;
+      const marker = addMemberMarker(member, `Leave ${formatTime(route.departure)} · arrive ${formatTime(route.arrival)}`);
+      if (marker) bounds.push(marker.getLatLng());
+      const drawn = drawRoute(route, member.originKey, context.destination, member.color, member.name);
+      bounds.push(...drawn.bounds);
+      approximate = approximate || drawn.approximate;
+    });
+
+    const meet = addMeetMarker(
+      context.destination,
+      `${state.recommendations.timingMode === "asap" ? "Everyone there by" : "Whole group together around"} ${formatTime(group.latestArrival)}`,
+    );
+    if (meet) bounds.push(meet.getLatLng());
+
+    fitPoints(bounds);
     updateTabs();
     tagResultCards();
 
-    const approximate = routeA.approximate || routeB.approximate;
-    const label = state.selectedType === "primary" ? modeLabel(state.recommendations) : "Backup recommendation";
+    const label = state.selectedType === "primary" ? modeLabel(state.recommendations) : "Backup group recommendation";
     if (mapStatus) {
       mapStatus.innerHTML = approximate
-        ? `<strong>${label}</strong> · Some path geometry was unavailable, so dashed sections are approximate.`
-        : `<strong>${label}</strong> · Both routes use Transitous/MOTIS journey geometry.`;
+        ? `<strong>${label}</strong> · Some route geometry was unavailable, so dashed sections are approximate.`
+        : `<strong>${label}</strong> · ${assignments.length} live journeys converge on the meetup point.`;
     }
   }
 
@@ -211,7 +280,7 @@
 
   async function refreshFromLiveRoutes() {
     const context = getContext();
-    if (!context.target || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommend) { renderPreview(); return; }
+    if (!context.target || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommendGroup) { renderPreview(); return; }
 
     if (!dataBadge?.classList.contains("live")) {
       state.recommendations = null;
@@ -222,19 +291,26 @@
       return;
     }
 
+    if (context.members.some((member) => !member.originKey)) {
+      renderPreview();
+      return;
+    }
+
     try {
-      const [routesA, routesB] = await Promise.all([
-        window.NVSTransit.fetchRoutes(context.personA, context.destination, context.target),
-        window.NVSTransit.fetchRoutes(context.personB, context.destination, context.target),
-      ]);
-      const recommendations = window.NVSRecommend.recommend(routesA, routesB, context.target);
+      const routeSets = await Promise.all(
+        context.members.map((member) => window.NVSTransit.fetchRoutes(member.originKey, context.destination, context.target)),
+      );
+      if (routeSets.some((routes) => !routes.length)) { renderPreview(); return; }
+      const recommendations = window.NVSRecommend.recommendGroup(routeSets, context.members, context.target, {
+        priorityIds: window.NVSGroup?.getPriorityIds?.() || [],
+      });
       if (!recommendations.primary) { renderPreview(); return; }
       state.recommendations = recommendations;
       state.context = context;
       if (!recommendations[state.selectedType]) state.selectedType = "primary";
       drawSelectedPair();
     } catch (error) {
-      console.warn("Map route refresh failed:", error);
+      console.warn("Group map refresh failed:", error);
       renderPreview();
     }
   }
@@ -251,23 +327,26 @@
     if (card) selectPair(card.dataset.mapPair);
   });
 
-  [personAInput, personBInput, destinationInput].forEach((input) => {
-    input?.addEventListener("change", () => {
-      state.recommendations = null;
-      state.selectedType = "primary";
-      renderPreview();
-      scheduleRefresh(250);
-    });
-  });
-  [dateInput, timeInput].forEach((input) => input?.addEventListener("change", () => scheduleRefresh(250)));
-
+  [personAInput, personBInput, destinationInput, dateInput, timeInput].forEach((input) => input?.addEventListener("change", () => scheduleRefresh(220)));
   window.addEventListener("nvs-priority-change", () => { state.selectedType = "primary"; scheduleRefresh(20); });
   window.addEventListener("nvs-timing-change", () => { state.selectedType = "primary"; scheduleRefresh(20); });
+  window.addEventListener("nvs-group-change", () => { state.selectedType = "primary"; state.recommendations = null; renderPreview(); scheduleRefresh(40); });
+  window.addEventListener("nvs-group-recommendations-rendered", (event) => {
+    const detail = event.detail || {};
+    if (!detail.recommendations) return;
+    state.recommendations = detail.recommendations;
+    state.context = {
+      members: detail.members || groupMembers(),
+      destination: detail.destination || destinationInput?.value,
+      target: detail.target || getTargetDate(),
+    };
+    state.selectedType = "primary";
+    drawSelectedPair();
+  });
 
   if (dataBadge) new MutationObserver(() => scheduleRefresh(120)).observe(dataBadge, { attributes: true, attributeFilter: ["class"] });
   if (results) new MutationObserver(() => {
     tagResultCards();
-    if (dataBadge?.classList.contains("live")) scheduleRefresh(80);
   }).observe(results, { childList: true });
 
   window.addEventListener("resize", () => state.map?.invalidateSize({ pan: false }));
