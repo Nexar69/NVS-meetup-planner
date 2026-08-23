@@ -30,6 +30,7 @@
   <link rel="stylesheet" href="recommend.css">
   <link rel="stylesheet" href="group.css">
   <link rel="stylesheet" href="convergence.css">
+  <link rel="stylesheet" href="share-v072.css">
 </head>
 
 <body>
@@ -69,7 +70,7 @@
           <h1 id="page-title">Arrive together, not just <em>there</em>.</h1>
           <p class="subtitle">
             Plan real public-transport meetups for two to six people, choose what “best” means,
-            and see where friends join each other before the whole group comes together.
+            see where friends join each other, and share read-only group or personal route views.
           </p>
         </div>
 
@@ -170,8 +171,8 @@
           <div class="live-note">
             <span aria-hidden="true">●</span>
             <div>
-              <strong>v0.7.1 understands route convergence.</strong>
-              Every group member stays visible on the map, ★ markers show intermediate meet/join points, and matching onward transit is highlighted as shared travel.
+              <strong>v0.7.2 makes a plan shareable.</strong>
+              Map markers use 1–6, the top Share button creates a read-only whole-group link, and every person's result row has its own personal-view link under the trip duration.
             </div>
           </div>
 
@@ -187,7 +188,7 @@
           <div>
             <p class="section-kicker">Map</p>
             <h2 id="map-title">See the group converge</h2>
-            <p class="map-subtitle">Every person keeps their own colour; ★ is an intermediate join and M is the final meetup.</p>
+            <p class="map-subtitle">People are numbered 1–6 in group order; ★ is an intermediate join and M is the final meetup.</p>
           </div>
 
           <div class="map-tabs" aria-label="Choose which recommendation to show">
@@ -242,7 +243,7 @@
 
       <footer>
         <p>Unofficial prototype · Not affiliated with Nahverkehr Schwerin.</p>
-        <p id="versionLabel">v0.7.1 · Group route convergence</p>
+        <p id="versionLabel">v0.7.2 · Read-only group & personal sharing</p>
         <div class="source-links" aria-label="Data and source links">
           <a href="https://transitous.org/" target="_blank" rel="noopener">Routing: Transitous</a>
           <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transit data sources</a>
@@ -290,6 +291,7 @@
   ></script>
   <script src="transit.js"></script>
   <script src="places.js"></script>
+  <script src="share-v072.js"></script>
   <script src="recommend.js"></script>
   <script src="convergence.js"></script>
   <script src="group-engine.js"></script>
