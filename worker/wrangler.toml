@@ -1,0 +1,14 @@
+name = "meet-schwerin"
+main = "src/index.js"
+compatibility_date = "2026-08-23"
+workers_dev = true
+
+[vars]
+APP_URL = "https://nexar69.github.io/NVS-meetup-planner/"
+PLAN_TTL_SECONDS = "259200"
+
+# Cloudflare fills this namespace id during deployment/setup.
+# Binding name must stay PLANS because worker/src/index.js uses env.PLANS.
+[[kv_namespaces]]
+binding = "PLANS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
