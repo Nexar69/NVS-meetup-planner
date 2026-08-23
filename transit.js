@@ -3,8 +3,8 @@
   const REQUEST_TIMEOUT_MS = 14_000;
   const CACHE_TTL_MS = 2 * 60_000;
 
-  // Built-in Schwerin presets. v0.4 can also register temporary/search/GPS
-  // locations at runtime without changing the route-matching code.
+  // Built-in Schwerin presets. Search/GPS locations can also be registered
+  // at runtime without changing the route-matching code.
   const LOCATIONS = {
     "Lankow-Siedlung": {
       label: "Lankow-Siedlung",
@@ -30,6 +30,11 @@
       label: "Hauptbahnhof",
       lat: 53.6342,
       lon: 11.4089,
+    },
+    "Schlosspark-Center": {
+      label: "Schlosspark-Center",
+      lat: 53.62824,
+      lon: 11.40874,
     },
   };
 
@@ -77,6 +82,14 @@
       if (date) return date;
     }
     return null;
+  }
+
+  function firstText(...values) {
+    for (const value of values) {
+      if (typeof value === "string" && value.trim()) return value.trim();
+      if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    }
+    return "";
   }
 
   function valueAt(obj, paths) {
@@ -140,12 +153,11 @@
   }
 
   function routeName(leg) {
-    return (
-      leg.routeShortName ||
-      valueAt(leg, ["route.shortName"]) ||
-      valueAt(leg, ["route.name"]) ||
-      leg.tripShortName ||
-      ""
+    return firstText(
+      leg.routeShortName,
+      valueAt(leg, ["route.shortName"]),
+      valueAt(leg, ["route.name"]),
+      leg.tripShortName,
     );
   }
 
@@ -159,6 +171,7 @@
       SUBURBAN: "S-Bahn",
       SUBWAY: "U-Bahn",
       FERRY: "Ferry",
+      BICYCLE: "Bike",
     };
     return labels[normalized] || (normalized ? normalized[0] + normalized.slice(1).toLowerCase() : "Transit");
   }
@@ -185,6 +198,76 @@
     const line = routeName(leg);
     const label = modeLabel(mode);
     return line ? `${label} ${line}` : label;
+  }
+
+  function placeName(value, fallback = "") {
+    if (typeof value === "string") return value.trim();
+    if (!value || typeof value !== "object") return fallback;
+
+    return firstText(
+      value.name,
+      value.displayName,
+      value.label,
+      value.stopName,
+      valueAt(value, ["stop.name"]),
+      valueAt(value, ["stop.displayName"]),
+      valueAt(value, ["station.name"]),
+      fallback,
+    );
+  }
+
+  function platformName(value) {
+    if (!value || typeof value !== "object") return "";
+    return firstText(
+      value.track,
+      value.platform,
+      value.platformCode,
+      valueAt(value, ["stop.platformCode"]),
+      valueAt(value, ["stop.platform"]),
+      valueAt(value, ["stop.track"]),
+    );
+  }
+
+  function delayMinutes(value) {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds) || seconds === 0) return 0;
+    return Math.round(seconds / 60);
+  }
+
+  function normalizeSegment(leg, index) {
+    const mode = String(leg.mode || "").toUpperCase();
+    const fromObject = valueAt(leg, ["from"]);
+    const toObject = valueAt(leg, ["to"]);
+    const departure = legDeparture(leg);
+    const arrival = legArrival(leg);
+    const line = routeName(leg);
+    const modeText = modeLabel(mode);
+    const headsign = firstText(
+      leg.headsign,
+      leg.tripHeadsign,
+      valueAt(leg, ["trip.headsign"]),
+      valueAt(leg, ["routeLongName"]),
+    );
+
+    return {
+      index,
+      mode,
+      modeLabel: modeText,
+      line,
+      title: mode === "WALK" ? "Walk" : line ? `${modeText} ${line}` : modeText,
+      from: placeName(fromObject, firstText(leg.fromName, leg.startName)),
+      to: placeName(toObject, firstText(leg.toName, leg.endName)),
+      departure,
+      arrival,
+      duration: legDurationMinutes(leg),
+      platformFrom: platformName(fromObject),
+      platformTo: platformName(toObject),
+      headsign,
+      departureDelay: delayMinutes(leg.departureDelay),
+      arrivalDelay: delayMinutes(leg.arrivalDelay),
+      realtime: leg.realTime === true || leg.realtime === true ||
+        delayMinutes(leg.departureDelay) !== 0 || delayMinutes(leg.arrivalDelay) !== 0,
+    };
   }
 
   // MOTIS detailed legs encode geometry as a Google encoded polyline at
@@ -316,6 +399,7 @@
       transfers,
       realtime,
       geometry: itineraryGeometry(legs),
+      segments: legs.map(normalizeSegment),
       source: "live",
     };
   }
@@ -358,6 +442,7 @@
       maxDirectTime: "3600",
       fastestDirectFactor: "4",
       detailedLegs: "true",
+      detailedTransfers: "true",
       realtimeMode: "REALTIME",
       language: "de",
       timeout: "10",
@@ -369,6 +454,36 @@
   function cacheKey(origin, destination, target) {
     const bucket = Math.floor(target.getTime() / 300_000);
     return `${origin}|${destination}|${bucket}`;
+  }
+
+  function reviveRoute(route) {
+    return {
+      ...route,
+      departure: new Date(route.departure),
+      arrival: new Date(route.arrival),
+      segments: Array.isArray(route.segments)
+        ? route.segments.map((segment) => ({
+            ...segment,
+            departure: segment.departure ? new Date(segment.departure) : null,
+            arrival: segment.arrival ? new Date(segment.arrival) : null,
+          }))
+        : [],
+    };
+  }
+
+  function serializeRoute(route) {
+    return {
+      ...route,
+      departure: route.departure.toISOString(),
+      arrival: route.arrival.toISOString(),
+      segments: Array.isArray(route.segments)
+        ? route.segments.map((segment) => ({
+            ...segment,
+            departure: segment.departure?.toISOString?.() || null,
+            arrival: segment.arrival?.toISOString?.() || null,
+          }))
+        : [],
+    };
   }
 
   async function fetchRoutes(origin, destination, target) {
@@ -386,6 +501,24 @@
         transfers: 0,
         realtime: false,
         geometry: point ? [[point.lat, point.lon], [point.lat, point.lon]] : [],
+        segments: [{
+          index: 0,
+          mode: "WALK",
+          modeLabel: "Walk",
+          line: "",
+          title: "Walk",
+          from: LOCATIONS[origin]?.label || origin,
+          to: LOCATIONS[destination]?.label || destination,
+          departure,
+          arrival: target,
+          duration: 5,
+          platformFrom: "",
+          platformTo: "",
+          headsign: "",
+          departureDelay: 0,
+          arrivalDelay: 0,
+          realtime: false,
+        }],
         source: "local",
       }];
     }
@@ -393,11 +526,7 @@
     const key = cacheKey(origin, destination, target);
     const cached = routeCache.get(key);
     if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) {
-      return cached.routes.map((route) => ({
-        ...route,
-        departure: new Date(route.departure),
-        arrival: new Date(route.arrival),
-      }));
+      return cached.routes.map(reviveRoute);
     }
 
     const controller = new AbortController();
@@ -442,11 +571,7 @@
 
     routeCache.set(key, {
       createdAt: Date.now(),
-      routes: routes.map((route) => ({
-        ...route,
-        departure: route.departure.toISOString(),
-        arrival: route.arrival.toISOString(),
-      })),
+      routes: routes.map(serializeRoute),
     });
 
     return routes;
