@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="places.css">
   <link rel="stylesheet" href="fair.css">
   <link rel="stylesheet" href="journey.css">
+  <link rel="stylesheet" href="recommend.css">
 </head>
 
 <body>
@@ -66,7 +67,7 @@
           <h1 id="page-title">Arrive together, not just <em>there</em>.</h1>
           <p class="subtitle">
             Search real Schwerin places, compare live public transport, see both journeys on the map,
-            know when to leave — or let the app find a fair meetup point for both of you.
+            know when to leave — and choose whether less waiting or less travel time matters more.
           </p>
         </div>
 
@@ -167,8 +168,8 @@
           <div class="live-note">
             <span aria-hidden="true">●</span>
             <div>
-              <strong>v0.5 turns the planner into a live meetup companion.</strong>
-              The best pair now gets live leave countdowns and detailed journey timelines, while Fair Meetup can compare a small set of central Schwerin hubs only when you explicitly ask it to.
+              <strong>v0.5.2 lets you choose what “best” means.</strong>
+              Optimise for arriving together with less waiting, or for getting there faster. The cards, map and live departure board all use the same recommendation engine.
             </div>
           </div>
 
@@ -183,14 +184,13 @@
         <div class="map-heading">
           <div>
             <p class="section-kicker">Map</p>
-            <h2 id="map-title">See both journeys converge</h2>
+            <h2 id="map-title">See the recommended journeys</h2>
             <p class="map-subtitle">Blue is you, pink is your friend, and M is the meetup point.</p>
           </div>
 
-          <div class="map-tabs" aria-label="Choose which meetup option to show">
-            <button type="button" data-map-pair="early" aria-pressed="false">Early</button>
-            <button type="button" data-map-pair="best" class="active" aria-pressed="true">Best</button>
-            <button type="button" data-map-pair="later" aria-pressed="false">Later</button>
+          <div class="map-tabs" aria-label="Choose which recommendation to show">
+            <button type="button" data-map-pair="primary" class="active" aria-pressed="true">Best</button>
+            <button type="button" data-map-pair="backup" aria-pressed="false">Backup</button>
           </div>
         </div>
 
@@ -218,8 +218,8 @@
       <section class="results-section" aria-labelledby="results-title">
         <div class="results-heading">
           <div>
-            <p class="section-kicker">Suggestions</p>
-            <h2 id="results-title">Three ways to meet</h2>
+            <p class="section-kicker">Recommendations</p>
+            <h2 id="results-title">Best matches</h2>
           </div>
           <p class="summary" id="summary" aria-live="polite"></p>
         </div>
@@ -232,16 +232,16 @@
         <div>
           <strong>What makes this different?</strong>
           <p>
-            Normal journey planners optimize one route at a time. Meet Schwerin scores
-            <em>pairs</em> of real journeys, balancing target-time accuracy with how long
-            either person waits for the other — and can now compare candidate meetup places too.
+            Normal journey planners optimise one route at a time. Meet Schwerin scores
+            <em>pairs</em> of real journeys and now lets you decide whether synchronised arrival
+            or minimum travel time should matter more.
           </p>
         </div>
       </section>
 
       <footer>
         <p>Unofficial prototype · Not affiliated with Nahverkehr Schwerin.</p>
-        <p id="versionLabel">v0.5.0 · Live departure board + fair meetup beta</p>
+        <p id="versionLabel">v0.5.2 · Adjustable recommendations + restored route details</p>
         <div class="source-links" aria-label="Data and source links">
           <a href="https://transitous.org/" target="_blank" rel="noopener">Routing: Transitous</a>
           <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transit data sources</a>
@@ -289,9 +289,11 @@
   ></script>
   <script src="transit.js"></script>
   <script src="places.js"></script>
+  <script src="recommend.js"></script>
   <script src="map.js"></script>
   <script src="v05.js"></script>
   <script src="app.js"></script>
+  <script src="results-v052.js"></script>
   <script src="fair.js"></script>
   <script src="journey.js"></script>
 </body>
