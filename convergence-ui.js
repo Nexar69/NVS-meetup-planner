@@ -1,6 +1,7 @@
 (() => {
   const results = document.getElementById("results");
   const destinationInput = document.getElementById("destination");
+  const FALLBACK_COLORS = ["#2563eb", "#db2777", "#7c3aed", "#ea580c", "#0891b2", "#65a30d"];
   let decorateTimer = null;
 
   function escapeHtml(value) {
@@ -15,6 +16,20 @@
   function formatTime(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
     return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(date);
+  }
+
+  function safeColor(value, fallback) {
+    const color = String(value || "").trim();
+    return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
+  }
+
+  function mixedGradient(event) {
+    const members = Array.isArray(event?.members) ? event.members : [];
+    const colors = members.map((member, index) => safeColor(member?.color, FALLBACK_COLORS[index % FALLBACK_COLORS.length]));
+    if (!colors.length) return "#101828";
+    if (colors.length === 1) return colors[0];
+    const slice = 360 / colors.length;
+    return `conic-gradient(${colors.map((color, index) => `${color} ${Math.round(index * slice)}deg ${Math.round((index + 1) * slice)}deg`).join(",")})`;
   }
 
   function locationFor(key) {
@@ -42,12 +57,12 @@
     if (!first) return;
 
     const everyoneTime = group.everyoneTogetherTime || group.latestArrival;
-    const signature = `${first.id}|${first.time.getTime()}|${everyoneTime instanceof Date ? everyoneTime.getTime() : ""}`;
+    const signature = `${first.id}|${first.time.getTime()}|${first.memberIds?.join(",") || ""}|${everyoneTime instanceof Date ? everyoneTime.getTime() : ""}`;
     if (summary.dataset.convergenceSignature === signature) return;
     summary.dataset.convergenceSignature = signature;
     summary.innerHTML = `
       <span class="convergence-inline">
-        <span class="convergence-inline-star">★</span>
+        <span class="convergence-inline-star mixed" style="background:${escapeHtml(mixedGradient(first))}">★</span>
         <strong>First join:</strong>
         ${escapeHtml(first.title)} · ${escapeHtml(first.label)} · <strong>${formatTime(first.time)}</strong>
       </span>
@@ -60,10 +75,11 @@
       ? `<small>Continue together on ${escapeHtml(event.sharedTransit.label)}</small>`
       : "";
     const icon = event.final ? "👥" : "★";
+    const style = event.final ? "" : ` style="background:${escapeHtml(mixedGradient(event))}"`;
     return `
       <div class="timeline-convergence-event ${escapeHtml(event.kind || "meet")}">
         <div class="timeline-convergence-time">${formatTime(event.time)}</div>
-        <div class="timeline-convergence-rail"><span class="timeline-convergence-star">${icon}</span></div>
+        <div class="timeline-convergence-rail"><span class="timeline-convergence-star ${event.final ? "" : "mixed"}"${style}>${icon}</span></div>
         <div class="timeline-convergence-copy">
           <strong>${escapeHtml(event.title)}</strong>
           <span>${escapeHtml(event.label)}</span>
@@ -90,7 +106,7 @@
         return;
       }
 
-      const signature = events.map((event) => `${event.id}:${event.time.getTime()}`).join("|");
+      const signature = events.map((event) => `${event.id}:${event.time.getTime()}:${event.memberIds?.join(",") || ""}`).join("|");
       if (existing?.dataset.signature === signature) return;
       existing?.remove();
 
@@ -139,7 +155,7 @@
   }
 
   const version = document.getElementById("versionLabel");
-  if (version) version.textContent = "v0.7.1 · Group route convergence";
+  if (version) version.textContent = "v0.7.3 · Stable map + meaningful joins";
 
   decorateExisting();
 })();
