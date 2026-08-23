@@ -138,6 +138,16 @@
     return true;
   }
 
+  function updateReleaseCopy() {
+    const version = document.getElementById("versionLabel");
+    if (version) version.textContent = "v0.6.0 · Meetup timing + smart route priorities";
+    const title = document.getElementById("results-title");
+    if (title) title.textContent = "Best meetup matches";
+    const liveNote = document.querySelector(".live-note div");
+    if (liveNote) liveNote.innerHTML = `<strong>v0.6 separates when you want to meet from how you want to travel.</strong> Choose a target time or Meet ASAP, then optimise for arriving together, getting there fastest, or taking an easier trip. Recommendations now explain why they were selected.`;
+  }
+
   window.renderConnections = renderRecommendedConnections;
+  updateReleaseCopy();
   setTimeout(() => document.getElementById("plannerForm")?.requestSubmit(), 0);
 })();
