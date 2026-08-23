@@ -170,6 +170,11 @@
     return line ? `${label} ${line}` : label;
   }
 
+  function hasNonZeroDelay(value) {
+    const delay = Number(value);
+    return Number.isFinite(delay) && delay !== 0;
+  }
+
   function normalizeItinerary(itinerary, index, origin, destination) {
     const legs = Array.isArray(itinerary.legs) ? itinerary.legs : [];
     const { departure, arrival } = itineraryTimes(itinerary);
@@ -195,8 +200,8 @@
       (leg) =>
         leg.realTime === true ||
         leg.realtime === true ||
-        Number(leg.departureDelay) !== 0 ||
-        Number(leg.arrivalDelay) !== 0,
+        hasNonZeroDelay(leg.departureDelay) ||
+        hasNonZeroDelay(leg.arrivalDelay),
     );
 
     return {
