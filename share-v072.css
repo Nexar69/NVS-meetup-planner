@@ -1,0 +1,246 @@
+/* v0.7.2: read-only group and personal share views. */
+
+.group-person-side {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  min-width: 54px;
+}
+
+.person-share-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 4px 7px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #fff;
+  color: #344054;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.person-share-link:hover,
+.person-share-link:focus-visible {
+  border-color: #98a2b3;
+  outline: 0;
+  background: #f8fafc;
+}
+
+.group-share-dialog {
+  width: min(520px, calc(100vw - 28px));
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  color: #101828;
+  box-shadow: 0 24px 80px rgba(16, 24, 40, 0.24);
+}
+
+.group-share-dialog::backdrop {
+  background: rgba(16, 24, 40, 0.5);
+  backdrop-filter: blur(3px);
+}
+
+.group-share-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 20px 14px;
+  border-bottom: 1px solid #eaecf0;
+}
+
+.group-share-head h2 {
+  margin: 2px 0 0;
+  font-size: 20px;
+}
+
+.group-share-close {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  background: #fff;
+  color: #475467;
+  font: inherit;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.group-share-copy {
+  padding: 18px 20px 4px;
+  color: #475467;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.group-share-copy p {
+  margin: 0 0 12px;
+}
+
+.group-share-warning {
+  padding: 11px 12px;
+  border: 1px solid #fedf89;
+  border-radius: 12px;
+  background: #fffaeb;
+  color: #93370d;
+}
+
+.group-share-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 14px 20px 20px;
+}
+
+.group-share-actions .search-button,
+.group-share-actions .secondary-button {
+  width: auto;
+  min-height: 42px;
+  margin: 0;
+}
+
+.shared-viewer-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: -6px 0 18px;
+  padding: 13px 15px;
+  border: 1px solid #b2ccff;
+  border-radius: 16px;
+  background: #eff4ff;
+  color: #1849a9;
+}
+
+.shared-viewer-banner > div {
+  display: grid;
+  gap: 2px;
+}
+
+.shared-viewer-banner strong {
+  color: #102a56;
+  font-size: 14px;
+}
+
+.shared-viewer-banner small {
+  color: #475467;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.shared-viewer-lock {
+  margin-bottom: 2px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.shared-viewer-exit {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border: 1px solid #84adff;
+  border-radius: 10px;
+  background: #fff;
+  color: #175cd3;
+  font-size: 11px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.shared-viewer .planner-card,
+.shared-viewer .mobile-action,
+.shared-viewer #shareMeetupButton,
+.shared-viewer .map-tabs,
+.shared-viewer #recalculateButton,
+.shared-viewer .person-share-link {
+  display: none !important;
+}
+
+.shared-viewer .results > .result[data-map-pair="backup"] {
+  display: none;
+}
+
+.shared-viewer .results {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shared-person-muted {
+  opacity: 0.34;
+  filter: saturate(0.45);
+  transition: opacity 160ms ease;
+}
+
+.shared-person-focus {
+  position: relative;
+  opacity: 1;
+  filter: none;
+}
+
+.group-card-person.shared-person-focus {
+  margin: 0 -8px;
+  padding-right: 8px;
+  padding-left: 8px;
+  border-radius: 10px;
+  background: #f8fafc;
+  box-shadow: inset 3px 0 0 #101828;
+}
+
+.route-timeline.shared-person-focus {
+  box-shadow: 0 0 0 2px rgba(16, 24, 40, 0.1);
+}
+
+.shared-map-muted {
+  opacity: 0.38 !important;
+  filter: saturate(0.45);
+}
+
+.shared-map-focus {
+  z-index: 850 !important;
+  opacity: 1 !important;
+  filter: drop-shadow(0 4px 6px rgba(16, 24, 40, 0.28));
+}
+
+.shared-viewer[data-shared-view="person"] .map-status::after {
+  content: " · Personal route highlighted";
+  font-weight: 800;
+}
+
+@media (max-width: 620px) {
+  .group-share-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .group-share-actions .search-button,
+  .group-share-actions .secondary-button {
+    width: 100%;
+  }
+
+  .shared-viewer-banner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .shared-viewer-exit {
+    align-self: stretch;
+    text-align: center;
+  }
+
+  .group-person-side {
+    min-width: 48px;
+  }
+
+  .person-share-link {
+    padding: 4px 6px;
+    font-size: 9px;
+  }
+}
