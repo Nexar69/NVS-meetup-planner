@@ -1,5 +1,5 @@
-const APP_VERSION = "0.1.1";
-const STORAGE_KEY = "nvs-meetup-planner-state-v1";
+const APP_VERSION = "0.2.0";
+const STORAGE_KEY = "nvs-meetup-planner-state-v2";
 
 const plannerForm = document.getElementById("plannerForm");
 const dateInput = document.getElementById("date");
@@ -11,14 +11,19 @@ const results = document.getElementById("results");
 const summary = document.getElementById("summary");
 const connectionPill = document.getElementById("connectionPill");
 const connectionLabel = document.getElementById("connectionLabel");
+const dataBadge = document.getElementById("dataBadge");
+const dataBadgeLabel = document.getElementById("dataBadgeLabel");
 const installButton = document.getElementById("installButton");
 const installDialog = document.getElementById("installDialog");
 const installInstructions = document.getElementById("installInstructions");
 const dialogInstallButton = document.getElementById("dialogInstallButton");
 const toast = document.getElementById("toast");
+const mobileSearchButton = document.getElementById("mobileSearchButton");
+const desktopSearchButton = plannerForm.querySelector(".desktop-search");
 
 let deferredInstallPrompt = null;
 let toastTimer = null;
+let activeSearchId = 0;
 
 function localDateString(date = new Date()) {
   const year = date.getFullYear();
@@ -70,7 +75,16 @@ function showToast(message) {
   toast.textContent = message;
   toast.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove("show"), 2200);
+  toastTimer = setTimeout(() => toast.classList.remove("show"), 2600);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function saveState() {
@@ -89,24 +103,21 @@ function saveState() {
   }
 }
 
+function optionExists(select, value) {
+  return [...select.options].some((option) => option.value === value);
+}
+
 function loadState() {
   dateInput.value = localDateString();
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
-
     const state = JSON.parse(raw);
 
-    if ([...personAInput.options].some((option) => option.value === state.personA)) {
-      personAInput.value = state.personA;
-    }
-    if ([...personBInput.options].some((option) => option.value === state.personB)) {
-      personBInput.value = state.personB;
-    }
-    if ([...destinationInput.options].some((option) => option.value === state.destination)) {
-      destinationInput.value = state.destination;
-    }
+    if (optionExists(personAInput, state.personA)) personAInput.value = state.personA;
+    if (optionExists(personBInput, state.personB)) personBInput.value = state.personB;
+    if (optionExists(destinationInput, state.destination)) destinationInput.value = state.destination;
     if (typeof state.date === "string" && state.date) dateInput.value = state.date;
     if (typeof state.time === "string" && state.time) timeInput.value = state.time;
   } catch {
@@ -114,39 +125,37 @@ function loadState() {
   }
 }
 
-// Demo-only journey generator. v0.2 will replace this boundary with real
-// public-transport API results while keeping the pairing/scoring code below.
 function generateDemoRoutes(origin, destination, targetTime) {
   const baseDurations = {
-    Lankow: 22,
-    "Hegelstraße": 15,
+    "Lankow-Siedlung": 27,
+    "Hegelstraße": 18,
     "Dreescher Markt": 12,
+    Marienplatz: 17,
+    Hauptbahnhof: 20,
   };
 
-  let duration = baseDurations[origin] ?? 18;
-  if (destination === "Hauptbahnhof") duration += 5;
+  let duration = baseDurations[origin] ?? 20;
+  if (destination === "Hauptbahnhof") duration += 4;
   if (destination === "Marienplatz") duration += 2;
-  if (origin === destination) duration = 7;
+  if (origin === destination) duration = 5;
 
-  const arrivalOffsets = [-30, -20, -10, -3, 6, 16, 26];
+  const arrivalOffsets = [-32, -21, -11, -3, 7, 17, 28];
 
   return arrivalOffsets.map((offset, index) => {
     const arrival = addMinutes(targetTime, offset);
     const departure = addMinutes(arrival, -duration);
 
     return {
-      id: `${origin}-${destination}-${index}`,
+      id: `${origin}-${destination}-demo-${index}`,
       origin,
       destination,
       departure,
       arrival,
       duration,
-      description:
-        origin === destination
-          ? "Short walk"
-          : origin === "Lankow" || origin === "Hegelstraße"
-            ? "Walk → Tram 2 → Walk"
-            : "Walk → Bus/Tram → Walk",
+      description: origin === destination ? "Short walk" : "Demo public-transport route",
+      transfers: 0,
+      realtime: false,
+      source: "demo",
     };
   });
 }
@@ -157,14 +166,17 @@ function createPairs(routesA, routesB, target) {
   for (const routeA of routesA) {
     for (const routeB of routesB) {
       const latestArrival = routeA.arrival > routeB.arrival ? routeA.arrival : routeB.arrival;
+      const earliestArrival = routeA.arrival < routeB.arrival ? routeA.arrival : routeB.arrival;
       const waitingDifference = minutesBetween(routeA.arrival, routeB.arrival);
       const targetDifference = signedMinutesBetween(latestArrival, target);
+
       const score = Math.abs(targetDifference) + waitingDifference * 1.8;
 
       pairs.push({
         routeA,
         routeB,
         latestArrival,
+        earliestArrival,
         waitingDifference,
         targetDifference,
         score,
@@ -176,56 +188,48 @@ function createPairs(routesA, routesB, target) {
 }
 
 function scoreDirectionalPair(pair, target, direction) {
-  const targetDistance =
-    direction === "early"
-      ? (target.getTime() - pair.latestArrival.getTime()) / 60_000
-      : (pair.latestArrival.getTime() - target.getTime()) / 60_000;
+  const targetDistance = direction === "early"
+    ? (target.getTime() - pair.latestArrival.getTime()) / 60_000
+    : (pair.earliestArrival.getTime() - target.getTime()) / 60_000;
 
-  return targetDistance + pair.waitingDifference * 1.5;
+  return Math.max(0, targetDistance) + pair.waitingDifference * 1.5;
 }
 
 function chooseConnections(pairs, target) {
+  if (!pairs.length) return { early: null, best: null, later: null };
+
   const best = [...pairs].sort((a, b) => a.score - b.score)[0];
 
   const early = pairs
-    .filter(
-      (pair) =>
-        pair !== best &&
-        pair.routeA.arrival <= target &&
-        pair.routeB.arrival <= target,
-    )
+    .filter((pair) => pair !== best && pair.latestArrival <= target)
     .sort(
       (a, b) =>
         scoreDirectionalPair(a, target, "early") -
         scoreDirectionalPair(b, target, "early"),
-    )[0];
+    )[0] || null;
 
   const later = pairs
-    .filter(
-      (pair) =>
-        pair !== best &&
-        pair.routeA.arrival >= target &&
-        pair.routeB.arrival >= target,
-    )
+    .filter((pair) => pair !== best && pair.earliestArrival >= target)
     .sort(
       (a, b) =>
         scoreDirectionalPair(a, target, "later") -
         scoreDirectionalPair(b, target, "later"),
-    )[0];
+    )[0] || null;
 
   return { early, best, later };
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+function routeMeta(route) {
+  const items = [];
+  if (Number.isFinite(route.transfers)) {
+    items.push(route.transfers === 0 ? "Direct" : `${route.transfers} change${route.transfers === 1 ? "" : "s"}`);
+  }
+  if (route.realtime) items.push("Realtime");
+  return items.join(" · ");
 }
 
 function renderPerson(name, route, personClass) {
+  const meta = routeMeta(route);
   return `
     <div class="person">
       <div>
@@ -244,6 +248,7 @@ function renderPerson(name, route, personClass) {
         <div class="journey-description">
           ${escapeHtml(route.description)}
         </div>
+        ${meta ? `<div class="route-meta">${escapeHtml(meta)}</div>` : ""}
       </div>
     </div>
   `;
@@ -255,8 +260,30 @@ function targetMessage(pair) {
   return `${pair.targetDifference} min late`;
 }
 
+function renderUnavailableCard(title, type, message) {
+  return `
+    <article class="result unavailable-result">
+      <div class="result-header">
+        <div>
+          <div class="result-title">${escapeHtml(title)}</div>
+          <div class="result-subtitle">${escapeHtml(message)}</div>
+        </div>
+        <span class="badge">${type === "early" ? "Early" : "Later"}</span>
+      </div>
+    </article>
+  `;
+}
+
 function renderCard(title, pair, type) {
-  if (!pair) return "";
+  if (!pair) {
+    return renderUnavailableCard(
+      title,
+      type,
+      type === "early"
+        ? "No suitable earlier pair appeared in this search window."
+        : "No suitable later pair appeared in this search window.",
+    );
+  }
 
   const labels = {
     early: "Early",
@@ -294,13 +321,95 @@ function renderCard(title, pair, type) {
   `;
 }
 
+function renderLoading() {
+  results.innerHTML = `
+    <div class="loading-card" role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <div>
+        <strong>Checking real connections…</strong>
+        <p>Comparing both routes around your target time.</p>
+      </div>
+    </div>
+  `;
+}
+
+function renderNoRoutes(personA, personB, destination) {
+  results.innerHTML = `
+    <div class="loading-card no-routes-card">
+      <span aria-hidden="true">⌁</span>
+      <div>
+        <strong>No usable connections found</strong>
+        <p>Transitous did not return journeys for ${escapeHtml(personA)} and ${escapeHtml(personB)} to ${escapeHtml(destination)} in this time window. Try a different time.</p>
+      </div>
+    </div>
+  `;
+}
+
+function setDataMode(mode) {
+  dataBadge.classList.remove("live", "loading", "fallback", "offline");
+  dataBadge.classList.add(mode);
+
+  const labels = {
+    live: "Live timetable",
+    loading: "Checking live data…",
+    fallback: "Demo fallback",
+    offline: "Offline demo",
+  };
+  dataBadgeLabel.textContent = labels[mode] || "Timetable";
+}
+
+function setSearching(searching) {
+  [mobileSearchButton, desktopSearchButton].forEach((button) => {
+    button.disabled = searching;
+    button.classList.toggle("is-loading", searching);
+    const label = button.querySelector("span:first-child");
+    if (label) label.textContent = searching ? "Checking routes…" : "Find connections";
+  });
+}
+
 function getTargetDate() {
   if (!dateInput.value || !timeInput.value) return null;
   const target = new Date(`${dateInput.value}T${timeInput.value}`);
   return Number.isNaN(target.getTime()) ? null : target;
 }
 
-function search({ scrollToResults = false } = {}) {
+function updateSummary(personA, personB, destination, target, suffix = "") {
+  summary.innerHTML = `
+    <strong>${escapeHtml(personA)}</strong> + <strong>${escapeHtml(personB)}</strong>
+    → ${escapeHtml(destination)} · ${formatShortDate(target)} at
+    <strong>${formatTime(target)}</strong>${suffix}
+  `;
+}
+
+function renderConnections(routesA, routesB, target) {
+  const pairs = createPairs(routesA, routesB, target);
+  const connections = chooseConnections(pairs, target);
+
+  if (!connections.best) return false;
+
+  results.innerHTML =
+    renderCard("A little early", connections.early, "early") +
+    renderCard("Closest together", connections.best, "best") +
+    renderCard("A little later", connections.later, "later");
+
+  return true;
+}
+
+function technicalFallback(personA, personB, destination, target, mode = "fallback") {
+  const routesA = generateDemoRoutes(personA, destination, target);
+  const routesB = generateDemoRoutes(personB, destination, target);
+  setDataMode(mode);
+  renderConnections(routesA, routesB, target);
+  updateSummary(
+    personA,
+    personB,
+    destination,
+    target,
+    ` <span class="summary-note">· ${mode === "offline" ? "offline demo" : "demo fallback"}</span>`,
+  );
+}
+
+async function search({ scrollToResults = false } = {}) {
   const target = getTargetDate();
   const personA = personAInput.value;
   const personB = personBInput.value;
@@ -313,28 +422,57 @@ function search({ scrollToResults = false } = {}) {
   }
 
   saveState();
-
-  const routesA = generateDemoRoutes(personA, destination, target);
-  const routesB = generateDemoRoutes(personB, destination, target);
-  const pairs = createPairs(routesA, routesB, target);
-  const connections = chooseConnections(pairs, target);
-
-  summary.innerHTML = `
-    <strong>${escapeHtml(personA)}</strong> + <strong>${escapeHtml(personB)}</strong>
-    → ${escapeHtml(destination)} · ${formatShortDate(target)} at
-    <strong>${formatTime(target)}</strong>
-  `;
-
-  results.innerHTML =
-    renderCard("A little early", connections.early, "early") +
-    renderCard("Closest together", connections.best, "best") +
-    renderCard("A little later", connections.later, "later");
+  updateSummary(personA, personB, destination, target);
 
   if (scrollToResults) {
     document.getElementById("results-title").scrollIntoView({
       behavior: "smooth",
       block: "start",
     });
+  }
+
+  if (!navigator.onLine) {
+    technicalFallback(personA, personB, destination, target, "offline");
+    return;
+  }
+
+  if (!window.NVSTransit?.fetchRoutes) {
+    technicalFallback(personA, personB, destination, target, "fallback");
+    showToast("Live routing module did not load; showing demo data.");
+    return;
+  }
+
+  const searchId = ++activeSearchId;
+  setSearching(true);
+  setDataMode("loading");
+  renderLoading();
+
+  try {
+    const [routesA, routesB] = await Promise.all([
+      window.NVSTransit.fetchRoutes(personA, destination, target),
+      window.NVSTransit.fetchRoutes(personB, destination, target),
+    ]);
+
+    if (searchId !== activeSearchId) return;
+
+    if (!routesA.length || !routesB.length) {
+      setDataMode("live");
+      renderNoRoutes(personA, personB, destination);
+      updateSummary(personA, personB, destination, target, ` <span class="summary-note">· live · checked ${formatTime(new Date())}</span>`);
+      return;
+    }
+
+    setDataMode("live");
+    renderConnections(routesA, routesB, target);
+    updateSummary(personA, personB, destination, target, ` <span class="summary-note">· live · checked ${formatTime(new Date())}</span>`);
+  } catch (error) {
+    if (searchId !== activeSearchId) return;
+
+    console.warn("Live routing failed; using demo fallback:", error);
+    technicalFallback(personA, personB, destination, target, "fallback");
+    showToast("Live timetable unavailable right now — showing clearly marked demo routes.");
+  } finally {
+    if (searchId === activeSearchId) setSearching(false);
   }
 }
 
@@ -354,7 +492,7 @@ function setTargetClock(value) {
 }
 
 function resetPlanner() {
-  personAInput.value = "Lankow";
+  personAInput.value = "Lankow-Siedlung";
   personBInput.value = "Hegelstraße";
   destinationInput.value = "Dreescher Markt";
   dateInput.value = localDateString();
@@ -373,10 +511,11 @@ function resetPlanner() {
 function updateConnectionStatus() {
   const online = navigator.onLine;
   connectionPill.classList.toggle("offline", !online);
-  connectionLabel.textContent = online ? "Online" : "Offline demo";
+  connectionLabel.textContent = online ? "Online" : "Offline";
 
   if (!online) {
-    showToast("Offline: the demo still works. Real routes will need a connection.");
+    setDataMode("offline");
+    showToast("Offline: saved app shell works, but real journeys need internet.");
   }
 }
 
@@ -457,7 +596,7 @@ plannerForm.addEventListener("submit", (event) => {
   search({ scrollToResults: window.innerWidth <= 620 });
 });
 
-document.getElementById("mobileSearchButton").addEventListener("click", () => {
+mobileSearchButton.addEventListener("click", () => {
   search({ scrollToResults: true });
 });
 
@@ -481,10 +620,7 @@ document.querySelectorAll("[data-time-value]").forEach((button) => {
 });
 
 [personAInput, personBInput, destinationInput, dateInput, timeInput].forEach((input) => {
-  input.addEventListener("change", () => {
-    saveState();
-    search();
-  });
+  input.addEventListener("change", saveState);
 });
 
 installButton.addEventListener("click", () => {
@@ -510,7 +646,10 @@ window.addEventListener("appinstalled", () => {
   showToast("Meet Schwerin installed");
 });
 
-window.addEventListener("online", updateConnectionStatus);
+window.addEventListener("online", () => {
+  updateConnectionStatus();
+  showToast("Back online — live routing is available again.");
+});
 window.addEventListener("offline", updateConnectionStatus);
 
 if ("serviceWorker" in navigator) {
