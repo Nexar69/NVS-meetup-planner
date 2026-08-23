@@ -1,5 +1,7 @@
 (() => {
-  const STORAGE_KEY = "meet-schwerin-optimization-v1";
+  const STORAGE_KEY = "meet-schwerin-optimization-v2";
+  const TIMING_KEY = "meet-schwerin-timing-v1";
+
   const MODES = Object.freeze({
     together: {
       label: "Arrive together",
@@ -11,17 +13,67 @@
       icon: "⚡",
       description: "Prefer the quickest practical journeys, even if the arrival gap is a little larger.",
     },
+    easy: {
+      label: "Easy trip",
+      icon: "😌",
+      description: "Prefer fewer changes and less walking without making the journey unnecessarily slow.",
+    },
+  });
+
+  const TIMING_MODES = Object.freeze({
+    target: {
+      label: "Around chosen time",
+      icon: "🎯",
+      description: "Stay close to the arrival time you picked.",
+    },
+    asap: {
+      label: "Meet ASAP",
+      icon: "🚀",
+      description: "Find the earliest realistic time both people can be there from now.",
+    },
   });
 
   let mode = "together";
+  let timingMode = "target";
 
-  function readMode() {
+  const plannerForm = document.getElementById("plannerForm");
+  const dateInput = document.getElementById("date");
+  const timeInput = document.getElementById("time");
+  const timeGrid = document.querySelector(".time-grid");
+  const quickTimes = document.querySelector(".quick-times");
+
+  function readState() {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved && MODES[saved]) mode = saved;
+      const savedMode = localStorage.getItem(STORAGE_KEY);
+      const savedTiming = localStorage.getItem(TIMING_KEY);
+      if (savedMode && MODES[savedMode]) mode = savedMode;
+      if (savedTiming && TIMING_MODES[savedTiming]) timingMode = savedTiming;
     } catch {
       // Local storage is optional.
     }
+  }
+
+  function pad(value) {
+    return String(value).padStart(2, "0");
+  }
+
+  function roundUp(date, minutes = 5) {
+    const copy = new Date(date);
+    copy.setSeconds(0, 0);
+    const remainder = copy.getMinutes() % minutes;
+    if (remainder) copy.setMinutes(copy.getMinutes() + minutes - remainder);
+    return copy;
+  }
+
+  function syncAsapAnchor() {
+    if (timingMode !== "asap" || !dateInput || !timeInput) return;
+
+    // Transitous needs a time anchor. Setting it one hour ahead makes the
+    // existing two-hour timetable window begin around now, while the scorer
+    // below still ranks by the real earliest shared arrival.
+    const anchor = roundUp(new Date(Date.now() + 60 * 60_000), 5);
+    dateInput.value = `${anchor.getFullYear()}-${pad(anchor.getMonth() + 1)}-${pad(anchor.getDate())}`;
+    timeInput.value = `${pad(anchor.getHours())}:${pad(anchor.getMinutes())}`;
   }
 
   function minutesBetween(a, b) {
@@ -32,8 +84,20 @@
     return Math.round((date.getTime() - target.getTime()) / 60_000);
   }
 
+  function walkingMinutes(route) {
+    const segments = Array.isArray(route?.segments) ? route.segments : [];
+    return segments
+      .filter((segment) => String(segment?.mode || "").toUpperCase() === "WALK")
+      .reduce((sum, segment) => sum + (Number(segment?.duration) || 0), 0);
+  }
+
+  function transfers(route) {
+    return Math.max(0, Number(route?.transfers) || 0);
+  }
+
   function createPairs(routesA, routesB, target) {
     const pairs = [];
+    const now = new Date();
 
     for (const routeA of routesA || []) {
       for (const routeB of routesB || []) {
@@ -49,6 +113,11 @@
         const travelB = Number(routeB.duration) || Math.max(1, minutesBetween(routeB.departure, routeB.arrival));
         const totalTravel = travelA + travelB;
         const maxTravel = Math.max(travelA, travelB);
+        const walkA = walkingMinutes(routeA);
+        const walkB = walkingMinutes(routeB);
+        const totalWalk = walkA + walkB;
+        const totalTransfers = transfers(routeA) + transfers(routeB);
+        const asapMinutes = Math.max(0, Math.round((latestArrival - now) / 60_000));
 
         pairs.push({
           routeA,
@@ -62,6 +131,11 @@
           travelB,
           totalTravel,
           maxTravel,
+          walkA,
+          walkB,
+          totalWalk,
+          totalTransfers,
+          asapMinutes,
         });
       }
     }
@@ -69,26 +143,34 @@
     return pairs;
   }
 
-  function pairScore(pair, selectedMode = mode) {
+  function preferenceCost(pair, selectedMode = mode) {
     if (selectedMode === "fastest") {
-      // Speed dominates, while target-time accuracy still prevents a very fast
-      // connection an hour too early from becoming the recommendation.
+      return pair.totalTravel * 1.7 + pair.maxTravel * 0.45 + pair.waitingDifference * 0.28;
+    }
+
+    if (selectedMode === "easy") {
       return (
-        pair.totalTravel * 1.7 +
-        pair.maxTravel * 0.45 +
-        pair.targetDistance * 1.15 +
-        pair.waitingDifference * 0.28
+        pair.totalTransfers * 16 +
+        pair.totalWalk * 0.85 +
+        pair.maxTravel * 0.28 +
+        pair.totalTravel * 0.12 +
+        pair.waitingDifference * 0.4
       );
     }
 
-    // Togetherness strongly rewards a small arrival gap while still avoiding
-    // unnecessarily slow or badly timed pairs.
-    return (
-      pair.waitingDifference * 4.2 +
-      pair.targetDistance * 1.2 +
-      pair.maxTravel * 0.22 +
-      pair.totalTravel * 0.06
-    );
+    return pair.waitingDifference * 4.2 + pair.maxTravel * 0.22 + pair.totalTravel * 0.06;
+  }
+
+  function pairScore(pair, selectedMode = mode, selectedTiming = timingMode) {
+    const preference = preferenceCost(pair, selectedMode);
+
+    if (selectedTiming === "asap") {
+      // Earliest shared arrival dominates. Route preference then separates
+      // similarly timed options.
+      return pair.asapMinutes * 5.5 + preference;
+    }
+
+    return preference + pair.targetDistance * 1.2;
   }
 
   function distinctEnough(a, b) {
@@ -99,19 +181,46 @@
     return departureA >= 3 || departureB >= 3 || differentRoute;
   }
 
-  function recommend(routesA, routesB, target, selectedMode = mode) {
-    const allPairs = createPairs(routesA, routesB, target);
-    if (!allPairs.length) return { primary: null, backup: null, mode: selectedMode, pairs: [] };
+  function explain(pair, selectedMode = mode, selectedTiming = timingMode) {
+    if (!pair) return "";
 
-    // Stay meaningfully near the requested meetup time whenever possible.
-    const nearTarget = allPairs.filter((pair) => pair.targetDifference >= -25 && pair.targetDifference <= 20);
-    const candidates = nearTarget.length ? nearTarget : allPairs;
+    const timingLead = selectedTiming === "asap"
+      ? `Both can be there in about ${pair.asapMinutes} min.`
+      : pair.targetDifference === 0
+        ? "It lands exactly on your target time."
+        : `It stays ${pair.targetDistance} min from your target.`;
+
+    if (selectedMode === "fastest") {
+      return `${timingLead} ${pair.totalTravel} min combined travel, with a ${pair.waitingDifference} min arrival gap.`;
+    }
+
+    if (selectedMode === "easy") {
+      const changes = pair.totalTransfers === 0 ? "no changes" : `${pair.totalTransfers} total change${pair.totalTransfers === 1 ? "" : "s"}`;
+      const walk = pair.totalWalk ? ` and about ${pair.totalWalk} min walking combined` : " and almost no walking";
+      return `${timingLead} It keeps things simple: ${changes}${walk}.`;
+    }
+
+    return `${timingLead} You arrive only ${pair.waitingDifference} min apart, so neither person waits long.`;
+  }
+
+  function recommend(routesA, routesB, target, selectedMode = mode, selectedTiming = timingMode) {
+    const allPairs = createPairs(routesA, routesB, target);
+    if (!allPairs.length) return { primary: null, backup: null, mode: selectedMode, timingMode: selectedTiming, pairs: [] };
+
+    let candidates = allPairs;
+    if (selectedTiming === "target") {
+      const nearTarget = allPairs.filter((pair) => pair.targetDifference >= -25 && pair.targetDifference <= 20);
+      candidates = nearTarget.length ? nearTarget : allPairs;
+    } else {
+      const soon = allPairs.filter((pair) => pair.asapMinutes >= 0 && pair.asapMinutes <= 180);
+      candidates = soon.length ? soon : allPairs;
+    }
 
     const ranked = [...candidates]
-      .map((pair) => ({ ...pair, recommendationScore: pairScore(pair, selectedMode) }))
+      .map((pair) => ({ ...pair, recommendationScore: pairScore(pair, selectedMode, selectedTiming) }))
       .sort((a, b) =>
         a.recommendationScore - b.recommendationScore ||
-        a.targetDistance - b.targetDistance ||
+        (selectedTiming === "asap" ? a.asapMinutes - b.asapMinutes : a.targetDistance - b.targetDistance) ||
         a.waitingDifference - b.waitingDifference,
       );
 
@@ -122,67 +231,113 @@
       primary,
       backup,
       mode: selectedMode,
+      timingMode: selectedTiming,
       pairs: ranked,
     };
   }
 
-  function updateButtons() {
+  function updateControls() {
     document.querySelectorAll("[data-optimization-mode]").forEach((button) => {
       const active = button.dataset.optimizationMode === mode;
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", String(active));
     });
 
+    document.querySelectorAll("[data-timing-mode]").forEach((button) => {
+      const active = button.dataset.timingMode === timingMode;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+
     const description = document.getElementById("optimizationDescription");
     if (description) description.textContent = MODES[mode].description;
+
+    const timingDescription = document.getElementById("timingDescription");
+    if (timingDescription) timingDescription.textContent = TIMING_MODES[timingMode].description;
+
+    const asap = timingMode === "asap";
+    timeGrid?.classList.toggle("asap-time-muted", asap);
+    quickTimes?.classList.toggle("asap-time-muted", asap);
+    dateInput?.toggleAttribute("disabled", asap);
+    timeInput?.toggleAttribute("disabled", asap);
+    quickTimes?.querySelectorAll("button").forEach((button) => { button.disabled = asap; });
   }
 
   function setMode(nextMode, { submit = true } = {}) {
     if (!MODES[nextMode] || nextMode === mode) return;
     mode = nextMode;
-    try {
-      localStorage.setItem(STORAGE_KEY, mode);
-    } catch {
-      // Ignore storage failures.
-    }
-    updateButtons();
+    try { localStorage.setItem(STORAGE_KEY, mode); } catch {}
+    updateControls();
     window.dispatchEvent(new CustomEvent("nvs-priority-change", { detail: { mode } }));
-    if (submit) document.getElementById("plannerForm")?.requestSubmit();
+    if (submit) plannerForm?.requestSubmit();
+  }
+
+  function setTimingMode(nextMode, { submit = true } = {}) {
+    if (!TIMING_MODES[nextMode] || nextMode === timingMode) return;
+    timingMode = nextMode;
+    try { localStorage.setItem(TIMING_KEY, timingMode); } catch {}
+    if (timingMode === "asap") syncAsapAnchor();
+    updateControls();
+    window.dispatchEvent(new CustomEvent("nvs-timing-change", { detail: { timingMode } }));
+    if (submit) plannerForm?.requestSubmit();
   }
 
   function installControl() {
-    const timeGrid = document.querySelector(".time-grid");
     if (!timeGrid || document.getElementById("optimizationControl")) return;
 
     const control = document.createElement("section");
     control.id = "optimizationControl";
     control.className = "optimization-control";
-    control.setAttribute("aria-labelledby", "optimizationTitle");
     control.innerHTML = `
-      <div class="optimization-heading">
-        <div>
-          <span class="optimization-kicker">Optimise for</span>
-          <strong id="optimizationTitle">What matters more?</strong>
+      <div class="v060-control-block">
+        <div class="optimization-heading">
+          <div><span class="optimization-kicker">Meet when</span><strong>How should timing work?</strong></div>
         </div>
+        <div class="meet-when-options" role="group" aria-label="Meetup timing preference">
+          <button type="button" data-timing-mode="target" aria-pressed="false">
+            <span class="optimization-icon" aria-hidden="true">🎯</span>
+            <span><strong>Around chosen time</strong><small>Use your target arrival</small></span>
+          </button>
+          <button type="button" data-timing-mode="asap" aria-pressed="false">
+            <span class="optimization-icon" aria-hidden="true">🚀</span>
+            <span><strong>Meet ASAP</strong><small>Earliest realistic meetup</small></span>
+          </button>
+        </div>
+        <p id="timingDescription" class="optimization-description"></p>
       </div>
-      <div class="optimization-options" role="group" aria-label="Route optimisation priority">
-        <button type="button" data-optimization-mode="together" aria-pressed="false">
-          <span class="optimization-icon" aria-hidden="true">🤝</span>
-          <span><strong>Arrive together</strong><small>Less waiting</small></span>
-        </button>
-        <button type="button" data-optimization-mode="fastest" aria-pressed="false">
-          <span class="optimization-icon" aria-hidden="true">⚡</span>
-          <span><strong>Get there fastest</strong><small>Less travel time</small></span>
-        </button>
+
+      <div class="v060-control-divider"></div>
+
+      <div class="v060-control-block">
+        <div class="optimization-heading">
+          <div><span class="optimization-kicker">Optimise for</span><strong>What matters more?</strong></div>
+        </div>
+        <div class="optimization-options" role="group" aria-label="Route optimisation priority">
+          <button type="button" data-optimization-mode="together" aria-pressed="false">
+            <span class="optimization-icon" aria-hidden="true">🤝</span>
+            <span><strong>Arrive together</strong><small>Less waiting</small></span>
+          </button>
+          <button type="button" data-optimization-mode="fastest" aria-pressed="false">
+            <span class="optimization-icon" aria-hidden="true">⚡</span>
+            <span><strong>Get there fastest</strong><small>Less travel time</small></span>
+          </button>
+          <button type="button" data-optimization-mode="easy" aria-pressed="false">
+            <span class="optimization-icon" aria-hidden="true">😌</span>
+            <span><strong>Easy trip</strong><small>Fewer changes + less walking</small></span>
+          </button>
+        </div>
+        <p id="optimizationDescription" class="optimization-description"></p>
       </div>
-      <p id="optimizationDescription" class="optimization-description"></p>
     `;
 
     timeGrid.insertAdjacentElement("afterend", control);
     control.querySelectorAll("[data-optimization-mode]").forEach((button) => {
       button.addEventListener("click", () => setMode(button.dataset.optimizationMode));
     });
-    updateButtons();
+    control.querySelectorAll("[data-timing-mode]").forEach((button) => {
+      button.addEventListener("click", () => setTimingMode(button.dataset.timingMode));
+    });
+    updateControls();
   }
 
   function configureMapTabs() {
@@ -194,16 +349,26 @@
     `;
   }
 
-  readMode();
+  readState();
+  if (timingMode === "asap") syncAsapAnchor();
   installControl();
   configureMapTabs();
 
+  plannerForm?.addEventListener("submit", () => {
+    if (timingMode === "asap") syncAsapAnchor();
+  }, true);
+
   window.NVSRecommend = Object.freeze({
     MODES,
+    TIMING_MODES,
     createPairs,
     recommend,
+    explain,
     getMode: () => mode,
     getModeInfo: () => MODES[mode],
+    getTimingMode: () => timingMode,
+    getTimingInfo: () => TIMING_MODES[timingMode],
     setMode,
+    setTimingMode,
   });
 })();
