@@ -1,16 +1,13 @@
 (() => {
   const SCHWERIN_CENTER = [53.628, 11.415];
-  const ROUTE_COLORS = Object.freeze({
-    you: "#2563eb",
-    friend: "#db2777",
-  });
+  const ROUTE_COLORS = Object.freeze({ you: "#2563eb", friend: "#db2777" });
 
   const state = {
     map: null,
     routeLayer: null,
-    connections: null,
+    recommendations: null,
     context: null,
-    selectedType: "best",
+    selectedType: "primary",
     refreshTimer: null,
   };
 
@@ -26,7 +23,7 @@
   const timeInput = document.getElementById("time");
 
   function escapeHtml(value) {
-    return String(value)
+    return String(value ?? "")
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;")
@@ -35,66 +32,8 @@
   }
 
   function formatTime(date) {
-    return new Intl.DateTimeFormat("de-DE", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
-  }
-
-  function minutesBetween(a, b) {
-    return Math.round(Math.abs(a.getTime() - b.getTime()) / 60_000);
-  }
-
-  function signedMinutesBetween(date, target) {
-    return Math.round((date.getTime() - target.getTime()) / 60_000);
-  }
-
-  function createPairs(routesA, routesB, target) {
-    const pairs = [];
-
-    for (const routeA of routesA) {
-      for (const routeB of routesB) {
-        const latestArrival = routeA.arrival > routeB.arrival ? routeA.arrival : routeB.arrival;
-        const earliestArrival = routeA.arrival < routeB.arrival ? routeA.arrival : routeB.arrival;
-        const waitingDifference = minutesBetween(routeA.arrival, routeB.arrival);
-        const targetDifference = signedMinutesBetween(latestArrival, target);
-        const score = Math.abs(targetDifference) + waitingDifference * 1.8;
-
-        pairs.push({
-          routeA,
-          routeB,
-          latestArrival,
-          earliestArrival,
-          waitingDifference,
-          targetDifference,
-          score,
-        });
-      }
-    }
-
-    return pairs;
-  }
-
-  function scoreDirectionalPair(pair, target, direction) {
-    const targetDistance = direction === "early"
-      ? (target.getTime() - pair.latestArrival.getTime()) / 60_000
-      : (pair.earliestArrival.getTime() - target.getTime()) / 60_000;
-
-    return Math.max(0, targetDistance) + pair.waitingDifference * 1.5;
-  }
-
-  function chooseConnections(pairs, target) {
-    if (!pairs.length) return { early: null, best: null, later: null };
-
-    const best = [...pairs].sort((a, b) => a.score - b.score)[0];
-    const early = pairs
-      .filter((pair) => pair !== best && pair.latestArrival <= target)
-      .sort((a, b) => scoreDirectionalPair(a, target, "early") - scoreDirectionalPair(b, target, "early"))[0] || null;
-    const later = pairs
-      .filter((pair) => pair !== best && pair.earliestArrival >= target)
-      .sort((a, b) => scoreDirectionalPair(a, target, "later") - scoreDirectionalPair(b, target, "later"))[0] || null;
-
-    return { early, best, later };
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
+    return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(date);
   }
 
   function getTargetDate() {
@@ -133,7 +72,6 @@
 
   function initMap() {
     if (!mapElement) return false;
-
     if (!window.L) {
       mapElement.style.display = "none";
       mapFallback?.classList.add("visible");
@@ -169,16 +107,15 @@
     const marker = window.L.marker(point, {
       icon: markerIcon(kind, label),
       keyboard: true,
-      title: key,
+      title: locationFor(key)?.label || key,
     }).addTo(state.routeLayer);
 
     marker.bindPopup(`
       <div class="map-popup">
-        <strong>${escapeHtml(key)}</strong>
+        <strong>${escapeHtml(locationFor(key)?.label || key)}</strong>
         <span>${escapeHtml(detail)}</span>
       </div>
     `);
-
     return marker;
   }
 
@@ -194,7 +131,6 @@
     const to = latLngFor(toKey);
     const geometry = validGeometry(route);
     const points = geometry.length >= 2 ? geometry : [from, to].filter(Boolean);
-
     if (points.length < 2 || !state.routeLayer) return { bounds: points, approximate: true };
 
     const approximate = geometry.length < 2;
@@ -207,11 +143,7 @@
       dashArray: approximate ? "9 9" : null,
     }).addTo(state.routeLayer);
 
-    line.bindTooltip(
-      `${escapeHtml(label)} · ${formatTime(route.departure)} → ${formatTime(route.arrival)}`,
-      { sticky: true },
-    );
-
+    line.bindTooltip(`${escapeHtml(label)} · ${formatTime(route.departure)} → ${formatTime(route.arrival)}`, { sticky: true });
     return { bounds: points, approximate };
   }
 
@@ -219,21 +151,15 @@
     if (!state.map) return;
     const valid = points.filter(Boolean);
     if (!valid.length) return;
-
     const bounds = window.L.latLngBounds(valid);
     if (!bounds.isValid()) return;
-
-    state.map.fitBounds(bounds, {
-      padding: [34, 34],
-      maxZoom: 15,
-      animate: true,
-    });
+    state.map.fitBounds(bounds, { padding: [34, 34], maxZoom: 15, animate: true });
   }
 
   function updateTabs() {
     document.querySelectorAll(".map-tabs [data-map-pair]").forEach((button) => {
       const type = button.dataset.mapPair;
-      const available = Boolean(state.connections?.[type]);
+      const available = Boolean(state.recommendations?.[type]);
       button.disabled = !available;
       button.classList.toggle("active", type === state.selectedType && available);
       button.setAttribute("aria-pressed", String(type === state.selectedType && available));
@@ -241,26 +167,24 @@
   }
 
   function tagResultCards() {
+    if (!results) return;
     const cards = [...results.querySelectorAll(":scope > .result")];
-    const types = ["early", "best", "later"];
-
+    const types = ["primary", "backup"];
     cards.forEach((card, index) => {
-      const type = types[index];
-      if (!type || card.classList.contains("unavailable-result")) {
+      const type = card.dataset.mapPair || types[index];
+      if (!type || !state.recommendations?.[type]) {
         card.removeAttribute("data-map-pair");
         card.classList.remove("map-selected");
         return;
       }
-
       card.dataset.mapPair = type;
       card.classList.toggle("map-selected", type === state.selectedType);
-      card.setAttribute("title", `Show ${type} pair on map`);
+      card.setAttribute("title", `Show ${type === "primary" ? "best" : "backup"} recommendation on map`);
     });
   }
 
   function renderPreview() {
     if (!state.map || !state.routeLayer) return;
-
     clearRoutes();
     const context = getContext();
     const points = [];
@@ -268,99 +192,66 @@
     const you = addLocationMarker(context.personA, "you", "A", "Your starting point");
     const friend = addLocationMarker(context.personB, "friend", "B", "Friend's starting point");
     const meet = addLocationMarker(context.destination, "meet", "M", "Meetup point");
-
-    [you, friend, meet].forEach((marker) => {
-      if (marker) points.push(marker.getLatLng());
-    });
+    [you, friend, meet].forEach((marker) => marker && points.push(marker.getLatLng()));
 
     const destination = latLngFor(context.destination);
     const fromA = latLngFor(context.personA);
     const fromB = latLngFor(context.personB);
-
     if (fromA && destination) {
-      window.L.polyline([fromA, destination], {
-        color: ROUTE_COLORS.you,
-        weight: 4,
-        opacity: 0.42,
-        dashArray: "7 9",
-      }).addTo(state.routeLayer);
+      window.L.polyline([fromA, destination], { color: ROUTE_COLORS.you, weight: 4, opacity: 0.42, dashArray: "7 9" }).addTo(state.routeLayer);
     }
-
     if (fromB && destination) {
-      window.L.polyline([fromB, destination], {
-        color: ROUTE_COLORS.friend,
-        weight: 4,
-        opacity: 0.42,
-        dashArray: "7 9",
-      }).addTo(state.routeLayer);
+      window.L.polyline([fromB, destination], { color: ROUTE_COLORS.friend, weight: 4, opacity: 0.42, dashArray: "7 9" }).addTo(state.routeLayer);
     }
 
     fitPoints(points);
-    if (mapStatus) mapStatus.innerHTML = "Select a meetup time to load <strong>real route geometry</strong>. Dashed lines are only a location preview.";
+    if (mapStatus) mapStatus.innerHTML = "Choose a time to load the <strong>recommended pair</strong>. Dashed lines are only a location preview.";
   }
 
   function drawSelectedPair() {
-    const pair = state.connections?.[state.selectedType];
+    const pair = state.recommendations?.[state.selectedType];
     const context = state.context;
-
     if (!state.map || !pair || !context) {
       renderPreview();
       return;
     }
 
     clearRoutes();
-
-    addLocationMarker(
-      context.personA,
-      "you",
-      "A",
-      `You leave ${formatTime(pair.routeA.departure)}`,
-    );
-    addLocationMarker(
-      context.personB,
-      "friend",
-      "B",
-      `Friend leaves ${formatTime(pair.routeB.departure)}`,
-    );
-    addLocationMarker(
-      context.destination,
-      "meet",
-      "M",
-      `Together around ${formatTime(pair.latestArrival)}`,
-    );
+    addLocationMarker(context.personA, "you", "A", `You leave ${formatTime(pair.routeA.departure)}`);
+    addLocationMarker(context.personB, "friend", "B", `Friend leaves ${formatTime(pair.routeB.departure)}`);
+    addLocationMarker(context.destination, "meet", "M", `Together around ${formatTime(pair.latestArrival)}`);
 
     const routeA = drawRoute(pair.routeA, context.personA, context.destination, ROUTE_COLORS.you, "You");
     const routeB = drawRoute(pair.routeB, context.personB, context.destination, ROUTE_COLORS.friend, "Friend");
-    const allPoints = [...routeA.bounds, ...routeB.bounds];
-
-    fitPoints(allPoints);
+    fitPoints([...routeA.bounds, ...routeB.bounds]);
     updateTabs();
     tagResultCards();
 
     const approximate = routeA.approximate || routeB.approximate;
-    const label = state.selectedType === "best" ? "Best match" : state.selectedType[0].toUpperCase() + state.selectedType.slice(1);
+    const mode = state.recommendations.mode === "fastest" ? "Fastest practical match" : "Best together";
+    const label = state.selectedType === "primary" ? mode : "Backup recommendation";
     if (mapStatus) {
       mapStatus.innerHTML = approximate
         ? `<strong>${label}</strong> · Some path geometry was unavailable, so dashed sections are approximate.`
-        : `<strong>${label}</strong> · Routes follow geometry returned by Transitous/MOTIS.`;
+        : `<strong>${label}</strong> · Both routes use Transitous/MOTIS journey geometry.`;
     }
   }
 
   function selectPair(type) {
-    if (!state.connections?.[type]) return;
+    if (!state.recommendations?.[type]) return;
     state.selectedType = type;
     drawSelectedPair();
   }
 
   async function refreshFromLiveRoutes() {
     const context = getContext();
-    if (!context.target || !window.NVSTransit?.fetchRoutes) {
+    if (!context.target || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommend) {
       renderPreview();
       return;
     }
 
     if (!dataBadge?.classList.contains("live")) {
-      state.connections = null;
+      state.recommendations = null;
       state.context = context;
       updateTabs();
       tagResultCards();
@@ -373,17 +264,14 @@
         window.NVSTransit.fetchRoutes(context.personA, context.destination, context.target),
         window.NVSTransit.fetchRoutes(context.personB, context.destination, context.target),
       ]);
-
-      const pairs = createPairs(routesA, routesB, context.target);
-      const connections = chooseConnections(pairs, context.target);
-      if (!connections.best) {
+      const recommendations = window.NVSRecommend.recommend(routesA, routesB, context.target);
+      if (!recommendations.primary) {
         renderPreview();
         return;
       }
-
-      state.connections = connections;
+      state.recommendations = recommendations;
       state.context = context;
-      if (!connections[state.selectedType]) state.selectedType = "best";
+      if (!recommendations[state.selectedType]) state.selectedType = "primary";
       drawSelectedPair();
     } catch (error) {
       console.warn("Map route refresh failed:", error);
@@ -401,7 +289,7 @@
   });
 
   document.getElementById("mapFitButton")?.addEventListener("click", () => {
-    if (state.connections?.[state.selectedType]) drawSelectedPair();
+    if (state.recommendations?.[state.selectedType]) drawSelectedPair();
     else renderPreview();
   });
 
@@ -412,23 +300,22 @@
 
   [personAInput, personBInput, destinationInput].forEach((input) => {
     input?.addEventListener("change", () => {
-      state.connections = null;
+      state.recommendations = null;
+      state.selectedType = "primary";
       renderPreview();
       scheduleRefresh(250);
     });
   });
+  [dateInput, timeInput].forEach((input) => input?.addEventListener("change", () => scheduleRefresh(250)));
 
-  [dateInput, timeInput].forEach((input) => {
-    input?.addEventListener("change", () => scheduleRefresh(250));
+  window.addEventListener("nvs-priority-change", () => {
+    state.selectedType = "primary";
+    scheduleRefresh(20);
   });
 
   if (dataBadge) {
-    new MutationObserver(() => scheduleRefresh(120)).observe(dataBadge, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
+    new MutationObserver(() => scheduleRefresh(120)).observe(dataBadge, { attributes: true, attributeFilter: ["class"] });
   }
-
   if (results) {
     new MutationObserver(() => {
       tagResultCards();
@@ -441,8 +328,5 @@
   initMap();
   scheduleRefresh(400);
 
-  window.NVSMap = Object.freeze({
-    refresh: scheduleRefresh,
-    selectPair,
-  });
+  window.NVSMap = Object.freeze({ refresh: scheduleRefresh, selectPair });
 })();
