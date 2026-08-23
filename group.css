@@ -1,0 +1,432 @@
+/* v0.7: multi-person meetup planner. */
+
+.group-panel {
+  margin-top: 16px;
+  padding: 15px;
+  border: 1px solid #e1e6ee;
+  border-radius: 18px;
+  background: #fbfcfe;
+}
+
+.group-panel-head,
+.group-card-top,
+.group-priority-summary,
+.group-extra-origin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.group-panel-head h3 {
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+
+.group-count {
+  color: #667085;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.group-add-button {
+  min-height: 38px;
+  padding: 7px 11px;
+  border: 1px solid #cfd6e1;
+  border-radius: 11px;
+  background: #fff;
+  color: #344054;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.group-add-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.group-roster {
+  display: grid;
+  gap: 9px;
+  margin-top: 13px;
+}
+
+.group-member-card {
+  padding: 11px;
+  border: 1px solid #e3e7ed;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.group-member-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.group-color-button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 3px solid #fff;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px #d0d5dd;
+}
+
+.group-name-input {
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid #d6dce5;
+  border-radius: 10px;
+  background: #fff;
+  color: #101828;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.group-member-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.group-icon-button,
+.group-priority-button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid #d7dce4;
+  border-radius: 9px;
+  background: #f8fafc;
+  color: #475467;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.group-priority-button {
+  grid-auto-flow: column;
+  gap: 5px;
+}
+
+.group-priority-button.active {
+  border-color: #7f56d9;
+  background: #f4f3ff;
+  color: #5925dc;
+  box-shadow: 0 0 0 2px rgba(127, 86, 217, 0.1);
+}
+
+.group-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.group-remove-button {
+  color: #b42318;
+}
+
+.group-origin-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  color: #667085;
+  font-size: 11px;
+}
+
+.group-origin-label strong {
+  overflow: hidden;
+  color: #344054;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-extra-origin {
+  position: relative;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid #eef1f5;
+}
+
+.group-extra-origin-head {
+  margin-bottom: 6px;
+  color: #667085;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.group-extra-search-wrap {
+  position: relative;
+}
+
+.group-extra-search {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px 0 38px;
+  border: 1px solid #d0d5dd;
+  border-radius: 11px;
+  background: #fff;
+  color: #101828;
+  font: inherit;
+  font-size: 15px;
+}
+
+.group-extra-search-wrap::before {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 13px;
+  color: #667085;
+  content: "⌕";
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.group-extra-results {
+  position: absolute;
+  z-index: 1450;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  display: none;
+  max-height: min(330px, 45dvh);
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid #dfe3ea;
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: 0 16px 44px rgba(16, 24, 40, 0.18);
+}
+
+.group-extra-results.open {
+  display: grid;
+  gap: 4px;
+}
+
+.group-place-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #101828;
+  text-align: left;
+  cursor: pointer;
+}
+
+.group-place-result:hover,
+.group-place-result:focus-visible {
+  border-color: #dbe2ea;
+  outline: 0;
+  background: #f8fafc;
+}
+
+.group-place-result strong,
+.group-place-result small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-place-result strong {
+  font-size: 12px;
+}
+
+.group-place-result small {
+  margin-top: 2px;
+  color: #667085;
+  font-size: 10px;
+}
+
+.group-place-type {
+  align-self: center;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: #f2f4f7;
+  color: #667085;
+  font-size: 9px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.group-priority-summary {
+  align-items: flex-start;
+  margin-top: 12px;
+  padding: 10px 11px;
+  border-radius: 12px;
+  background: #f8f7ff;
+  color: #5925dc;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.group-priority-summary strong {
+  flex: 0 0 auto;
+}
+
+.group-card-person {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 9px;
+  padding: 11px 0;
+  border-top: 1px solid #eaecf0;
+}
+
+.group-card-person:first-of-type {
+  border-top: 0;
+}
+
+.group-person-swatch {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 999px;
+}
+
+.group-person-copy {
+  min-width: 0;
+}
+
+.group-person-copy strong,
+.group-person-copy span,
+.group-person-copy small {
+  display: block;
+}
+
+.group-person-copy strong {
+  font-size: 12px;
+}
+
+.group-person-copy span {
+  margin-top: 3px;
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.group-person-copy small {
+  margin-top: 4px;
+  overflow: hidden;
+  color: #667085;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-person-duration {
+  color: #667085;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.group-meetup-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.group-first-meetup {
+  margin-top: 9px;
+  padding: 9px 10px;
+  border: 1px solid #e4e0f5;
+  border-radius: 11px;
+  background: #faf9ff;
+  color: #4a357e;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.group-first-meetup strong {
+  color: #352366;
+}
+
+.group-why {
+  margin-top: 10px;
+  padding: 10px 11px;
+  border-radius: 11px;
+  background: #f8fafc;
+  color: #475467;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.group-why strong {
+  color: #344054;
+}
+
+.departure-people.group-departure-people {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.journey-timeline-grid.group-timeline-grid {
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.group-map-legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+@media (max-width: 760px) {
+  .group-member-main {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .group-member-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  .group-meetup-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .group-meetup-metrics .metric:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 460px) {
+  .group-panel {
+    padding: 12px;
+  }
+
+  .group-panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .group-add-button {
+    width: 100%;
+  }
+
+  .group-member-main {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .group-place-result {
+    grid-template-columns: 1fr;
+  }
+
+  .group-place-type {
+    width: fit-content;
+  }
+}
