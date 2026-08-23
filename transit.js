@@ -170,6 +170,95 @@
     return line ? `${label} ${line}` : label;
   }
 
+  // MOTIS API v2+ encodes legGeometry as a Google encoded polyline with
+  // precision 6. Keep the decoder tiny so the PWA has no mapping dependency
+  // in the routing layer itself.
+  function decodePolyline(encoded, precision = 6) {
+    if (typeof encoded !== "string" || !encoded) return [];
+
+    const factor = 10 ** precision;
+    const coordinates = [];
+    let index = 0;
+    let latitude = 0;
+    let longitude = 0;
+
+    while (index < encoded.length) {
+      let result = 0;
+      let shift = 0;
+      let byte;
+
+      do {
+        if (index >= encoded.length) return coordinates;
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+
+      const latitudeDelta = result & 1 ? ~(result >> 1) : result >> 1;
+      latitude += latitudeDelta;
+
+      result = 0;
+      shift = 0;
+
+      do {
+        if (index >= encoded.length) return coordinates;
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+
+      const longitudeDelta = result & 1 ? ~(result >> 1) : result >> 1;
+      longitude += longitudeDelta;
+
+      coordinates.push([latitude / factor, longitude / factor]);
+    }
+
+    return coordinates;
+  }
+
+  function legGeometryPoints(leg) {
+    const raw =
+      valueAt(leg, ["legGeometry.points"]) ||
+      valueAt(leg, ["geometry.points"]) ||
+      valueAt(leg, ["legGeometry"]) ||
+      valueAt(leg, ["geometry"]);
+
+    if (Array.isArray(raw)) {
+      return raw
+        .map((point) => {
+          if (Array.isArray(point) && point.length >= 2) {
+            return [Number(point[0]), Number(point[1])];
+          }
+          if (point && typeof point === "object") {
+            const lat = Number(point.lat ?? point.latitude);
+            const lon = Number(point.lon ?? point.lng ?? point.longitude);
+            return [lat, lon];
+          }
+          return null;
+        })
+        .filter((point) => point && Number.isFinite(point[0]) && Number.isFinite(point[1]));
+    }
+
+    return decodePolyline(raw, 6);
+  }
+
+  function itineraryGeometry(legs) {
+    const combined = [];
+
+    for (const leg of legs) {
+      const points = legGeometryPoints(leg);
+      if (!points.length) continue;
+
+      points.forEach((point, index) => {
+        const previous = combined[combined.length - 1];
+        if (index === 0 && previous && previous[0] === point[0] && previous[1] === point[1]) return;
+        combined.push(point);
+      });
+    }
+
+    return combined;
+  }
+
   function hasNonZeroDelay(value) {
     const delay = Number(value);
     return Number.isFinite(delay) && delay !== 0;
@@ -214,6 +303,7 @@
       description: descriptionParts.join(" → ") || "Public transport",
       transfers,
       realtime,
+      geometry: itineraryGeometry(legs),
       source: "live",
     };
   }
@@ -258,6 +348,7 @@
       maxPostTransitTime: "1200",
       maxDirectTime: "3600",
       fastestDirectFactor: "4",
+      detailedLegs: "true",
       realtimeMode: "REALTIME",
       language: "de",
       timeout: "10",
@@ -274,6 +365,7 @@
   async function fetchRoutes(origin, destination, target) {
     if (origin === destination) {
       const departure = addMinutes(target, -5);
+      const point = LOCATIONS[origin];
       return [{
         id: `${origin}-same-place`,
         origin,
@@ -284,6 +376,7 @@
         description: "Short walk",
         transfers: 0,
         realtime: false,
+        geometry: point ? [[point.lat, point.lon], [point.lat, point.lon]] : [],
         source: "local",
       }];
     }
