@@ -28,11 +28,22 @@
     return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(date);
   }
 
+  function fallbackMembers() {
+    return [
+      { id: "personA", name: "You", color: "#2563eb", originKey: personAInput?.value, markerLabel: "A" },
+      { id: "personB", name: "Friend", color: "#db2777", originKey: personBInput?.value, markerLabel: "B" },
+    ];
+  }
+
+  function groupMembers() {
+    const members = window.NVSGroup?.getMembers?.();
+    return Array.isArray(members) && members.length >= 2 ? members : fallbackMembers();
+  }
+
   function currentContextFromForm() {
     const target = dateInput?.value && timeInput?.value ? new Date(`${dateInput.value}T${timeInput.value}`) : null;
     return {
-      personA: personAInput?.value,
-      personB: personBInput?.value,
+      members: groupMembers(),
       destination: destinationInput?.value,
       target: target && !Number.isNaN(target.getTime()) ? target : null,
     };
@@ -77,10 +88,10 @@
     return { text: `in ${hours}h${remaining ? ` ${remaining}m` : ""}`, state: "future" };
   }
 
-  function personDepartureRow(label, kind, route) {
+  function personDepartureRow(member, route) {
     const countdown = countdownText(route.departure);
     return `<div class="departure-person ${countdown.state}">
-      <div class="departure-person-name"><span class="person-dot ${kind}" aria-hidden="true"></span><span>${escapeHtml(label)}</span></div>
+      <div class="departure-person-name"><span class="group-person-swatch" style="background:${escapeHtml(member.color)}" aria-hidden="true"></span><span>${escapeHtml(member.name)}</span></div>
       <div class="departure-person-clock"><strong>${formatTime(route.departure)}</strong><span>${escapeHtml(countdown.text)}</span></div>
     </div>`;
   }
@@ -91,10 +102,32 @@
     return "🤝 Together";
   }
 
+  function assignmentsFor(group) {
+    if (Array.isArray(group?.assignments) && group.assignments.length) return group.assignments;
+    const members = currentContext?.members || fallbackMembers();
+    return [
+      { member: members[0], route: group?.routeA },
+      { member: members[1], route: group?.routeB },
+    ].filter((assignment) => assignment.member && assignment.route);
+  }
+
+  function meetupBoardText(group) {
+    if (group.priorityAssignments?.length >= 2) {
+      const names = group.priorityAssignments.map((assignment) => assignment.member.name).join(" + ");
+      return `<strong>${escapeHtml(names)}</strong> meet first around <strong>${formatTime(group.priorityCompleteTime)}</strong> · whole group <strong>${formatTime(group.latestArrival)}</strong>`;
+    }
+    if (group.priorityAssignments?.length === 1) {
+      const assignment = group.priorityAssignments[0];
+      return `<strong>${escapeHtml(assignment.member.name)}</strong> priority arrival <strong>${formatTime(assignment.route.arrival)}</strong> · whole group <strong>${formatTime(group.latestArrival)}</strong>`;
+    }
+    const prefix = currentRecommendations?.timingMode === "asap" ? "Everyone there by" : "Everyone together around";
+    return `${prefix} <strong>${formatTime(group.latestArrival)}</strong> · ${group.groupSpread ?? group.waitingDifference} min group spread`;
+  }
+
   function updateDepartureBoard() {
     const board = ensureDepartureBoard();
-    const pair = currentRecommendations?.primary;
-    if (!board || !pair || !currentContext) {
+    const group = currentRecommendations?.primary;
+    if (!board || !group || !currentContext) {
       if (board) board.hidden = true;
       return;
     }
@@ -104,17 +137,18 @@
     const meetText = board.querySelector("#departureMeetText");
     const badge = board.querySelector("#departureBoardBadge");
     const recalcButton = board.querySelector("#recalculateButton");
+    const assignments = assignmentsFor(group);
 
-    if (people) people.innerHTML = personDepartureRow("You", "person-dot-you", pair.routeA) + personDepartureRow("Friend", "person-dot-friend", pair.routeB);
-    if (meetText) {
-      const prefix = currentRecommendations.timingMode === "asap" ? "Both there by" : "Together around";
-      meetText.innerHTML = `${prefix} <strong>${formatTime(pair.latestArrival)}</strong> · ${pair.waitingDifference} min arrival gap`;
+    if (people) {
+      people.classList.toggle("group-departure-people", assignments.length > 2);
+      people.innerHTML = assignments.map((assignment) => personDepartureRow(assignment.member, assignment.route)).join("");
     }
+    if (meetText) meetText.innerHTML = meetupBoardText(group);
     if (badge) badge.textContent = boardBadge(currentRecommendations);
 
     if (recalcButton) {
       const now = Date.now();
-      recalcButton.hidden = !(pair.routeA.departure.getTime() < now - 30_000 || pair.routeB.departure.getTime() < now - 30_000);
+      recalcButton.hidden = !assignments.some((assignment) => assignment.route.departure.getTime() < now - 30_000);
     }
   }
 
@@ -195,7 +229,7 @@
     }));
   }
 
-  function routeTimeline(label, route, dotClass) {
+  function routeTimeline(member, route) {
     let segments = Array.isArray(route.segments) ? route.segments.filter(Boolean) : [];
     let fallback = false;
     if (!segments.length) { segments = fallbackSegments(route); fallback = true; }
@@ -205,19 +239,20 @@
       : `<p class="timeline-empty">No route steps are available for this journey.</p>`;
 
     return `<div class="route-timeline">
-      <div class="route-timeline-heading"><span class="person-dot ${dotClass}" aria-hidden="true"></span><strong>${escapeHtml(label)}</strong><span>${formatTime(route.departure)} → ${formatTime(route.arrival)}</span></div>
+      <div class="route-timeline-heading"><span class="group-person-swatch" style="background:${escapeHtml(member.color)}" aria-hidden="true"></span><strong>${escapeHtml(member.name)}</strong><span>${formatTime(route.departure)} → ${formatTime(route.arrival)}</span></div>
       ${fallback ? `<p class="timeline-fallback-note">Basic breakdown — MOTIS did not include full leg metadata for this specific journey.</p>` : ""}
       <div class="timeline-steps">${timeline}</div>
     </div>`;
   }
 
-  function enrichCard(card, pair) {
+  function enrichCard(card, group) {
     card.querySelector(".journey-v05")?.remove();
-    if (!pair) return;
+    if (!group) return;
+    const assignments = assignmentsFor(group);
     const details = document.createElement("details");
     details.className = "journey-v05 journey-details";
     details.innerHTML = `<summary><span>Journey timeline</span><span class="journey-summary-meta">stops · platforms · direction</span></summary>
-      <div class="journey-timeline-grid">${routeTimeline("You", pair.routeA, "person-dot-you")}${routeTimeline("Friend", pair.routeB, "person-dot-friend")}</div>`;
+      <div class="journey-timeline-grid ${assignments.length > 2 ? "group-timeline-grid" : ""}">${assignments.map((assignment) => routeTimeline(assignment.member, assignment.route)).join("")}</div>`;
     card.appendChild(details);
   }
 
@@ -232,7 +267,7 @@
   }
 
   async function refreshJourneyData() {
-    if (!dataBadge?.classList.contains("live") || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommend) {
+    if (!dataBadge?.classList.contains("live") || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommendGroup) {
       currentRecommendations = null;
       currentContext = null;
       updateDepartureBoard();
@@ -240,20 +275,22 @@
     }
 
     const context = currentContextFromForm();
-    if (!context.target || !context.personA || !context.personB || !context.destination) return;
+    if (!context.target || !context.destination || context.members.some((member) => !member.originKey)) return;
 
     try {
-      const [routesA, routesB] = await Promise.all([
-        window.NVSTransit.fetchRoutes(context.personA, context.destination, context.target),
-        window.NVSTransit.fetchRoutes(context.personB, context.destination, context.target),
-      ]);
-      currentRecommendations = window.NVSRecommend.recommend(routesA, routesB, context.target);
+      const routeSets = await Promise.all(
+        context.members.map((member) => window.NVSTransit.fetchRoutes(member.originKey, context.destination, context.target)),
+      );
+      if (routeSets.some((routes) => !routes.length)) return;
+      currentRecommendations = window.NVSRecommend.recommendGroup(routeSets, context.members, context.target, {
+        priorityIds: window.NVSGroup?.getPriorityIds?.() || [],
+      });
       if (!currentRecommendations?.primary) return;
       currentContext = context;
       updateDepartureBoard();
       enrichResultCards();
     } catch (error) {
-      console.warn("v0.6 journey enrichment failed:", error);
+      console.warn("v0.7 journey enrichment failed:", error);
     }
   }
 
@@ -270,6 +307,19 @@
   [personAInput, personBInput, destinationInput, dateInput, timeInput].forEach((input) => input?.addEventListener("change", () => scheduleRefresh(180)));
   window.addEventListener("nvs-priority-change", () => scheduleRefresh(30));
   window.addEventListener("nvs-timing-change", () => scheduleRefresh(30));
+  window.addEventListener("nvs-group-change", () => scheduleRefresh(30));
+  window.addEventListener("nvs-group-recommendations-rendered", (event) => {
+    const detail = event.detail || {};
+    if (!detail.recommendations) return;
+    currentRecommendations = detail.recommendations;
+    currentContext = {
+      members: detail.members || groupMembers(),
+      destination: detail.destination || destinationInput?.value,
+      target: detail.target || currentContextFromForm().target,
+    };
+    updateDepartureBoard();
+    enrichResultCards();
+  });
 
   ensureDepartureBoard();
   clearInterval(clockTimer);
