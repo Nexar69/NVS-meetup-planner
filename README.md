@@ -1,115 +1,141 @@
 # NVS Meetup Planner / Meet Schwerin
 
-An unofficial, mobile-first Schwerin meetup planner that helps two people arrive at the same place at roughly the same time by public transport.
+An unofficial, mobile-first Schwerin meetup planner that coordinates real public-transport journeys for groups of **2–6 people**.
 
 > This project is not affiliated with Nahverkehr Schwerin (NVS).
 
-## v0.5 — live meetup companion
+## v0.7 — group meetup planning
 
-v0.5 builds on the real Transitous routing, place search, GPS, sharing and interactive maps from earlier releases.
+v0.7 generalises the original two-person matcher into a group planner while keeping the app static, backend-free and PWA-friendly.
 
 The app can now:
 
-- plan coordinated **Early / Best / Later** journey pairs
-- use real Transitous / MOTIS v6 public-transport routing
-- search Schwerin stops, streets and places with Photon
-- use the user's current location as their own starting point after browser permission
-- draw both routes on one Leaflet / OpenStreetMap map
-- show a **live departure board** for the Best pair
-- update “leave in …” countdowns locally without extra API requests
-- ignore same-day journeys that have already departed
-- offer **Recalculate now** when a displayed departure becomes stale
-- expand each result into detailed journey timelines with line/mode, stop names, direction, platform and realtime delay information when MOTIS supplies it
-- run a manual **Fair Meetup beta** that compares a small set of central Schwerin hubs and ranks them by fairness
-- share meetup destination/date/time without automatically sharing either person's starting location
+- plan live journeys for **2–6 people** to one meetup point
+- add/remove people and edit their names
+- colour-code each person and keep those colours on the map, cards and journey timelines
+- reorder the group for a clearer A/B/C/D/E/F display order
+- choose one or more people under **Meet first**
+- distinguish a priority first meetup from the time the **whole group** is together
+- optimise for **🤝 Arrive together**, **⚡ Get there fastest**, or **😌 Easy trip**
+- use either a chosen arrival time or **🚀 Meet ASAP**
+- show a primary and backup group recommendation
+- explain **Why this one?** in normal language
+- show one live leave countdown and one detailed route timeline per person
+- draw every person’s route toward the same meetup point on one Leaflet/OpenStreetMap map
+- keep stop/platform letters such as `Marienplatz A → Marienplatz D` when MOTIS provides them
+
+The first two people retain the existing search/GPS flow. Additional people use the same Schwerin place-search data and may start at stops, streets, addresses or places.
+
+## Group matching algorithm
+
+A naive group matcher can explode quickly: if six people each have ten candidate routes, a full Cartesian product would contain one million combinations.
+
+v0.7 uses a bounded **beam search** instead:
+
+1. candidate routes for each person are pre-ranked around the selected timing mode
+2. at most eight useful routes per person are expanded
+3. after adding each person, only the strongest partial group combinations are retained
+4. the final groups are scored using the selected optimisation mode
+
+The current beam width is intentionally conservative for phone/tablet performance.
+
+Group metrics include:
+
+- whole-group arrival spread
+- target-time difference or ASAP time
+- total and maximum individual travel time
+- combined walking time
+- combined transfers
+- optional first-meet priority penalties
+
+### Meet-first priority
+
+With no starred people, the scorer coordinates the group normally.
+
+If one person is starred, the algorithm tries to have that person arrive before the rest.
+
+If two or more people are starred, the algorithm tries to let that priority group complete its own first meetup before non-priority people arrive. Recommendations also show both the **first meetup** and **whole group together** times.
+
+## Optimisation modes
+
+### 🤝 Arrive together
+
+Strongly minimises the spread between the earliest and latest group arrival while still considering travel time and the requested meetup time.
+
+### ⚡ Get there fastest
+
+Prioritises total/longest journey time while keeping the group reasonably coordinated.
+
+### 😌 Easy trip
+
+Penalises transfers and walking more strongly, but still avoids absurdly slow options.
+
+### 🚀 Meet ASAP
+
+Uses now as the practical search horizon and ranks by the earliest realistic time the whole group can be together.
+
+## Live routing and route detail
+
+Routing uses Transitous / MOTIS v6. The routing layer keeps, where available:
+
+- mode and line
+- departure/arrival times
+- direction/headsign
+- boarding/alighting platform or stop letter
+- intermediate stops
+- walking instructions
+- realtime delay information
+- route geometry
+
+The live departure board updates countdowns locally without generating extra routing requests.
+
+Routes that already departed on the current day are filtered from future meetup searches.
 
 ## Fair Meetup beta
 
-Fair Meetup is deliberately opt-in because route searches are one of the more expensive operations for the community-run Transitous service.
+Fair Meetup currently remains a **two-person-only** feature. When more than two people are in the roster, its button is disabled.
 
-The current beta checks three central candidates:
+This is deliberate: the beta tests three central candidate destinations, so group-wide Fair Meetup could multiply the number of routing requests quickly. The normal group planner only needs one route request per person.
+
+The current Fair Meetup candidates are:
 
 - Marienplatz
 - Dreescher Markt
 - Hauptbahnhof
 
-For each candidate it finds the best coordinated route pair and scores it using:
+## Place search and GPS
 
-- difference between both people's travel times — strongest weight
-- arrival-time gap
-- distance from the requested meetup time
-- maximum/total journey length, so an equally terrible pair of journeys does not win simply because it is technically fair
+Place search uses Photon/OpenStreetMap and is restricted to the Schwerin area. Search results distinguish transit stops from streets/addresses/places and prioritise a same-name transit stop over a street when appropriate.
 
-The dialog shows the fairest option, the fastest candidate where relevant, and a backup. Choosing **Meet here** switches the normal planner to that destination and runs the standard live search/map flow.
+The app can use the device’s current location for the first person after explicit browser permission.
 
-A Fair Meetup run makes at most six route searches (two people × three candidates), runs only after a deliberate button press, spaces candidate checks slightly, and reuses the normal two-minute route cache.
+## Maps
 
-## Live departure board
+Leaflet + OpenStreetMap render the recommendation. In group mode every person has their own colour and A/B/C/D/E/F marker, while **M** is the meetup point.
 
-For the normal **Best** meetup pair, v0.5 shows both departure times and a continuously updated local countdown such as:
+MOTIS route geometry is used when available; dashed lines indicate approximate fallback geometry.
 
-- `in 18 min`
-- `in 4 min`
-- `leave now`
-- `2 min ago`
+## API etiquette
 
-The countdown itself never contacts Transitous. It only compares the already-selected departure time with the device clock.
+Transitous is community-run, so routing work is deliberately bounded:
 
-For a future meetup on the current day, routes whose departure already passed are filtered out before matching. This applies to the normal planner, map refreshes, Fair Meetup, and recalculation.
-
-## Detailed journey timelines
-
-MOTIS `detailedLegs` and `detailedTransfers` are enabled. The routing layer normalizes each leg into a small client-side segment containing, where available:
-
-- mode and line
-- origin/destination stop names
-- leg departure/arrival times
-- direction/headsign
-- boarding/alighting platform
-- realtime delay annotation
-- duration
-- route geometry
-
-The result cards expose these segments through an expandable timeline for both people.
-
-## Current built-in Schwerin presets
-
-- Lankow-Siedlung
-- Hegelstraße
-- Dreescher Markt
-- Marienplatz
-- Hauptbahnhof
-- Schlosspark-Center
-
-Search results can add additional Schwerin locations at runtime. Non-GPS searched places are remembered locally on the device with a capped recent-place history.
-
-## Routing and API etiquette
-
-Routing is performed by [Transitous](https://transitous.org/) using MOTIS. Transitous is community-run, so the app deliberately tries to keep routing work bounded:
-
-- normal planner: one request per person
-- map/timeline layers reuse the same short in-memory route cache
-- Fair Meetup: manual only, three candidates maximum
+- normal group planner: **one request per person**
+- maximum normal group size: **6 people**
+- map/timeline refreshes reuse the short in-memory route cache
+- group scoring happens locally in the browser
+- Fair Meetup stays manual and two-person-only
 - no background route polling
 - no service-worker caching of Transitous responses
 
-Visible Transitous source attribution is included in the app footer.
-
-## Place search
-
-Place search uses Photon/OpenStreetMap and is restricted to the Schwerin area. The client:
-
-- debounces search-as-you-type requests
-- aborts stale searches
-- caps visible results
-- briefly caches repeated searches on-device
+Visible Transitous/OpenStreetMap attribution is included in the app.
 
 ## Privacy choices
 
-- GPS is requested only after tapping **My location** and accepting browser permission.
-- A GPS location is not added to the persistent searched-place history.
-- Shared meetup links contain the destination coordinates/label and date/time, not either person's starting point by default.
-- Transitous receives route origins/destinations/times for routing; see Transitous's published privacy information for its logging policy.
+- no account or backend is required
+- group names, colours, priority selection and added places are stored locally on the device
+- GPS is requested only after the user chooses to use it
+- a GPS origin is not intentionally added to persistent searched-place history
+- shared meetup links do not automatically include every person’s starting location
 
 ## PWA / device support
 
@@ -120,11 +146,28 @@ The project is a static Progressive Web App designed for:
 - iPad / Android tablets
 - desktop browsers
 
-It includes an installable manifest, home-screen icons, safe-area-aware responsive layouts, device-local preferences and an offline app shell. Real routing, place search and fresh map tiles still require internet access.
+It includes an installable manifest, home-screen icons, responsive safe-area-aware layouts and an offline app shell. Live routing, search and map tiles require internet access.
+
+## Project structure
+
+- `index.html` — page structure and release wiring
+- `styles.css` — base responsive UI
+- `transit.js` — Transitous/MOTIS routing and journey normalisation
+- `recommend.js` — timing and route-preference controls
+- `group-engine.js` — v0.7 beam-search group recommendation engine
+- `group.js` / `group.css` — group roster, extra-person search, priorities and group result cards
+- `group-events.js` — deterministic group submit/mobile/reset/preference event routing
+- `map.js` / `map.css` — group-aware Leaflet map
+- `journey.js` / `journey.css` — live departure board and detailed per-person timelines
+- `places.js` / `places.css` — Photon search, GPS, local place history and sharing
+- `fair.js` / `fair.css` — two-person Fair Meetup beta
+- `service-worker.js` — offline app-shell cache only
+- `manifest.webmanifest` — PWA metadata
+- `icons/` — app/home-screen icons
 
 ## Run locally
 
-Use a local HTTP server for full service-worker / cross-origin testing, for example:
+Use a local HTTP server for service-worker and cross-origin testing, for example:
 
 ```bash
 python -m http.server 8000
@@ -134,30 +177,14 @@ Then open `http://localhost:8000`.
 
 The public deployment uses GitHub Pages.
 
-## Project structure
-
-- `index.html` — page structure and script/style wiring
-- `styles.css` — base responsive UI
-- `live.css` — live-routing/loading states
-- `map.css` / `map.js` — Leaflet map and Early/Best/Later visualization
-- `places.css` / `places.js` — Photon search, GPS, local place history and sharing
-- `fair.css` / `fair.js` — Fair Meetup beta
-- `journey.css` / `journey.js` — live departure board and detailed timelines
-- `transit.js` — Transitous client, dynamic locations, MOTIS normalization and geometry decoding
-- `v05.js` — v0.5 release glue and same-day stale-departure guard
-- `app.js` — core meetup pairing/scoring and base planner UI
-- `service-worker.js` — offline app-shell cache; third-party live data is intentionally excluded
-- `manifest.webmanifest` — PWA metadata
-- `icons/` — home-screen/app icons
-
 ## Possible next milestones
 
-- expand Fair Meetup with more carefully selected candidates without abusing the public routing service
-- 3+ person group meetup planning
-- better disruption/cancellation presentation
-- saved named places such as Home / School, stored locally
-- optional reminders where platform PWA support is reliable
-- one-tap “I missed it” replanning that can also renegotiate the meetup time
+- group-aware Fair Meetup with a carefully bounded request budget
+- shared group invitations where each friend fills their own origin locally
+- disruption/cancellation presentation
+- saved named places such as Home / School
+- optional leave reminders where PWA support is reliable
+- accessibility/preferences for walking limits or mobility needs
 
 ## License
 
