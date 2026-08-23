@@ -1,0 +1,219 @@
+/* v0.5.2: shared optimisation control + two recommendation layout. */
+
+.optimization-control {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #e1e6ee;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+.optimization-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.optimization-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.optimization-kicker {
+  color: #667085;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.optimization-heading strong {
+  color: #101828;
+  font-size: 14px;
+}
+
+.optimization-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.optimization-options button {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid #d5dbe4;
+  border-radius: 13px;
+  background: #fff;
+  color: #344054;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease, background 140ms ease;
+}
+
+.optimization-options button:hover {
+  border-color: #b6c2d4;
+}
+
+.optimization-options button.active {
+  border-color: #2563eb;
+  background: #f5f8ff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.optimization-options button.active::after {
+  content: "✓";
+  align-self: start;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.optimization-options button:active {
+  transform: scale(0.995);
+}
+
+.optimization-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  background: #eef2f6;
+  font-size: 17px;
+}
+
+.optimization-options button > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.optimization-options strong {
+  font-size: 12px;
+}
+
+.optimization-options small {
+  color: #667085;
+  font-size: 10px;
+}
+
+.optimization-description {
+  margin: 9px 2px 0;
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.results.v052-recommendations {
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+  align-items: start;
+}
+
+.result.v052-primary {
+  border-color: #101828;
+  box-shadow: 0 18px 44px rgba(16, 24, 40, 0.13);
+}
+
+.result.v052-primary::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 4px;
+  background: #12b76a;
+  content: "";
+}
+
+.result.v052-backup {
+  opacity: 0.88;
+}
+
+.result.v052-backup:hover,
+.result.v052-backup.map-selected {
+  opacity: 1;
+}
+
+.v052-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: #ecfdf3;
+  color: #067647;
+  font-size: 10px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.v052-recommendation-note {
+  margin-top: 8px;
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.result[data-map-pair="primary"].map-selected {
+  border-color: #039855 !important;
+  box-shadow: 0 0 0 3px rgba(3, 152, 85, 0.15), 0 18px 42px rgba(16, 24, 40, 0.12) !important;
+}
+
+.result[data-map-pair="backup"].map-selected {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15), 0 16px 38px rgba(16, 24, 40, 0.10) !important;
+}
+
+.map-tabs {
+  grid-template-columns: repeat(2, 1fr) !important;
+}
+
+/* v0.5.1 focus mode originally assumed three result cards. v0.5.2 only has two. */
+@media (min-width: 761px) {
+  .results.v052-recommendations.v051-focus-mode {
+    grid-template-columns: minmax(140px, 0.24fr) minmax(520px, 1fr) !important;
+    gap: 12px;
+  }
+
+  .results.v052-recommendations.v051-focus-mode .v051-focused {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+  }
+
+  .results.v052-recommendations.v051-focus-mode .v051-compact-left,
+  .results.v052-recommendations.v051-focus-mode .v051-compact-right {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .results.v052-recommendations {
+    grid-template-columns: 1fr;
+  }
+
+  .results.v052-recommendations.v051-focus-mode {
+    grid-template-columns: 1fr !important;
+  }
+
+  .results.v052-recommendations.v051-focus-mode .v051-focused {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+  }
+
+  .results.v052-recommendations.v051-focus-mode .v051-compact-left,
+  .results.v052-recommendations.v051-focus-mode .v051-compact-right {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .optimization-options {
+    grid-template-columns: 1fr;
+  }
+}
