@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#16181d">
+  <title>NVS Meetup Planner</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="header">
+      <div>
+        <p class="eyebrow">Schwerin meetup planner</p>
+        <h1>Meet Schwerin 🚋</h1>
+        <p class="subtitle">Choose where two people start, where you want to meet, and when you want to be there.</p>
+      </div>
+      <span class="demo-badge">v0.1 · Demo timetable</span>
+    </header>
+
+    <section class="planner" aria-labelledby="planner-title">
+      <h2 id="planner-title" class="sr-only">Plan a meetup</h2>
+
+      <div class="field-grid">
+        <label class="field">
+          <span>You start at</span>
+          <select id="personA">
+            <option value="Lankow">Lankow</option>
+            <option value="Hegelstraße">Hegelstraße</option>
+            <option value="Dreescher Markt">Dreescher Markt</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Friend starts at</span>
+          <select id="personB">
+            <option value="Hegelstraße">Hegelstraße</option>
+            <option value="Lankow">Lankow</option>
+            <option value="Dreescher Markt">Dreescher Markt</option>
+          </select>
+        </label>
+
+        <label class="field full">
+          <span>Meet at</span>
+          <select id="destination">
+            <option value="Dreescher Markt">Dreescher Markt</option>
+            <option value="Marienplatz">Marienplatz</option>
+            <option value="Hauptbahnhof">Hauptbahnhof</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Date</span>
+          <input id="date" type="date">
+        </label>
+
+        <label class="field">
+          <span>Meet at</span>
+          <input id="time" type="time" value="17:00">
+        </label>
+      </div>
+
+      <button class="search-button" id="searchButton" type="button">Find connections</button>
+    </section>
+
+    <p class="summary" id="summary" aria-live="polite"></p>
+    <section class="results" id="results" aria-live="polite"></section>
+
+    <footer>
+      Prototype timetable data only · Real public transport data comes next
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
