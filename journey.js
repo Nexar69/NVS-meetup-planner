@@ -11,7 +11,7 @@
 
   let refreshTimer = null;
   let clockTimer = null;
-  let currentConnections = null;
+  let currentRecommendations = null;
   let currentContext = null;
 
   function escapeHtml(value) {
@@ -25,60 +25,7 @@
 
   function formatTime(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
-    return new Intl.DateTimeFormat("de-DE", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
-  }
-
-  function minutesBetween(a, b) {
-    return Math.round(Math.abs(a.getTime() - b.getTime()) / 60_000);
-  }
-
-  function signedMinutesBetween(date, target) {
-    return Math.round((date.getTime() - target.getTime()) / 60_000);
-  }
-
-  function createPairs(routesA, routesB, target) {
-    const pairs = [];
-    for (const routeA of routesA) {
-      for (const routeB of routesB) {
-        const latestArrival = routeA.arrival > routeB.arrival ? routeA.arrival : routeB.arrival;
-        const earliestArrival = routeA.arrival < routeB.arrival ? routeA.arrival : routeB.arrival;
-        const waitingDifference = minutesBetween(routeA.arrival, routeB.arrival);
-        const targetDifference = signedMinutesBetween(latestArrival, target);
-        const score = Math.abs(targetDifference) + waitingDifference * 1.8;
-        pairs.push({
-          routeA,
-          routeB,
-          latestArrival,
-          earliestArrival,
-          waitingDifference,
-          targetDifference,
-          score,
-        });
-      }
-    }
-    return pairs;
-  }
-
-  function scoreDirectionalPair(pair, target, direction) {
-    const targetDistance = direction === "early"
-      ? (target.getTime() - pair.latestArrival.getTime()) / 60_000
-      : (pair.earliestArrival.getTime() - target.getTime()) / 60_000;
-    return Math.max(0, targetDistance) + pair.waitingDifference * 1.5;
-  }
-
-  function chooseConnections(pairs, target) {
-    if (!pairs.length) return { early: null, best: null, later: null };
-    const best = [...pairs].sort((a, b) => a.score - b.score)[0];
-    const early = pairs
-      .filter((pair) => pair !== best && pair.latestArrival <= target)
-      .sort((a, b) => scoreDirectionalPair(a, target, "early") - scoreDirectionalPair(b, target, "early"))[0] || null;
-    const later = pairs
-      .filter((pair) => pair !== best && pair.earliestArrival >= target)
-      .sort((a, b) => scoreDirectionalPair(a, target, "later") - scoreDirectionalPair(b, target, "later"))[0] || null;
-    return { early, best, later };
+    return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(date);
   }
 
   function getTargetDate() {
@@ -110,7 +57,7 @@
           <p class="section-kicker">Live plan</p>
           <h3>When should everyone leave?</h3>
         </div>
-        <span class="departure-board-badge">Best match</span>
+        <span class="departure-board-badge" id="departureBoardBadge">Best match</span>
       </div>
       <div class="departure-people" id="departurePeople"></div>
       <div class="departure-board-footer">
@@ -122,11 +69,7 @@
     const heading = resultsSection.querySelector(".results-heading");
     if (heading) heading.insertAdjacentElement("afterend", board);
     else resultsSection.prepend(board);
-
-    board.querySelector("#recalculateButton")?.addEventListener("click", () => {
-      plannerForm?.requestSubmit();
-    });
-
+    board.querySelector("#recalculateButton")?.addEventListener("click", () => plannerForm?.requestSubmit());
     return board;
   }
 
@@ -135,16 +78,11 @@
     if (seconds <= -60) return { text: `${Math.abs(Math.round(seconds / 60))} min ago`, state: "missed" };
     if (seconds < 0) return { text: "just left", state: "missed" };
     if (seconds < 60) return { text: "leave now", state: "now" };
-
     const minutes = Math.ceil(seconds / 60);
     if (minutes < 60) return { text: `in ${minutes} min`, state: minutes <= 5 ? "soon" : "future" };
-
     const hours = Math.floor(minutes / 60);
     const remaining = minutes % 60;
-    return {
-      text: `in ${hours}h${remaining ? ` ${remaining}m` : ""}`,
-      state: "future",
-    };
+    return { text: `in ${hours}h${remaining ? ` ${remaining}m` : ""}`, state: "future" };
   }
 
   function personDepartureRow(label, kind, route) {
@@ -152,20 +90,16 @@
     return `
       <div class="departure-person ${countdown.state}">
         <div class="departure-person-name">
-          <span class="person-dot ${kind}" aria-hidden="true"></span>
-          <span>${escapeHtml(label)}</span>
+          <span class="person-dot ${kind}" aria-hidden="true"></span><span>${escapeHtml(label)}</span>
         </div>
-        <div class="departure-person-clock">
-          <strong>${formatTime(route.departure)}</strong>
-          <span>${escapeHtml(countdown.text)}</span>
-        </div>
+        <div class="departure-person-clock"><strong>${formatTime(route.departure)}</strong><span>${escapeHtml(countdown.text)}</span></div>
       </div>
     `;
   }
 
   function updateDepartureBoard() {
     const board = ensureDepartureBoard();
-    const pair = currentConnections?.best;
+    const pair = currentRecommendations?.primary;
     if (!board || !pair || !currentContext) {
       if (board) board.hidden = true;
       return;
@@ -174,22 +108,19 @@
     board.hidden = false;
     const people = board.querySelector("#departurePeople");
     const meetText = board.querySelector("#departureMeetText");
+    const badge = board.querySelector("#departureBoardBadge");
     const recalcButton = board.querySelector("#recalculateButton");
 
-    if (people) {
-      people.innerHTML =
-        personDepartureRow("You", "person-dot-you", pair.routeA) +
-        personDepartureRow("Friend", "person-dot-friend", pair.routeB);
-    }
+    if (people) people.innerHTML =
+      personDepartureRow("You", "person-dot-you", pair.routeA) +
+      personDepartureRow("Friend", "person-dot-friend", pair.routeB);
 
-    if (meetText) {
-      meetText.innerHTML = `Together around <strong>${formatTime(pair.latestArrival)}</strong> · ${pair.waitingDifference} min arrival gap`;
-    }
+    if (meetText) meetText.innerHTML = `Together around <strong>${formatTime(pair.latestArrival)}</strong> · ${pair.waitingDifference} min arrival gap`;
+    if (badge) badge.textContent = currentRecommendations.mode === "fastest" ? "⚡ Fastest" : "🤝 Together";
 
     if (recalcButton) {
       const now = Date.now();
-      const missed = pair.routeA.departure.getTime() < now - 30_000 || pair.routeB.departure.getTime() < now - 30_000;
-      recalcButton.hidden = !missed;
+      recalcButton.hidden = !(pair.routeA.departure.getTime() < now - 30_000 || pair.routeB.departure.getTime() < now - 30_000);
     }
   }
 
@@ -205,33 +136,77 @@
     if (segment.platformFrom) items.push(`platform ${segment.platformFrom}`);
     const delay = delayLabel(segment);
     if (delay) items.push(delay);
+    if (Number.isFinite(segment.duration)) items.push(`${segment.duration} min`);
     return items.join(" · ");
   }
 
-  function renderSegment(segment, isLast) {
+  function intermediateHtml(segment) {
+    const stops = Array.isArray(segment.intermediateStops) ? segment.intermediateStops : [];
+    if (!stops.length) return "";
+    const names = stops.map((stop) => typeof stop === "string" ? stop : stop?.name).filter(Boolean);
+    if (!names.length) return "";
+    const visible = names.slice(0, 5);
+    const suffix = names.length > visible.length ? ` +${names.length - visible.length} more` : "";
+    return `<small class="timeline-via">via ${escapeHtml(visible.join(" · "))}${escapeHtml(suffix)}</small>`;
+  }
+
+  function instructionsHtml(segment) {
+    const instructions = Array.isArray(segment.instructions) ? segment.instructions : [];
+    if (!instructions.length) return "";
+    return `<small class="timeline-instructions">${instructions.slice(0, 3).map(escapeHtml).join(" · ")}</small>`;
+  }
+
+  function renderSegment(segment, isLast, fallback = false) {
     const from = segment.from || "Start";
     const to = segment.to || "Next stop";
     const meta = segmentMeta(segment);
-    const duration = Number.isFinite(segment.duration) ? `${segment.duration} min` : "";
-
     return `
-      <div class="timeline-step ${isLast ? "last" : ""}">
+      <div class="timeline-step ${isLast ? "last" : ""} ${fallback ? "fallback-step" : ""}">
         <div class="timeline-time">${formatTime(segment.departure)}</div>
         <div class="timeline-rail"><span></span></div>
         <div class="timeline-copy">
           <strong>${escapeHtml(segment.title || segment.modeLabel || "Journey")}</strong>
           <span>${escapeHtml(from)} → ${escapeHtml(to)}</span>
-          <small>${escapeHtml([meta, duration].filter(Boolean).join(" · "))}</small>
+          ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
+          ${intermediateHtml(segment)}
+          ${instructionsHtml(segment)}
         </div>
       </div>
     `;
   }
 
+  function fallbackSegments(route) {
+    const parts = String(route?.description || "Public transport")
+      .split("→")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (!parts.length) return [];
+
+    const totalMs = Math.max(60_000, route.arrival - route.departure);
+    const stepMs = totalMs / parts.length;
+    return parts.map((title, index) => ({
+      title,
+      modeLabel: title,
+      from: index === 0 ? (route.origin || "Start") : "Transfer",
+      to: index === parts.length - 1 ? (route.destination || "Destination") : "Next leg",
+      departure: new Date(route.departure.getTime() + stepMs * index),
+      arrival: new Date(route.departure.getTime() + stepMs * (index + 1)),
+      duration: Math.max(1, Math.round(stepMs / 60_000)),
+      fallback: true,
+    }));
+  }
+
   function routeTimeline(label, route, dotClass) {
-    const segments = Array.isArray(route.segments) ? route.segments : [];
+    let segments = Array.isArray(route.segments) ? route.segments.filter(Boolean) : [];
+    let fallback = false;
+    if (!segments.length) {
+      segments = fallbackSegments(route);
+      fallback = true;
+    }
+
     const timeline = segments.length
-      ? segments.map((segment, index) => renderSegment(segment, index === segments.length - 1)).join("")
-      : `<p class="timeline-empty">Detailed leg information was not returned for this route.</p>`;
+      ? segments.map((segment, index) => renderSegment(segment, index === segments.length - 1, fallback)).join("")
+      : `<p class="timeline-empty">No route steps are available for this journey.</p>`;
 
     return `
       <div class="route-timeline">
@@ -240,6 +215,7 @@
           <strong>${escapeHtml(label)}</strong>
           <span>${formatTime(route.departure)} → ${formatTime(route.arrival)}</span>
         </div>
+        ${fallback ? `<p class="timeline-fallback-note">Basic breakdown — MOTIS did not include full leg metadata for this specific journey.</p>` : ""}
         <div class="timeline-steps">${timeline}</div>
       </div>
     `;
@@ -251,12 +227,8 @@
 
     const details = document.createElement("details");
     details.className = "journey-v05 journey-details";
-    if (type === "best") details.open = false;
     details.innerHTML = `
-      <summary>
-        <span>Journey timeline</span>
-        <span class="journey-summary-meta">stops · platforms · direction</span>
-      </summary>
+      <summary><span>Journey timeline</span><span class="journey-summary-meta">stops · platforms · direction</span></summary>
       <div class="journey-timeline-grid">
         ${routeTimeline("You", pair.routeA, "person-dot-you")}
         ${routeTimeline("Friend", pair.routeB, "person-dot-friend")}
@@ -266,20 +238,19 @@
   }
 
   function enrichResultCards() {
-    if (!results || !currentConnections) return;
+    if (!results || !currentRecommendations) return;
     const cards = [...results.querySelectorAll(":scope > .result")];
-    const types = ["early", "best", "later"];
-
+    const types = ["primary", "backup"];
     cards.forEach((card, index) => {
-      const type = types[index];
-      if (!type || card.classList.contains("unavailable-result")) return;
-      enrichCard(card, currentConnections[type], type);
+      const type = card.dataset.mapPair || types[index];
+      if (!type || !currentRecommendations[type]) return;
+      enrichCard(card, currentRecommendations[type], type);
     });
   }
 
   async function refreshJourneyData() {
-    if (!dataBadge?.classList.contains("live") || !window.NVSTransit?.fetchRoutes) {
-      currentConnections = null;
+    if (!dataBadge?.classList.contains("live") || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommend) {
+      currentRecommendations = null;
       currentContext = null;
       updateDepartureBoard();
       return;
@@ -293,16 +264,15 @@
         window.NVSTransit.fetchRoutes(context.personA, context.destination, context.target),
         window.NVSTransit.fetchRoutes(context.personB, context.destination, context.target),
       ]);
+      const recommendations = window.NVSRecommend.recommend(routesA, routesB, context.target);
+      if (!recommendations.primary) return;
 
-      const connections = chooseConnections(createPairs(routesA, routesB, context.target), context.target);
-      if (!connections.best) return;
-
-      currentConnections = connections;
+      currentRecommendations = recommendations;
       currentContext = context;
       updateDepartureBoard();
       enrichResultCards();
     } catch (error) {
-      console.warn("v0.5 journey enrichment failed:", error);
+      console.warn("v0.5.2 journey enrichment failed:", error);
     }
   }
 
@@ -312,12 +282,8 @@
   }
 
   if (dataBadge) {
-    new MutationObserver(() => scheduleRefresh(100)).observe(dataBadge, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
+    new MutationObserver(() => scheduleRefresh(100)).observe(dataBadge, { attributes: true, attributeFilter: ["class"] });
   }
-
   if (results) {
     new MutationObserver(() => {
       if (dataBadge?.classList.contains("live")) scheduleRefresh(80);
@@ -327,6 +293,8 @@
   [personAInput, personBInput, destinationInput, dateInput, timeInput].forEach((input) => {
     input?.addEventListener("change", () => scheduleRefresh(180));
   });
+  window.addEventListener("nvs-priority-change", () => scheduleRefresh(20));
+  window.addEventListener("nvs-recommendations-rendered", () => scheduleRefresh(20));
 
   ensureDepartureBoard();
   clearInterval(clockTimer);
