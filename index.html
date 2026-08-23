@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101828">
   <meta name="color-scheme" content="light">
-  <meta name="description" content="An unofficial Schwerin meetup planner that coordinates public-transport arrival times for two people.">
+  <meta name="description" content="An unofficial Schwerin meetup planner that coordinates real public-transport arrival times for two people.">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Meet Schwerin">
@@ -16,6 +16,7 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="live.css">
 </head>
 
 <body>
@@ -55,13 +56,13 @@
           <h1 id="page-title">Arrive together, not just <em>there</em>.</h1>
           <p class="subtitle">
             Pick two starting points, one meeting place and a target time.
-            The planner compares both journeys and finds the fairest pair.
+            The planner checks real public transport and finds the fairest pair.
           </p>
         </div>
 
-        <div class="demo-badge" title="This version still uses generated timetable data">
-          <span aria-hidden="true">🧪</span>
-          <span>Demo timetable</span>
+        <div class="data-badge loading" id="dataBadge" title="Current routing-data status">
+          <span class="data-status-dot" aria-hidden="true"></span>
+          <span id="dataBadgeLabel">Checking live data…</span>
         </div>
       </section>
 
@@ -83,9 +84,11 @@
                 You start at
               </span>
               <select id="personA" autocomplete="off">
-                <option value="Lankow">Lankow</option>
+                <option value="Lankow-Siedlung">Lankow-Siedlung</option>
                 <option value="Hegelstraße">Hegelstraße</option>
                 <option value="Dreescher Markt">Dreescher Markt</option>
+                <option value="Marienplatz">Marienplatz</option>
+                <option value="Hauptbahnhof">Hauptbahnhof</option>
               </select>
             </label>
 
@@ -100,8 +103,10 @@
               </span>
               <select id="personB" autocomplete="off">
                 <option value="Hegelstraße">Hegelstraße</option>
-                <option value="Lankow">Lankow</option>
+                <option value="Lankow-Siedlung">Lankow-Siedlung</option>
                 <option value="Dreescher Markt">Dreescher Markt</option>
+                <option value="Marienplatz">Marienplatz</option>
+                <option value="Hauptbahnhof">Hauptbahnhof</option>
               </select>
             </label>
           </div>
@@ -121,6 +126,8 @@
                 <option value="Dreescher Markt">Dreescher Markt</option>
                 <option value="Marienplatz">Marienplatz</option>
                 <option value="Hauptbahnhof">Hauptbahnhof</option>
+                <option value="Hegelstraße">Hegelstraße</option>
+                <option value="Lankow-Siedlung">Lankow-Siedlung</option>
               </select>
             </label>
           </div>
@@ -142,6 +149,14 @@
             <button type="button" data-time-offset="60">In 1 hour</button>
             <button type="button" data-time-value="17:00">17:00</button>
             <button type="button" data-time-value="18:00">18:00</button>
+          </div>
+
+          <div class="live-note">
+            <span aria-hidden="true">●</span>
+            <div>
+              <strong>v0.2 uses real routing.</strong>
+              Two Transitous requests are made per search — one for each person — then the meetup matcher compares the returned journeys locally on your device.
+            </div>
           </div>
 
           <button class="search-button desktop-search" type="submit">
@@ -168,16 +183,22 @@
         <div>
           <strong>What makes this different?</strong>
           <p>
-            Normal journey planners optimize one route at a time. This prototype scores
-            <em>pairs</em> of routes, balancing how close both people arrive to the target
-            time with how long either person has to wait.
+            Normal journey planners optimize one route at a time. Meet Schwerin scores
+            <em>pairs</em> of real journeys, balancing target-time accuracy with how long
+            either person waits for the other.
           </p>
         </div>
       </section>
 
       <footer>
         <p>Unofficial prototype · Not affiliated with Nahverkehr Schwerin.</p>
-        <p id="versionLabel">v0.1.1 PWA · Demo timetable data</p>
+        <p id="versionLabel">v0.2.0 · Real routing via Transitous</p>
+        <div class="source-links" aria-label="Data and source links">
+          <a href="https://transitous.org/" target="_blank" rel="noopener">Routing: Transitous</a>
+          <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transit data sources</a>
+          <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>
+          <a href="https://github.com/Nexar69/NVS-meetup-planner" target="_blank" rel="noopener">Source & contact</a>
+        </div>
       </footer>
     </main>
 
@@ -211,6 +232,7 @@
     <div class="noscript">This app needs JavaScript enabled to compare journeys.</div>
   </noscript>
 
+  <script src="transit.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
