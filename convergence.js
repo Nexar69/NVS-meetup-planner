@@ -303,45 +303,56 @@
     return unique;
   }
 
-  function progressiveLabels(events, assignments) {
+  function progressiveEvents(events, assignments) {
     const groups = [];
     const allMembers = assignments.map((assignment) => assignment.member);
     const byId = new Map(allMembers.map((member) => [member.id, member]));
+    const emitted = [];
 
-    events.forEach((event) => {
+    for (const event of events) {
       const eventSet = new Set(event.memberIds);
       const touching = groups.filter((group) => [...group].some((id) => eventSet.has(id)));
       const existing = new Set(touching.flatMap((group) => [...group]));
       const newcomers = event.memberIds.filter((id) => !existing.has(id));
 
+      // If exactly one already-formed group reaches another station together and
+      // nobody new joins it, nothing changed. This is travel, not a new meetup.
+      if (touching.length === 1 && newcomers.length === 0) continue;
+
       if (!touching.length) {
         event.kind = "meet";
         event.title = `${event.members.map(memberName).join(" + ")} meet`;
         groups.push(new Set(event.memberIds));
-      } else {
-        const merged = new Set([...existing, ...event.memberIds]);
-        touching.forEach((group) => groups.splice(groups.indexOf(group), 1));
-        groups.push(merged);
-
-        if (newcomers.length) {
-          const newcomerNames = newcomers.map((id) => memberName(byId.get(id))).join(" + ");
-          const existingNames = [...existing].map((id) => memberName(byId.get(id))).join(" + ");
-          event.kind = "join";
-          event.title = `${newcomerNames} ${newcomers.length === 1 ? "joins" : "join"} ${existingNames}`;
-        } else {
-          event.kind = "meet";
-          event.title = `${event.members.map(memberName).join(" + ")} meet`;
-        }
+        emitted.push(event);
+        continue;
       }
-    });
-    return events;
+
+      const merged = new Set([...existing, ...event.memberIds]);
+      touching.forEach((group) => groups.splice(groups.indexOf(group), 1));
+      groups.push(merged);
+
+      if (newcomers.length) {
+        const newcomerNames = newcomers.map((id) => memberName(byId.get(id))).join(" + ");
+        const existingNames = [...existing].map((id) => memberName(byId.get(id))).join(" + ");
+        event.kind = "join";
+        event.title = `${newcomerNames} ${newcomers.length === 1 ? "joins" : "join"} ${existingNames}`;
+      } else {
+        // Two previously separate groups have connected, even though every
+        // participant was already part of some subgroup.
+        event.kind = "join";
+        event.title = `${event.members.map(memberName).join(" + ")} join together`;
+      }
+      emitted.push(event);
+    }
+
+    return emitted;
   }
 
   function analyze(group, options = {}) {
     const assignments = Array.isArray(group?.assignments) ? group.assignments.filter((item) => item?.member && item?.route) : [];
     if (assignments.length < 2) return { events: [], sharedLegs: [], memberEvents: {} };
 
-    let events = progressiveLabels(candidateEvents(assignments), assignments);
+    let events = progressiveEvents(candidateEvents(assignments), assignments);
     events = events.filter((event) => {
       const latestArrival = asDate(group.latestArrival);
       return !latestArrival || event.time.getTime() < latestArrival.getTime() - 30_000 || event.memberIds.length < assignments.length;
