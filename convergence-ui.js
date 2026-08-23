@@ -42,6 +42,9 @@
     if (!first) return;
 
     const everyoneTime = group.everyoneTogetherTime || group.latestArrival;
+    const signature = `${first.id}|${first.time.getTime()}|${everyoneTime instanceof Date ? everyoneTime.getTime() : ""}`;
+    if (summary.dataset.convergenceSignature === signature) return;
+    summary.dataset.convergenceSignature = signature;
     summary.innerHTML = `
       <span class="convergence-inline">
         <span class="convergence-inline-star">★</span>
@@ -76,16 +79,24 @@
     if (!assignments.length || !timelines.length) return;
 
     timelines.forEach((timeline, index) => {
-      timeline.querySelector(".route-convergence-events")?.remove();
       const assignment = assignments[index];
       if (!assignment?.member) return;
       const events = (analysis.memberEvents?.[assignment.member.id] || [])
         .filter((event) => event?.time instanceof Date)
         .sort((a, b) => a.time - b.time);
-      if (!events.length) return;
+      const existing = timeline.querySelector(".route-convergence-events");
+      if (!events.length) {
+        existing?.remove();
+        return;
+      }
+
+      const signature = events.map((event) => `${event.id}:${event.time.getTime()}`).join("|");
+      if (existing?.dataset.signature === signature) return;
+      existing?.remove();
 
       const container = document.createElement("div");
       container.className = "route-convergence-events";
+      container.dataset.signature = signature;
       container.innerHTML = events.map((event) => eventHtml(event, assignment.member.id)).join("");
 
       const heading = timeline.querySelector(".route-timeline-heading");
@@ -126,6 +137,9 @@
       subtree: true,
     });
   }
+
+  const version = document.getElementById("versionLabel");
+  if (version) version.textContent = "v0.7.1 · Group route convergence";
 
   decorateExisting();
 })();
