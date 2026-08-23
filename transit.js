@@ -78,6 +78,22 @@
     return undefined;
   }
 
+  function placePoint(value) {
+    if (!value || typeof value !== "object") return null;
+    const lat = Number(valueAt(value, [
+      "lat", "latitude", "coordinate.lat", "coordinate.latitude",
+      "stop.lat", "stop.latitude", "station.lat", "station.latitude",
+      "place.lat", "place.latitude",
+    ]));
+    const lon = Number(valueAt(value, [
+      "lon", "lng", "longitude", "coordinate.lon", "coordinate.lng", "coordinate.longitude",
+      "stop.lon", "stop.lng", "stop.longitude", "station.lon", "station.lng", "station.longitude",
+      "place.lon", "place.lng", "place.longitude",
+    ]));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    return [lat, lon];
+  }
+
   function legDeparture(leg) {
     return firstDate(leg.startTime, leg.scheduledStartTime, leg.departure, leg.scheduledDeparture, valueAt(leg, ["from.departure"]), valueAt(leg, ["from.scheduledDeparture"]));
   }
@@ -157,6 +173,7 @@
       arrival: firstDate(place.arrival, place.scheduledArrival),
       departure: firstDate(place.departure, place.scheduledDeparture),
       track: platformName(place),
+      point: placePoint(place),
       cancelled: place.cancelled === true,
     };
   }
@@ -178,45 +195,6 @@
     const distance = Number(step.distance);
     const distanceText = Number.isFinite(distance) && distance >= 20 ? `${Math.round(distance)} m` : "";
     return [directionText(step.relativeDirection), street, distanceText].filter(Boolean).join(" · ");
-  }
-
-  function normalizeSegment(leg, index) {
-    const mode = String(leg.mode || "").toUpperCase();
-    const fromObject = leg.from;
-    const toObject = leg.to;
-    const departure = legDeparture(leg);
-    const arrival = legArrival(leg);
-    const line = routeName(leg);
-    const modeText = modeLabel(mode);
-    const headsign = firstText(leg.headsign, leg.tripHeadsign, placeName(leg.tripTo), leg.routeLongName);
-    const intermediateStops = (Array.isArray(leg.intermediateStops) ? leg.intermediateStops : [])
-      .map(normalizeStop)
-      .filter((stop) => stop?.name);
-    const instructions = (Array.isArray(leg.steps) ? leg.steps : [])
-      .map(normalizeStep)
-      .filter(Boolean);
-
-    return {
-      index,
-      mode,
-      modeLabel: modeText,
-      line,
-      title: mode === "WALK" ? "Walk" : line ? `${modeText} ${line}` : modeText,
-      from: placeName(fromObject, firstText(leg.fromName, leg.startName)),
-      to: placeName(toObject, firstText(leg.toName, leg.endName)),
-      departure,
-      arrival,
-      duration: legDurationMinutes(leg),
-      platformFrom: platformName(fromObject),
-      platformTo: platformName(toObject),
-      headsign,
-      tripId: firstText(leg.tripId),
-      intermediateStops,
-      instructions,
-      departureDelay: delayMinutes(leg.startTime, leg.scheduledStartTime),
-      arrivalDelay: delayMinutes(leg.endTime, leg.scheduledEndTime),
-      realtime: leg.realTime === true,
-    };
   }
 
   function decodePolyline(encoded, precision = 6) {
@@ -265,6 +243,48 @@
       }).filter((point) => point && Number.isFinite(point[0]) && Number.isFinite(point[1]));
     }
     return decodePolyline(raw, precision);
+  }
+
+  function normalizeSegment(leg, index) {
+    const mode = String(leg.mode || "").toUpperCase();
+    const fromObject = leg.from;
+    const toObject = leg.to;
+    const departure = legDeparture(leg);
+    const arrival = legArrival(leg);
+    const line = routeName(leg);
+    const modeText = modeLabel(mode);
+    const headsign = firstText(leg.headsign, leg.tripHeadsign, placeName(leg.tripTo), leg.routeLongName);
+    const intermediateStops = (Array.isArray(leg.intermediateStops) ? leg.intermediateStops : [])
+      .map(normalizeStop)
+      .filter((stop) => stop?.name);
+    const instructions = (Array.isArray(leg.steps) ? leg.steps : [])
+      .map(normalizeStep)
+      .filter(Boolean);
+
+    return {
+      index,
+      mode,
+      modeLabel: modeText,
+      line,
+      title: mode === "WALK" ? "Walk" : line ? `${modeText} ${line}` : modeText,
+      from: placeName(fromObject, firstText(leg.fromName, leg.startName)),
+      to: placeName(toObject, firstText(leg.toName, leg.endName)),
+      fromPoint: placePoint(fromObject),
+      toPoint: placePoint(toObject),
+      departure,
+      arrival,
+      duration: legDurationMinutes(leg),
+      platformFrom: platformName(fromObject),
+      platformTo: platformName(toObject),
+      headsign,
+      tripId: firstText(leg.tripId),
+      intermediateStops,
+      instructions,
+      geometry: legGeometryPoints(leg),
+      departureDelay: delayMinutes(leg.startTime, leg.scheduledStartTime),
+      arrivalDelay: delayMinutes(leg.endTime, leg.scheduledEndTime),
+      realtime: leg.realTime === true,
+    };
   }
 
   function itineraryGeometry(legs) {
@@ -361,6 +381,15 @@
     return `${origin}|${destination}|${Math.floor(target.getTime() / 300_000)}`;
   }
 
+  function reviveStop(stop) {
+    if (!stop || typeof stop !== "object") return stop;
+    return {
+      ...stop,
+      arrival: stop.arrival ? new Date(stop.arrival) : null,
+      departure: stop.departure ? new Date(stop.departure) : null,
+    };
+  }
+
   function reviveRoute(route) {
     return {
       ...route,
@@ -370,7 +399,17 @@
         ...segment,
         departure: segment.departure ? new Date(segment.departure) : null,
         arrival: segment.arrival ? new Date(segment.arrival) : null,
+        intermediateStops: Array.isArray(segment.intermediateStops) ? segment.intermediateStops.map(reviveStop) : [],
       })) : [],
+    };
+  }
+
+  function serializeStop(stop) {
+    if (!stop || typeof stop !== "object") return stop;
+    return {
+      ...stop,
+      arrival: stop.arrival?.toISOString?.() || null,
+      departure: stop.departure?.toISOString?.() || null,
     };
   }
 
@@ -383,6 +422,7 @@
         ...segment,
         departure: segment.departure?.toISOString?.() || null,
         arrival: segment.arrival?.toISOString?.() || null,
+        intermediateStops: Array.isArray(segment.intermediateStops) ? segment.intermediateStops.map(serializeStop) : [],
       })) : [],
     };
   }
@@ -391,15 +431,18 @@
     if (origin === destination) {
       const departure = addMinutes(target, -5);
       const point = LOCATIONS[origin];
+      const exactPoint = point ? [point.lat, point.lon] : null;
       return [{
         id: `${origin}-same-place`, origin, destination, departure, arrival: target, duration: 5,
         description: "Short walk", transfers: 0, realtime: false,
-        geometry: point ? [[point.lat, point.lon], [point.lat, point.lon]] : [],
+        geometry: exactPoint ? [exactPoint, exactPoint] : [],
         segments: [{
           index: 0, mode: "WALK", modeLabel: "Walk", line: "", title: "Walk",
           from: LOCATIONS[origin]?.label || origin, to: LOCATIONS[destination]?.label || destination,
+          fromPoint: exactPoint, toPoint: exactPoint,
           departure, arrival: target, duration: 5, platformFrom: "", platformTo: "", headsign: "",
-          intermediateStops: [], instructions: [], departureDelay: 0, arrivalDelay: 0, realtime: false,
+          intermediateStops: [], instructions: [], geometry: exactPoint ? [exactPoint, exactPoint] : [],
+          departureDelay: 0, arrivalDelay: 0, realtime: false,
         }],
         source: "local",
       }];
