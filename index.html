@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="live.css">
   <link rel="stylesheet" href="map.css">
+  <link rel="stylesheet" href="places.css">
 </head>
 
 <body>
@@ -63,7 +64,7 @@
           <h1 id="page-title">Arrive together, not just <em>there</em>.</h1>
           <p class="subtitle">
             Pick two starting points, one meeting place and a target time.
-            The planner checks real public transport, matches both journeys and now puts them on a map.
+            Search real Schwerin places, compare live public transport and see both journeys on the map.
           </p>
         </div>
 
@@ -161,8 +162,8 @@
           <div class="live-note">
             <span aria-hidden="true">●</span>
             <div>
-              <strong>v0.3 adds real route maps.</strong>
-              Transitous still handles the two journey searches; the map draws the returned MOTIS route geometry and lets you compare Early, Best and Later visually.
+              <strong>v0.4 goes beyond presets.</strong>
+              Search Schwerin stops, streets and places, use your current position for your own start, or share the meetup destination and time without automatically exposing either person's starting location.
             </div>
           </div>
 
@@ -235,11 +236,12 @@
 
       <footer>
         <p>Unofficial prototype · Not affiliated with Nahverkehr Schwerin.</p>
-        <p id="versionLabel">v0.3.0 · Real routing + interactive maps</p>
+        <p id="versionLabel">v0.4.0 · Search + GPS + private-by-default sharing</p>
         <div class="source-links" aria-label="Data and source links">
           <a href="https://transitous.org/" target="_blank" rel="noopener">Routing: Transitous</a>
           <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transit data sources</a>
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>
+          <a href="https://photon.komoot.io/" target="_blank" rel="noopener" data-photon-credit="true">Place search: Photon</a>
           <a href="https://github.com/Nexar69/NVS-meetup-planner" target="_blank" rel="noopener">Source & contact</a>
         </div>
       </footer>
@@ -281,6 +283,7 @@
     crossorigin=""
   ></script>
   <script src="transit.js"></script>
+  <script src="places.js"></script>
   <script src="map.js"></script>
   <script src="app.js"></script>
 </body>
