@@ -25,16 +25,11 @@
 
   function formatTime(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
-    return new Intl.DateTimeFormat("de-DE", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
+    return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(date);
   }
 
   function currentContextFromForm() {
-    const target = dateInput?.value && timeInput?.value
-      ? new Date(`${dateInput.value}T${timeInput.value}`)
-      : null;
+    const target = dateInput?.value && timeInput?.value ? new Date(`${dateInput.value}T${timeInput.value}`) : null;
     return {
       personA: personAInput?.value,
       personB: personBInput?.value,
@@ -53,10 +48,7 @@
     board.hidden = true;
     board.innerHTML = `
       <div class="departure-board-heading">
-        <div>
-          <p class="section-kicker">Live plan</p>
-          <h3>When should everyone leave?</h3>
-        </div>
+        <div><p class="section-kicker">Live plan</p><h3>When should everyone leave?</h3></div>
         <span class="departure-board-badge" id="departureBoardBadge">Best match</span>
       </div>
       <div class="departure-people" id="departurePeople"></div>
@@ -69,7 +61,6 @@
     const heading = resultsSection.querySelector(".results-heading");
     if (heading) heading.insertAdjacentElement("afterend", board);
     else resultsSection.prepend(board);
-
     board.querySelector("#recalculateButton")?.addEventListener("click", () => plannerForm?.requestSubmit());
     return board;
   }
@@ -88,18 +79,16 @@
 
   function personDepartureRow(label, kind, route) {
     const countdown = countdownText(route.departure);
-    return `
-      <div class="departure-person ${countdown.state}">
-        <div class="departure-person-name">
-          <span class="person-dot ${kind}" aria-hidden="true"></span>
-          <span>${escapeHtml(label)}</span>
-        </div>
-        <div class="departure-person-clock">
-          <strong>${formatTime(route.departure)}</strong>
-          <span>${escapeHtml(countdown.text)}</span>
-        </div>
-      </div>
-    `;
+    return `<div class="departure-person ${countdown.state}">
+      <div class="departure-person-name"><span class="person-dot ${kind}" aria-hidden="true"></span><span>${escapeHtml(label)}</span></div>
+      <div class="departure-person-clock"><strong>${formatTime(route.departure)}</strong><span>${escapeHtml(countdown.text)}</span></div>
+    </div>`;
+  }
+
+  function boardBadge(recommendations) {
+    if (recommendations?.mode === "fastest") return "⚡ Fastest";
+    if (recommendations?.mode === "easy") return "😌 Easy";
+    return "🤝 Together";
   }
 
   function updateDepartureBoard() {
@@ -116,12 +105,12 @@
     const badge = board.querySelector("#departureBoardBadge");
     const recalcButton = board.querySelector("#recalculateButton");
 
-    if (people) people.innerHTML =
-      personDepartureRow("You", "person-dot-you", pair.routeA) +
-      personDepartureRow("Friend", "person-dot-friend", pair.routeB);
-
-    if (meetText) meetText.innerHTML = `Together around <strong>${formatTime(pair.latestArrival)}</strong> · ${pair.waitingDifference} min arrival gap`;
-    if (badge) badge.textContent = currentRecommendations.mode === "fastest" ? "⚡ Fastest" : "🤝 Together";
+    if (people) people.innerHTML = personDepartureRow("You", "person-dot-you", pair.routeA) + personDepartureRow("Friend", "person-dot-friend", pair.routeB);
+    if (meetText) {
+      const prefix = currentRecommendations.timingMode === "asap" ? "Both there by" : "Together around";
+      meetText.innerHTML = `${prefix} <strong>${formatTime(pair.latestArrival)}</strong> · ${pair.waitingDifference} min arrival gap`;
+    }
+    if (badge) badge.textContent = boardBadge(currentRecommendations);
 
     if (recalcButton) {
       const now = Date.now();
@@ -152,27 +141,15 @@
 
     const normalizedName = cleanName.toLocaleLowerCase("de-DE");
     const normalizedPlatform = cleanPlatform.toLocaleLowerCase("de-DE");
-    const suffixPatterns = [
-      ` ${normalizedPlatform}`,
-      `(${normalizedPlatform})`,
-      `platform ${normalizedPlatform}`,
-      `steig ${normalizedPlatform}`,
-      `gleis ${normalizedPlatform}`,
-    ];
+    const suffixPatterns = [` ${normalizedPlatform}`, `(${normalizedPlatform})`, `platform ${normalizedPlatform}`, `steig ${normalizedPlatform}`, `gleis ${normalizedPlatform}`];
     if (suffixPatterns.some((suffix) => normalizedName.endsWith(suffix))) return cleanName;
-
     return `${cleanName} ${cleanPlatform}`;
   }
 
   function intermediateHtml(segment) {
     const stops = Array.isArray(segment.intermediateStops) ? segment.intermediateStops : [];
     if (!stops.length) return "";
-    const names = stops
-      .map((stop) => {
-        if (typeof stop === "string") return stop;
-        return withPlatform(stop?.name, stop?.track);
-      })
-      .filter(Boolean);
+    const names = stops.map((stop) => typeof stop === "string" ? stop : withPlatform(stop?.name, stop?.track)).filter(Boolean);
     if (!names.length) return "";
     const visible = names.slice(0, 5);
     const suffix = names.length > visible.length ? ` +${names.length - visible.length} more` : "";
@@ -189,28 +166,21 @@
     const from = withPlatform(segment.from || "Start", segment.platformFrom);
     const to = withPlatform(segment.to || "Next stop", segment.platformTo);
     const meta = segmentMeta(segment);
-    return `
-      <div class="timeline-step ${isLast ? "last" : ""} ${fallback ? "fallback-step" : ""}">
-        <div class="timeline-time">${formatTime(segment.departure)}</div>
-        <div class="timeline-rail"><span></span></div>
-        <div class="timeline-copy">
-          <strong>${escapeHtml(segment.title || segment.modeLabel || "Journey")}</strong>
-          <span>${escapeHtml(from)} → ${escapeHtml(to)}</span>
-          ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
-          ${intermediateHtml(segment)}
-          ${instructionsHtml(segment)}
-        </div>
+    return `<div class="timeline-step ${isLast ? "last" : ""} ${fallback ? "fallback-step" : ""}">
+      <div class="timeline-time">${formatTime(segment.departure)}</div>
+      <div class="timeline-rail"><span></span></div>
+      <div class="timeline-copy">
+        <strong>${escapeHtml(segment.title || segment.modeLabel || "Journey")}</strong>
+        <span>${escapeHtml(from)} → ${escapeHtml(to)}</span>
+        ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
+        ${intermediateHtml(segment)}${instructionsHtml(segment)}
       </div>
-    `;
+    </div>`;
   }
 
   function fallbackSegments(route) {
-    const parts = String(route?.description || "Public transport")
-      .split("→")
-      .map((part) => part.trim())
-      .filter(Boolean);
+    const parts = String(route?.description || "Public transport").split("→").map((part) => part.trim()).filter(Boolean);
     if (!parts.length) return [];
-
     const totalMs = Math.max(60_000, route.arrival - route.departure);
     const stepMs = totalMs / parts.length;
     return parts.map((title, index) => ({
@@ -228,41 +198,26 @@
   function routeTimeline(label, route, dotClass) {
     let segments = Array.isArray(route.segments) ? route.segments.filter(Boolean) : [];
     let fallback = false;
-    if (!segments.length) {
-      segments = fallbackSegments(route);
-      fallback = true;
-    }
+    if (!segments.length) { segments = fallbackSegments(route); fallback = true; }
 
     const timeline = segments.length
       ? segments.map((segment, index) => renderSegment(segment, index === segments.length - 1, fallback)).join("")
       : `<p class="timeline-empty">No route steps are available for this journey.</p>`;
 
-    return `
-      <div class="route-timeline">
-        <div class="route-timeline-heading">
-          <span class="person-dot ${dotClass}" aria-hidden="true"></span>
-          <strong>${escapeHtml(label)}</strong>
-          <span>${formatTime(route.departure)} → ${formatTime(route.arrival)}</span>
-        </div>
-        ${fallback ? `<p class="timeline-fallback-note">Basic breakdown — MOTIS did not include full leg metadata for this specific journey.</p>` : ""}
-        <div class="timeline-steps">${timeline}</div>
-      </div>
-    `;
+    return `<div class="route-timeline">
+      <div class="route-timeline-heading"><span class="person-dot ${dotClass}" aria-hidden="true"></span><strong>${escapeHtml(label)}</strong><span>${formatTime(route.departure)} → ${formatTime(route.arrival)}</span></div>
+      ${fallback ? `<p class="timeline-fallback-note">Basic breakdown — MOTIS did not include full leg metadata for this specific journey.</p>` : ""}
+      <div class="timeline-steps">${timeline}</div>
+    </div>`;
   }
 
-  function enrichCard(card, pair, type) {
+  function enrichCard(card, pair) {
     card.querySelector(".journey-v05")?.remove();
     if (!pair) return;
-
     const details = document.createElement("details");
     details.className = "journey-v05 journey-details";
-    details.innerHTML = `
-      <summary><span>Journey timeline</span><span class="journey-summary-meta">stops · platforms · direction</span></summary>
-      <div class="journey-timeline-grid">
-        ${routeTimeline("You", pair.routeA, "person-dot-you")}
-        ${routeTimeline("Friend", pair.routeB, "person-dot-friend")}
-      </div>
-    `;
+    details.innerHTML = `<summary><span>Journey timeline</span><span class="journey-summary-meta">stops · platforms · direction</span></summary>
+      <div class="journey-timeline-grid">${routeTimeline("You", pair.routeA, "person-dot-you")}${routeTimeline("Friend", pair.routeB, "person-dot-friend")}</div>`;
     card.appendChild(details);
   }
 
@@ -272,8 +227,7 @@
     const types = ["primary", "backup"];
     cards.forEach((card, index) => {
       const type = card.dataset.mapPair || types[index];
-      if (!type || !currentRecommendations[type]) return;
-      enrichCard(card, currentRecommendations[type], type);
+      if (type && currentRecommendations[type]) enrichCard(card, currentRecommendations[type]);
     });
   }
 
@@ -293,14 +247,13 @@
         window.NVSTransit.fetchRoutes(context.personA, context.destination, context.target),
         window.NVSTransit.fetchRoutes(context.personB, context.destination, context.target),
       ]);
-
       currentRecommendations = window.NVSRecommend.recommend(routesA, routesB, context.target);
       if (!currentRecommendations?.primary) return;
       currentContext = context;
       updateDepartureBoard();
       enrichResultCards();
     } catch (error) {
-      console.warn("v0.5.2 journey enrichment failed:", error);
+      console.warn("v0.6 journey enrichment failed:", error);
     }
   }
 
@@ -309,32 +262,19 @@
     refreshTimer = setTimeout(refreshJourneyData, delay);
   }
 
-  if (dataBadge) {
-    new MutationObserver(() => scheduleRefresh(100)).observe(dataBadge, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
-  }
+  if (dataBadge) new MutationObserver(() => scheduleRefresh(100)).observe(dataBadge, { attributes: true, attributeFilter: ["class"] });
+  if (results) new MutationObserver(() => {
+    if (dataBadge?.classList.contains("live")) scheduleRefresh(80);
+  }).observe(results, { childList: true });
 
-  if (results) {
-    new MutationObserver(() => {
-      if (dataBadge?.classList.contains("live")) scheduleRefresh(80);
-    }).observe(results, { childList: true });
-  }
-
-  [personAInput, personBInput, destinationInput, dateInput, timeInput].forEach((input) => {
-    input?.addEventListener("change", () => scheduleRefresh(180));
-  });
-
-  window.addEventListener("nvs-optimization-change", () => scheduleRefresh(30));
+  [personAInput, personBInput, destinationInput, dateInput, timeInput].forEach((input) => input?.addEventListener("change", () => scheduleRefresh(180)));
+  window.addEventListener("nvs-priority-change", () => scheduleRefresh(30));
+  window.addEventListener("nvs-timing-change", () => scheduleRefresh(30));
 
   ensureDepartureBoard();
   clearInterval(clockTimer);
   clockTimer = setInterval(updateDepartureBoard, 15_000);
   scheduleRefresh(350);
 
-  window.NVSJourney = Object.freeze({
-    refresh: scheduleRefresh,
-    recalculate: () => plannerForm?.requestSubmit(),
-  });
+  window.NVSJourney = Object.freeze({ refresh: scheduleRefresh, recalculate: () => plannerForm?.requestSubmit() });
 })();
