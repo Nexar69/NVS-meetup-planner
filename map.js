@@ -45,8 +45,8 @@
 
   function fallbackMembers() {
     return [
-      { id: "personA", name: "You", color: FALLBACK_COLORS[0], originKey: personAInput?.value, markerLabel: "A" },
-      { id: "personB", name: "Friend", color: FALLBACK_COLORS[1], originKey: personBInput?.value, markerLabel: "B" },
+      { id: "personA", name: "You", color: FALLBACK_COLORS[0], originKey: personAInput?.value, markerLabel: "1" },
+      { id: "personB", name: "Friend", color: FALLBACK_COLORS[1], originKey: personBInput?.value, markerLabel: "2" },
     ];
   }
 
@@ -69,8 +69,46 @@
     return location ? [location.lat, location.lon] : null;
   }
 
+  function safeColor(value, fallback = "#667085") {
+    const color = String(value || "").trim();
+    return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
+  }
+
+  function mixedGradient(members) {
+    const colors = (members || []).map((member, index) => safeColor(member?.color, FALLBACK_COLORS[index % FALLBACK_COLORS.length]));
+    if (!colors.length) return "#101828";
+    if (colors.length === 1) return colors[0];
+    const slice = 360 / colors.length;
+    const stops = colors.map((color, index) => `${color} ${Math.round(index * slice)}deg ${Math.round((index + 1) * slice)}deg`);
+    return `conic-gradient(${stops.join(",")})`;
+  }
+
+  function sharedPlan() {
+    return window.NVSShare?.getSharedPlan?.() || null;
+  }
+
+  function personalFocusIndex() {
+    const plan = sharedPlan();
+    return plan?.view === "person" ? Number(window.NVSShare?.getFocusIndex?.()) : -1;
+  }
+
+  function memberOpacity(index) {
+    const focus = personalFocusIndex();
+    return focus < 0 || focus === index ? 1 : 0.24;
+  }
+
+  function routeOpacity(index) {
+    const focus = personalFocusIndex();
+    return focus < 0 || focus === index ? 0.82 : 0.14;
+  }
+
+  function focusedMemberId(context) {
+    const focus = personalFocusIndex();
+    return focus >= 0 ? context?.members?.[focus]?.id || null : null;
+  }
+
   function markerIcon(label, color, meet = false) {
-    const background = meet ? "#101828" : color || "#667085";
+    const background = meet ? "#101828" : safeColor(color);
     return window.L.divIcon({
       className: "meet-marker-wrap",
       html: `<span class="meet-marker ${meet ? "meet" : ""}" style="background:${escapeHtml(background)}">${escapeHtml(label)}</span>`,
@@ -80,13 +118,14 @@
     });
   }
 
-  function convergenceIcon(everyone = false) {
+  function convergenceIcon(event) {
+    const background = mixedGradient(event?.members || []);
     return window.L.divIcon({
       className: "convergence-marker-wrap",
-      html: `<span class="convergence-marker ${everyone ? "everyone" : ""}">${everyone ? "👥" : "★"}</span>`,
-      iconSize: everyone ? [34, 34] : [30, 30],
-      iconAnchor: everyone ? [17, 17] : [15, 15],
-      popupAnchor: [0, -18],
+      html: `<span class="convergence-marker mixed" style="background:${escapeHtml(background)}">★</span>`,
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
+      popupAnchor: [0, -19],
     });
   }
 
@@ -118,13 +157,14 @@
 
   function clearRoutes() { state.routeLayer?.clearLayers(); }
 
-  function addMemberMarker(member, detail) {
+  function addMemberMarker(member, detail, index) {
     const point = latLngFor(member.originKey);
     if (!point || !state.routeLayer) return null;
     const marker = window.L.marker(point, {
-      icon: markerIcon(member.markerLabel, member.color, false),
+      icon: markerIcon(String(index + 1), member.color, false),
       keyboard: true,
       title: member.name,
+      opacity: memberOpacity(index),
     }).addTo(state.routeLayer);
     marker.bindPopup(`<div class="map-popup"><strong>${escapeHtml(member.name)}</strong><span>${escapeHtml(detail)}</span></div>`);
     return marker;
@@ -145,19 +185,22 @@
   function convergencePeopleHtml(event) {
     return (event.members || []).map((member) => `
       <span class="convergence-popup-person">
-        <span class="convergence-popup-dot" style="background:${escapeHtml(member.color || "#667085")}"></span>
+        <span class="convergence-popup-dot" style="background:${escapeHtml(safeColor(member.color))}"></span>
         ${escapeHtml(member.name)}
       </span>
     `).join("");
   }
 
-  function addConvergenceMarker(event) {
+  function addConvergenceMarker(event, context) {
     if (!Array.isArray(event?.point) || event.point.length < 2 || event.final || !state.routeLayer) return null;
+    const focusId = focusedMemberId(context);
+    const relevant = !focusId || event.memberIds?.includes(focusId);
     const marker = window.L.marker(event.point, {
-      icon: convergenceIcon(false),
+      icon: convergenceIcon(event),
       keyboard: true,
       title: event.title,
       zIndexOffset: 800,
+      opacity: relevant ? 1 : 0.28,
     }).addTo(state.routeLayer);
 
     const shared = event.sharedTransit
@@ -179,7 +222,7 @@
     return route.geometry.filter((point) => Array.isArray(point) && point.length >= 2 && Number.isFinite(point[0]) && Number.isFinite(point[1]));
   }
 
-  function drawRoute(route, fromKey, toKey, color, label) {
+  function drawRoute(route, fromKey, toKey, color, label, index) {
     const from = latLngFor(fromKey);
     const to = latLngFor(toKey);
     const geometry = validGeometry(route);
@@ -188,9 +231,9 @@
 
     const approximate = geometry.length < 2;
     const line = window.L.polyline(points, {
-      color: color || "#667085",
-      weight: 5,
-      opacity: 0.78,
+      color: safeColor(color),
+      weight: personalFocusIndex() === index ? 7 : 5,
+      opacity: routeOpacity(index),
       lineCap: "round",
       lineJoin: "round",
       dashArray: approximate ? "9 9" : null,
@@ -199,14 +242,16 @@
     return { bounds: points, approximate };
   }
 
-  function drawSharedLeg(shared) {
+  function drawSharedLeg(shared, context) {
     const geometry = Array.isArray(shared?.geometry) ? shared.geometry.filter((point) => Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1])) : [];
     if (geometry.length < 2 || !state.routeLayer) return [];
     const names = (shared.members || []).map((member) => member.name).join(" + ");
+    const focusId = focusedMemberId(context);
+    const relevant = !focusId || shared.memberIds?.includes(focusId);
     const line = window.L.polyline(geometry, {
       color: "#101828",
       weight: 9,
-      opacity: 0.34,
+      opacity: relevant ? 0.34 : 0.06,
       lineCap: "round",
       lineJoin: "round",
       dashArray: "4 7",
@@ -221,15 +266,16 @@
     if (!valid.length) return;
     const bounds = window.L.latLngBounds(valid);
     if (!bounds.isValid()) return;
-    state.map.fitBounds(bounds, { padding: [34, 34], maxZoom: 15, animate: true });
+    state.map.fitBounds(bounds, { padding: [34, 34], maxZoom: 15, animate: false });
   }
 
   function updateLegend(members, hasConvergence = false, hasShared = false) {
     if (!legend) return;
-    legend.innerHTML = members.map((member) => `
-      <span class="map-legend-item"><span class="group-map-legend-dot" style="background:${escapeHtml(member.color)}"></span>${escapeHtml(member.name)}</span>
+    const sampleGradient = mixedGradient(members.slice(0, Math.min(3, members.length)));
+    legend.innerHTML = members.map((member, index) => `
+      <span class="map-legend-item"><span class="group-map-number" style="background:${escapeHtml(safeColor(member.color))}">${index + 1}</span>${escapeHtml(member.name)}</span>
     `).join("") +
-      (hasConvergence ? `<span class="map-legend-item"><span class="convergence-marker" style="width:18px;height:18px;font-size:9px;border-width:2px">★</span>Join</span>` : "") +
+      (hasConvergence ? `<span class="map-legend-item"><span class="convergence-marker mixed mini" style="background:${escapeHtml(sampleGradient)}">★</span>New join</span>` : "") +
       (hasShared ? `<span class="map-legend-item convergence-shared-key"><span class="convergence-shared-line"></span>Together</span>` : "") +
       `<span class="map-legend-item"><span class="map-legend-swatch meet" aria-hidden="true"></span>Meet</span>`;
   }
@@ -260,16 +306,16 @@
     const points = [];
     const destination = latLngFor(context.destination);
 
-    context.members.forEach((member) => {
+    context.members.forEach((member, index) => {
       if (!member.originKey) return;
-      const marker = addMemberMarker(member, `Starting at ${locationFor(member.originKey)?.label || member.originKey}`);
+      const marker = addMemberMarker(member, `Starting at ${locationFor(member.originKey)?.label || member.originKey}`, index);
       if (marker) points.push(marker.getLatLng());
       const from = latLngFor(member.originKey);
       if (from && destination) {
         window.L.polyline([from, destination], {
-          color: member.color,
+          color: safeColor(member.color),
           weight: 4,
-          opacity: 0.38,
+          opacity: personalFocusIndex() < 0 || personalFocusIndex() === index ? 0.38 : 0.08,
           dashArray: "7 9",
         }).addTo(state.routeLayer);
       }
@@ -316,19 +362,19 @@
     const bounds = [];
     let approximate = false;
 
-    assignments.forEach((assignment) => {
+    assignments.forEach((assignment, index) => {
       const member = assignment.member;
       const route = assignment.route;
-      const marker = addMemberMarker(member, `Leave ${formatTime(route.departure)} · arrive ${formatTime(route.arrival)}`);
+      const marker = addMemberMarker(member, `Leave ${formatTime(route.departure)} · arrive ${formatTime(route.arrival)}`, index);
       if (marker) bounds.push(marker.getLatLng());
-      const drawn = drawRoute(route, member.originKey, context.destination, member.color, member.name);
+      const drawn = drawRoute(route, member.originKey, context.destination, member.color, member.name, index);
       bounds.push(...drawn.bounds);
       approximate = approximate || drawn.approximate;
     });
 
-    convergence.sharedLegs.forEach((shared) => bounds.push(...drawSharedLeg(shared)));
+    convergence.sharedLegs.forEach((shared) => bounds.push(...drawSharedLeg(shared, context)));
     visibleEvents.forEach((event) => {
-      const marker = addConvergenceMarker(event);
+      const marker = addConvergenceMarker(event, context);
       if (marker) bounds.push(marker.getLatLng());
     });
 
@@ -344,7 +390,7 @@
 
     const label = state.selectedType === "primary" ? modeLabel(state.recommendations) : "Backup group recommendation";
     const joinText = visibleEvents.length
-      ? ` · ${visibleEvents.length} intermediate join${visibleEvents.length === 1 ? "" : "s"} marked ★`
+      ? ` · ${visibleEvents.length} new join${visibleEvents.length === 1 ? "" : "s"} marked ★`
       : "";
     if (mapStatus) {
       mapStatus.innerHTML = approximate
