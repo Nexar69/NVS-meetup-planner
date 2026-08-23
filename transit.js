@@ -3,10 +3,9 @@
   const REQUEST_TIMEOUT_MS = 14_000;
   const CACHE_TTL_MS = 2 * 60_000;
 
-  // Coordinates use the Schwerin DELFI/OSM stop positions where possible.
-  // Coordinates instead of direction-specific platform IDs let MOTIS choose
-  // the correct nearby boarding point and include the first/last walk.
-  const LOCATIONS = Object.freeze({
+  // Built-in Schwerin presets. v0.4 can also register temporary/search/GPS
+  // locations at runtime without changing the route-matching code.
+  const LOCATIONS = {
     "Lankow-Siedlung": {
       label: "Lankow-Siedlung",
       lat: 53.64883,
@@ -32,9 +31,27 @@
       lat: 53.6342,
       lon: 11.4089,
     },
-  });
+  };
 
   const routeCache = new Map();
+
+  function registerLocation(key, location) {
+    const lat = Number(location?.lat);
+    const lon = Number(location?.lon ?? location?.lng);
+    if (!key || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+      throw new Error("INVALID_LOCATION");
+    }
+
+    LOCATIONS[key] = {
+      label: String(location.label || key),
+      lat,
+      lon,
+      custom: true,
+      source: location.source || "custom",
+    };
+    routeCache.clear();
+    return key;
+  }
 
   function addMinutes(date, value) {
     return new Date(date.getTime() + value * 60_000);
@@ -170,9 +187,8 @@
     return line ? `${label} ${line}` : label;
   }
 
-  // MOTIS API v2+ encodes legGeometry as a Google encoded polyline with
-  // precision 6. Keep the decoder tiny so the PWA has no mapping dependency
-  // in the routing layer itself.
+  // MOTIS detailed legs encode geometry as a Google encoded polyline at
+  // precision 6. Keeping this decoder here avoids another routing dependency.
   function decodePolyline(encoded, precision = 6) {
     if (typeof encoded !== "string" || !encoded) return [];
 
@@ -194,9 +210,7 @@
         shift += 5;
       } while (byte >= 0x20);
 
-      const latitudeDelta = result & 1 ? ~(result >> 1) : result >> 1;
-      latitude += latitudeDelta;
-
+      latitude += result & 1 ? ~(result >> 1) : result >> 1;
       result = 0;
       shift = 0;
 
@@ -207,9 +221,7 @@
         shift += 5;
       } while (byte >= 0x20);
 
-      const longitudeDelta = result & 1 ? ~(result >> 1) : result >> 1;
-      longitude += longitudeDelta;
-
+      longitude += result & 1 ? ~(result >> 1) : result >> 1;
       coordinates.push([latitude / factor, longitude / factor]);
     }
 
@@ -325,9 +337,6 @@
     const destination = LOCATIONS[destinationKey];
     if (!origin || !destination) throw new Error("UNKNOWN_LOCATION");
 
-    // Start about an hour before the desired meetup and ask for a two-hour
-    // timetable window. One request per person can then contain early, closest
-    // and later candidates instead of hammering the API with separate queries.
     const searchStart = addMinutes(target, -60);
     const params = new URLSearchParams({
       fromPlace: `${origin.lat},${origin.lon}`,
@@ -410,9 +419,7 @@
       clearTimeout(timer);
     }
 
-    if (!response.ok) {
-      throw new Error(`API_HTTP_${response.status}`);
-    }
+    if (!response.ok) throw new Error(`API_HTTP_${response.status}`);
 
     let data;
     try {
@@ -448,6 +455,7 @@
   window.NVSTransit = Object.freeze({
     API_BASE,
     LOCATIONS,
+    registerLocation,
     fetchRoutes,
   });
 })();
