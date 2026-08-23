@@ -172,8 +172,8 @@
           <div class="live-note">
             <span aria-hidden="true">●</span>
             <div>
-              <strong>v0.7.4 sharpens shared journeys.</strong>
-              Join stars now prefer exact MOTIS stop coordinates, and personal links open a compact passenger-style itinerary before the full detailed route.
+              <strong>v0.8 prefers VMV.</strong>
+              Routes use the MV FÄHRT GUT / VMV backend when the Cloudflare bridge is available, with Transitous as an automatic fallback. Shared plans can use short expiring links.
             </div>
           </div>
 
@@ -189,7 +189,7 @@
           <div>
             <p class="section-kicker">Map</p>
             <h2 id="map-title">See the group converge</h2>
-            <p class="map-subtitle">People are numbered 1–6 in group order; ★ is anchored to the real join stop when MOTIS provides coordinates, and M is the final meetup.</p>
+            <p class="map-subtitle">People are numbered 1–6 in group order; ★ marks a real intermediate join and M is the final meetup.</p>
           </div>
 
           <div class="map-tabs" aria-label="Choose which recommendation to show">
@@ -243,11 +243,12 @@
       </section>
 
       <footer>
-        <p>Unofficial prototype · Not affiliated with Nahverkehr Schwerin.</p>
-        <p id="versionLabel">v0.7.4 · Precise joins + personal itineraries</p>
+        <p>Unofficial prototype · Not affiliated with Nahverkehr Schwerin or VMV.</p>
+        <p id="versionLabel">v0.8 · VMV routing + short share links</p>
         <div class="source-links" aria-label="Data and source links">
-          <a href="https://transitous.org/" target="_blank" rel="noopener">Routing: Transitous</a>
-          <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transit data sources</a>
+          <a href="https://www.fahrplanauskunft-mv.de/" target="_blank" rel="noopener">Preferred routing: VMV / MV FÄHRT GUT</a>
+          <a href="https://transitous.org/" target="_blank" rel="noopener">Fallback routing: Transitous</a>
+          <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transitous sources</a>
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>
           <a href="https://photon.komoot.io/" target="_blank" rel="noopener" data-photon-credit="true">Place search: Photon</a>
           <a href="https://github.com/Nexar69/NVS-meetup-planner" target="_blank" rel="noopener">Source & contact</a>
@@ -290,7 +291,9 @@
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
     crossorigin=""
   ></script>
+  <script src="config.js"></script>
   <script src="transit.js"></script>
+  <script src="vmv-v080.js"></script>
   <script src="places.js"></script>
   <script src="share-v072.js"></script>
   <script src="recommend.js"></script>
@@ -308,5 +311,6 @@
   <script src="convergence-ui.js"></script>
   <script src="personal-v074.js"></script>
   <script src="release-v074.js"></script>
+  <script src="release-v080.js"></script>
 </body>
 </html>
