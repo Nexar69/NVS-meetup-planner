@@ -13,7 +13,6 @@
   const dateInput = document.getElementById("date");
   const timeInput = document.getElementById("time");
   const results = document.getElementById("results");
-  const map = document.getElementById("meetupMap");
   const toast = document.getElementById("toast");
 
   let toastTimer = null;
@@ -306,32 +305,6 @@
     });
   }
 
-  function numberAndFocusMap() {
-    if (!map) return;
-    const rec = window.__NVS_LAST_RECOMMENDATIONS__;
-    const count = rec?.primary?.assignments?.length || window.NVSGroup?.getMembers?.()?.length || 2;
-    const markers = [...map.querySelectorAll(".meet-marker:not(.meet)")].slice(0, count);
-    markers.forEach((marker, index) => {
-      const number = String(index + 1);
-      if (marker.textContent !== number) marker.textContent = number;
-      const wrapper = marker.closest(".leaflet-marker-icon");
-      if (wrapper && wrapper.dataset.shareMemberIndex !== String(index)) wrapper.dataset.shareMemberIndex = String(index);
-      if (sharedPlan?.view === "person") {
-        wrapper?.classList.toggle("shared-map-focus", index === sharedPlan.focus);
-        wrapper?.classList.toggle("shared-map-muted", index !== sharedPlan.focus);
-      }
-    });
-
-    if (sharedPlan?.view === "person") {
-      [...map.querySelectorAll(".leaflet-overlay-pane path")].slice(0, count).forEach((path, index) => {
-        const opacity = index === sharedPlan.focus ? "1" : "0.16";
-        if (path.style.opacity !== opacity) path.style.opacity = opacity;
-        const filter = index === sharedPlan.focus ? "drop-shadow(0 0 2px rgba(16,24,40,.25))" : "none";
-        if (path.style.filter !== filter) path.style.filter = filter;
-      });
-    }
-  }
-
   function personalFocus() {
     if (!sharedPlan || sharedPlan.view !== "person") return;
     const focus = sharedPlan.focus;
@@ -350,7 +323,6 @@
         timeline.classList.toggle("shared-person-muted", index !== focus);
       });
     });
-    numberAndFocusMap();
   }
 
   function viewerBanner() {
@@ -369,10 +341,9 @@
     clearTimeout(decorationTimer);
     decorationTimer = setTimeout(() => {
       decorateCards();
-      numberAndFocusMap();
       personalFocus();
       const version = document.getElementById("versionLabel");
-      if (version) version.textContent = "v0.7.2 · Read-only group & personal sharing";
+      if (version) version.textContent = "v0.7.3 · Stable map + meaningful joins";
     }, 35);
   }
 
@@ -387,10 +358,6 @@
   window.addEventListener("load", decorate);
   window.addEventListener("beforeunload", restoreStorage);
   if (results) new MutationObserver(decorate).observe(results, { childList: true, subtree: true });
-  if (map) new MutationObserver(() => {
-    clearTimeout(decorationTimer);
-    decorationTimer = setTimeout(() => { numberAndFocusMap(); personalFocus(); }, 20);
-  }).observe(map, { childList: true, subtree: true });
 
   window.NVSShare = Object.freeze({
     isViewer: () => Boolean(sharedPlan),
