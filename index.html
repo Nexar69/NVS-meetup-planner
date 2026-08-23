@@ -2,74 +2,214 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#16181d">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101828">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="An unofficial Schwerin meetup planner that coordinates public-transport arrival times for two people.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Meet Schwerin">
+
   <title>NVS Meetup Planner</title>
+
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
-  <main class="app">
-    <header class="header">
-      <div>
-        <p class="eyebrow">Schwerin meetup planner</p>
-        <h1>Meet Schwerin 🚋</h1>
-        <p class="subtitle">Choose where two people start, where you want to meet, and when you want to be there.</p>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Meet Schwerin home">
+        <span class="brand-mark" aria-hidden="true">
+          <span class="brand-node brand-node-a"></span>
+          <span class="brand-node brand-node-b"></span>
+          <span class="brand-node brand-node-c"></span>
+          <span class="brand-node brand-node-meet"></span>
+        </span>
+
+        <span>
+          <strong>Meet Schwerin</strong>
+          <small>Unofficial meetup planner</small>
+        </span>
+      </a>
+
+      <div class="topbar-actions">
+        <span class="connection-pill" id="connectionPill" role="status">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span id="connectionLabel">Online</span>
+        </span>
+
+        <button class="icon-button install-button" id="installButton" type="button" aria-label="Install app">
+          <span aria-hidden="true">↓</span>
+          <span class="install-label">Install</span>
+        </button>
       </div>
-      <span class="demo-badge">v0.1 · Demo timetable</span>
     </header>
 
-    <section class="planner" aria-labelledby="planner-title">
-      <h2 id="planner-title" class="sr-only">Plan a meetup</h2>
+    <main class="app">
+      <section class="hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">Schwerin · Two starts · One meetup</p>
+          <h1 id="page-title">Arrive together, not just <em>there</em>.</h1>
+          <p class="subtitle">
+            Pick two starting points, one meeting place and a target time.
+            The planner compares both journeys and finds the fairest pair.
+          </p>
+        </div>
 
-      <div class="field-grid">
-        <label class="field">
-          <span>You start at</span>
-          <select id="personA">
-            <option value="Lankow">Lankow</option>
-            <option value="Hegelstraße">Hegelstraße</option>
-            <option value="Dreescher Markt">Dreescher Markt</option>
-          </select>
-        </label>
+        <div class="demo-badge" title="This version still uses generated timetable data">
+          <span aria-hidden="true">🧪</span>
+          <span>Demo timetable</span>
+        </div>
+      </section>
 
-        <label class="field">
-          <span>Friend starts at</span>
-          <select id="personB">
-            <option value="Hegelstraße">Hegelstraße</option>
-            <option value="Lankow">Lankow</option>
-            <option value="Dreescher Markt">Dreescher Markt</option>
-          </select>
-        </label>
+      <section class="planner-card" aria-labelledby="planner-title">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Plan</p>
+            <h2 id="planner-title">Where should everyone be?</h2>
+          </div>
 
-        <label class="field full">
-          <span>Meet at</span>
-          <select id="destination">
-            <option value="Dreescher Markt">Dreescher Markt</option>
-            <option value="Marienplatz">Marienplatz</option>
-            <option value="Hauptbahnhof">Hauptbahnhof</option>
-          </select>
-        </label>
+          <button class="text-button" id="resetButton" type="button">Reset</button>
+        </div>
 
-        <label class="field">
-          <span>Date</span>
-          <input id="date" type="date">
-        </label>
+        <form id="plannerForm">
+          <div class="people-grid">
+            <label class="field location-field">
+              <span class="field-label">
+                <span class="person-dot person-dot-you" aria-hidden="true"></span>
+                You start at
+              </span>
+              <select id="personA" autocomplete="off">
+                <option value="Lankow">Lankow</option>
+                <option value="Hegelstraße">Hegelstraße</option>
+                <option value="Dreescher Markt">Dreescher Markt</option>
+              </select>
+            </label>
 
-        <label class="field">
-          <span>Meet at</span>
-          <input id="time" type="time" value="17:00">
-        </label>
+            <button class="swap-button" id="swapButton" type="button" aria-label="Swap starting points" title="Swap starting points">
+              ⇄
+            </button>
+
+            <label class="field location-field">
+              <span class="field-label">
+                <span class="person-dot person-dot-friend" aria-hidden="true"></span>
+                Friend starts at
+              </span>
+              <select id="personB" autocomplete="off">
+                <option value="Hegelstraße">Hegelstraße</option>
+                <option value="Lankow">Lankow</option>
+                <option value="Dreescher Markt">Dreescher Markt</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="destination-row">
+            <div class="route-rail" aria-hidden="true">
+              <span></span>
+              <span></span>
+            </div>
+
+            <label class="field">
+              <span class="field-label">
+                <span class="meet-dot" aria-hidden="true"></span>
+                Meet at
+              </span>
+              <select id="destination" autocomplete="off">
+                <option value="Dreescher Markt">Dreescher Markt</option>
+                <option value="Marienplatz">Marienplatz</option>
+                <option value="Hauptbahnhof">Hauptbahnhof</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="time-grid">
+            <label class="field">
+              <span class="field-label">Date</span>
+              <input id="date" type="date">
+            </label>
+
+            <label class="field">
+              <span class="field-label">Target arrival</span>
+              <input id="time" type="time" value="17:00">
+            </label>
+          </div>
+
+          <div class="quick-times" aria-label="Quick target-time choices">
+            <button type="button" data-time-offset="30">In 30 min</button>
+            <button type="button" data-time-offset="60">In 1 hour</button>
+            <button type="button" data-time-value="17:00">17:00</button>
+            <button type="button" data-time-value="18:00">18:00</button>
+          </div>
+
+          <button class="search-button desktop-search" type="submit">
+            <span>Find connections</span>
+            <span aria-hidden="true">→</span>
+          </button>
+        </form>
+      </section>
+
+      <section class="results-section" aria-labelledby="results-title">
+        <div class="results-heading">
+          <div>
+            <p class="section-kicker">Suggestions</p>
+            <h2 id="results-title">Three ways to meet</h2>
+          </div>
+          <p class="summary" id="summary" aria-live="polite"></p>
+        </div>
+
+        <div class="results" id="results" aria-live="polite"></div>
+      </section>
+
+      <section class="about-card">
+        <div class="about-icon" aria-hidden="true">◎</div>
+        <div>
+          <strong>What makes this different?</strong>
+          <p>
+            Normal journey planners optimize one route at a time. This prototype scores
+            <em>pairs</em> of routes, balancing how close both people arrive to the target
+            time with how long either person has to wait.
+          </p>
+        </div>
+      </section>
+
+      <footer>
+        <p>Unofficial prototype · Not affiliated with Nahverkehr Schwerin.</p>
+        <p id="versionLabel">v0.1.1 PWA · Demo timetable data</p>
+      </footer>
+    </main>
+
+    <div class="mobile-action" aria-hidden="false">
+      <button class="search-button" id="mobileSearchButton" type="button">
+        <span>Find connections</span>
+        <span aria-hidden="true">→</span>
+      </button>
+    </div>
+  </div>
+
+  <dialog class="install-dialog" id="installDialog">
+    <div class="dialog-header">
+      <div>
+        <p class="section-kicker">Install</p>
+        <h2>Put Meet Schwerin on your home screen</h2>
       </div>
+      <button class="close-button" id="closeInstallDialog" type="button" aria-label="Close">×</button>
+    </div>
 
-      <button class="search-button" id="searchButton" type="button">Find connections</button>
-    </section>
+    <div class="install-instructions" id="installInstructions"></div>
 
-    <p class="summary" id="summary" aria-live="polite"></p>
-    <section class="results" id="results" aria-live="polite"></section>
+    <button class="secondary-button" id="dialogInstallButton" type="button" hidden>
+      Install app
+    </button>
+  </dialog>
 
-    <footer>
-      Prototype timetable data only · Real public transport data comes next
-    </footer>
-  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <noscript>
+    <div class="noscript">This app needs JavaScript enabled to compare journeys.</div>
+  </noscript>
 
   <script src="app.js"></script>
 </body>
