@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="journey.css">
   <link rel="stylesheet" href="recommend.css">
   <link rel="stylesheet" href="group.css">
+  <link rel="stylesheet" href="convergence.css">
 </head>
 
 <body>
@@ -68,7 +69,7 @@
           <h1 id="page-title">Arrive together, not just <em>there</em>.</h1>
           <p class="subtitle">
             Plan real public-transport meetups for two to six people, choose what “best” means,
-            and optionally decide who should meet first before the whole group comes together.
+            and see where friends join each other before the whole group comes together.
           </p>
         </div>
 
@@ -169,8 +170,8 @@
           <div class="live-note">
             <span aria-hidden="true">●</span>
             <div>
-              <strong>v0.7 coordinates the whole group.</strong>
-              Add up to six people, rename and colour-code them, choose who should meet first, and keep using Together, Fastest, Easy or ASAP recommendations.
+              <strong>v0.7.1 understands route convergence.</strong>
+              Every group member stays visible on the map, ★ markers show intermediate meet/join points, and matching onward transit is highlighted as shared travel.
             </div>
           </div>
 
@@ -186,7 +187,7 @@
           <div>
             <p class="section-kicker">Map</p>
             <h2 id="map-title">See the group converge</h2>
-            <p class="map-subtitle">Each person keeps their own colour; M is the shared meetup point.</p>
+            <p class="map-subtitle">Every person keeps their own colour; ★ is an intermediate join and M is the final meetup.</p>
           </div>
 
           <div class="map-tabs" aria-label="Choose which recommendation to show">
@@ -234,14 +235,14 @@
           <strong>What makes this different?</strong>
           <p>
             Meet Schwerin scores combinations of real journeys across the whole group instead of optimising one person at a time.
-            It can balance arrival spread, travel time, easy routes, target time and an optional “meet first” priority group.
+            It can balance arrival spread, travel time, easy routes, target time, first-meet priorities and progressive route joins.
           </p>
         </div>
       </section>
 
       <footer>
         <p>Unofficial prototype · Not affiliated with Nahverkehr Schwerin.</p>
-        <p id="versionLabel">v0.7.0 · Group planning + first-meet priorities</p>
+        <p id="versionLabel">v0.7.1 · Group route convergence</p>
         <div class="source-links" aria-label="Data and source links">
           <a href="https://transitous.org/" target="_blank" rel="noopener">Routing: Transitous</a>
           <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transit data sources</a>
@@ -290,6 +291,7 @@
   <script src="transit.js"></script>
   <script src="places.js"></script>
   <script src="recommend.js"></script>
+  <script src="convergence.js"></script>
   <script src="group-engine.js"></script>
   <script src="map.js"></script>
   <script src="v05.js"></script>
@@ -298,5 +300,7 @@
   <script src="fair.js"></script>
   <script src="journey.js"></script>
   <script src="group.js"></script>
+  <script src="group-events.js"></script>
+  <script src="convergence-ui.js"></script>
 </body>
 </html>
