@@ -231,6 +231,10 @@
     };
   }
 
+  function setsOverlap(a, b) {
+    return a.some((id) => b.includes(id));
+  }
+
   function candidateEvents(assignments) {
     const visits = assignments.flatMap((assignment) => mergedVisits(assignment));
     const byStop = new Map();
@@ -280,13 +284,21 @@
     candidates.sort((a, b) => a.time - b.time || b.memberIds.length - a.memberIds.length);
     const unique = [];
     for (const candidate of candidates) {
-      const duplicate = unique.find((existing) =>
+      const duplicateIndex = unique.findIndex((existing) =>
         existing.stopKey === candidate.stopKey &&
         Math.abs(existing.time - candidate.time) <= DUPLICATE_EVENT_MS &&
-        candidate.memberIds.every((id) => existing.memberIds.includes(id)),
+        setsOverlap(existing.memberIds, candidate.memberIds),
       );
-      if (!duplicate) unique.push(candidate);
-      else if (candidate.memberIds.length > duplicate.memberIds.length) Object.assign(duplicate, candidate);
+      if (duplicateIndex < 0) {
+        unique.push(candidate);
+        continue;
+      }
+
+      const existing = unique[duplicateIndex];
+      const existingContainsCandidate = candidate.memberIds.every((id) => existing.memberIds.includes(id));
+      const candidateContainsExisting = existing.memberIds.every((id) => candidate.memberIds.includes(id));
+      if (candidateContainsExisting && !existingContainsCandidate) unique[duplicateIndex] = candidate;
+      else if (!existingContainsCandidate && !candidateContainsExisting && candidate.memberIds.length > existing.memberIds.length) unique[duplicateIndex] = candidate;
     }
     return unique;
   }
