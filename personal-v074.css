@@ -1,0 +1,208 @@
+/* v0.7.4 personal shared itinerary */
+
+.personal-shared-plan {
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid #d9e2ec;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 12px 34px rgba(16, 24, 40, 0.08);
+}
+
+.personal-plan-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #eaecf0;
+}
+
+.personal-plan-head h2 {
+  margin: 2px 0 3px;
+  color: #101828;
+  font-size: clamp(22px, 4vw, 30px);
+}
+
+.personal-plan-head p:not(.section-kicker) {
+  margin: 0;
+  color: #667085;
+  font-size: 12px;
+}
+
+.personal-plan-duration {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 3px;
+  text-align: right;
+}
+
+.personal-plan-duration strong {
+  color: #101828;
+  font-size: 18px;
+}
+
+.personal-plan-duration span {
+  color: #475467;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.personal-route-steps {
+  display: grid;
+  gap: 7px;
+  margin-top: 13px;
+}
+
+.personal-route-step {
+  display: grid;
+  grid-template-columns: 46px 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid #eaecf0;
+  border-radius: 13px;
+  background: #f9fafb;
+}
+
+.personal-route-step time {
+  padding-top: 3px;
+  color: #475467;
+  font-size: 11px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.personal-route-step-icon {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 0 0 1px #e4e7ec;
+  font-size: 14px;
+}
+
+.personal-route-step div {
+  min-width: 0;
+}
+
+.personal-route-step strong,
+.personal-route-step small {
+  display: block;
+}
+
+.personal-route-step strong {
+  color: #101828;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.personal-route-step small {
+  margin-top: 3px;
+  overflow: hidden;
+  color: #667085;
+  font-size: 10px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+}
+
+.personal-inline-join {
+  color: #7f56d9;
+  font-weight: 900;
+}
+
+.personal-route-fallback {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f9fafb;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.personal-plan-note {
+  margin: 12px 0 0;
+  color: #667085;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+body.personal-itinerary-view #departureBoard,
+body.personal-itinerary-view .results-heading,
+body.personal-itinerary-view .result[data-map-pair="primary"] > .result-header,
+body.personal-itinerary-view .result[data-map-pair="primary"] > .group-card-people,
+body.personal-itinerary-view .result[data-map-pair="primary"] > .group-meetup-metrics,
+body.personal-itinerary-view .result[data-map-pair="primary"] > .group-first-meetup,
+body.personal-itinerary-view .result[data-map-pair="primary"] > .group-why {
+  display: none !important;
+}
+
+body.personal-itinerary-view .results-section {
+  margin-top: 14px;
+}
+
+body.personal-itinerary-view .result[data-map-pair="primary"] {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.personal-itinerary-view .result[data-map-pair="primary"] .journey-v05 {
+  margin-top: 0;
+  border: 1px solid #d9e2ec;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 26px rgba(16, 24, 40, 0.06);
+}
+
+body.personal-itinerary-view .route-timeline {
+  display: none !important;
+}
+
+body.personal-itinerary-view .route-timeline.personal-route-selected {
+  display: block !important;
+  opacity: 1 !important;
+}
+
+body.personal-itinerary-view .journey-timeline-grid,
+body.personal-itinerary-view .group-timeline-grid {
+  display: block;
+  grid-template-columns: 1fr;
+}
+
+body.personal-itinerary-view .journey-v05 > summary {
+  padding: 12px 14px;
+}
+
+body.personal-itinerary-view .journey-v05[open] > summary {
+  border-bottom: 1px solid #eaecf0;
+}
+
+@media (max-width: 620px) {
+  .personal-shared-plan {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .personal-plan-head {
+    gap: 10px;
+  }
+
+  .personal-plan-duration strong {
+    font-size: 16px;
+  }
+
+  .personal-route-step {
+    grid-template-columns: 40px 26px minmax(0, 1fr);
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .personal-route-step-icon {
+    width: 24px;
+    height: 24px;
+  }
+}
