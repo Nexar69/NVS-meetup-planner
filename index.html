@@ -31,6 +31,7 @@
   <link rel="stylesheet" href="group.css">
   <link rel="stylesheet" href="convergence.css">
   <link rel="stylesheet" href="share-v072.css">
+  <link rel="stylesheet" href="personal-v074.css">
 </head>
 
 <body>
@@ -171,8 +172,8 @@
           <div class="live-note">
             <span aria-hidden="true">●</span>
             <div>
-              <strong>v0.7.2 makes a plan shareable.</strong>
-              Map markers use 1–6, the top Share button creates a read-only whole-group link, and every person's result row has its own personal-view link under the trip duration.
+              <strong>v0.7.4 sharpens shared journeys.</strong>
+              Join stars now prefer exact MOTIS stop coordinates, and personal links open a compact passenger-style itinerary before the full detailed route.
             </div>
           </div>
 
@@ -188,7 +189,7 @@
           <div>
             <p class="section-kicker">Map</p>
             <h2 id="map-title">See the group converge</h2>
-            <p class="map-subtitle">People are numbered 1–6 in group order; ★ is an intermediate join and M is the final meetup.</p>
+            <p class="map-subtitle">People are numbered 1–6 in group order; ★ is anchored to the real join stop when MOTIS provides coordinates, and M is the final meetup.</p>
           </div>
 
           <div class="map-tabs" aria-label="Choose which recommendation to show">
@@ -243,7 +244,7 @@
 
       <footer>
         <p>Unofficial prototype · Not affiliated with Nahverkehr Schwerin.</p>
-        <p id="versionLabel">v0.7.2 · Read-only group & personal sharing</p>
+        <p id="versionLabel">v0.7.4 · Precise joins + personal itineraries</p>
         <div class="source-links" aria-label="Data and source links">
           <a href="https://transitous.org/" target="_blank" rel="noopener">Routing: Transitous</a>
           <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transit data sources</a>
@@ -294,6 +295,7 @@
   <script src="share-v072.js"></script>
   <script src="recommend.js"></script>
   <script src="convergence.js"></script>
+  <script src="convergence-v074.js"></script>
   <script src="group-engine.js"></script>
   <script src="map.js"></script>
   <script src="v05.js"></script>
@@ -304,5 +306,7 @@
   <script src="group.js"></script>
   <script src="group-events.js"></script>
   <script src="convergence-ui.js"></script>
+  <script src="personal-v074.js"></script>
+  <script src="release-v074.js"></script>
 </body>
 </html>
