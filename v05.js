@@ -42,6 +42,63 @@
     }
   }
 
+  function copyTypeMetadata(select) {
+    if (!select) return null;
+    return {
+      kind: select.dataset.v051Kind || "",
+      kindLabel: select.dataset.v051KindLabel || "",
+      icon: select.dataset.v051Icon || "",
+    };
+  }
+
+  function applyTypeMetadata(select, metadata) {
+    if (!select) return;
+    ["v051Kind", "v051KindLabel", "v051Icon"].forEach((key) => delete select.dataset[key]);
+    if (!metadata) return;
+    if (metadata.kind) select.dataset.v051Kind = metadata.kind;
+    if (metadata.kindLabel) select.dataset.v051KindLabel = metadata.kindLabel;
+    if (metadata.icon) select.dataset.v051Icon = metadata.icon;
+  }
+
+  function dispatchSelectRefresh(select) {
+    select?.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function installHiddenSelectSync() {
+    const personA = document.getElementById("personA");
+    const personB = document.getElementById("personB");
+    const destination = document.getElementById("destination");
+
+    document.getElementById("swapButton")?.addEventListener("click", () => {
+      const metaA = copyTypeMetadata(personA);
+      const metaB = copyTypeMetadata(personB);
+      setTimeout(() => {
+        applyTypeMetadata(personA, metaB);
+        applyTypeMetadata(personB, metaA);
+        dispatchSelectRefresh(personA);
+        dispatchSelectRefresh(personB);
+      }, 0);
+    });
+
+    document.getElementById("resetButton")?.addEventListener("click", () => {
+      setTimeout(() => {
+        [personA, personB, destination].forEach((select) => {
+          applyTypeMetadata(select, null);
+          dispatchSelectRefresh(select);
+        });
+      }, 0);
+    });
+
+    // The destination remains a normal select in v0.5.1. If the user changes
+    // it manually, clear metadata from a previously searched custom result so
+    // its type badge is recomputed from the newly selected place.
+    destination?.addEventListener("change", (event) => {
+      if (!event.isTrusted) return;
+      applyTypeMetadata(destination, null);
+      setTimeout(() => dispatchSelectRefresh(destination), 0);
+    }, { capture: true });
+  }
+
   function loadV051UX() {
     if (!document.querySelector('link[data-v051-ux="true"]')) {
       const link = document.createElement("link");
@@ -62,5 +119,6 @@
 
   installDepartureGuard();
   updateReleaseCopy();
+  installHiddenSelectSync();
   loadV051UX();
 })();
