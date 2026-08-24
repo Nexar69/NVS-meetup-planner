@@ -130,10 +130,37 @@
     document.body.appendChild(script);
   }
 
+  function loadLiveMeetup() {
+    if (!document.querySelector('link[data-live-v090="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./live-v090.css";
+      link.dataset.liveV090 = "true";
+      document.head.appendChild(link);
+    }
+
+    if (!document.querySelector('script[data-live-v090="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./live-v090.js";
+      script.async = false;
+      script.dataset.liveV090 = "true";
+      document.body.appendChild(script);
+    }
+
+    if (!document.querySelector('script[data-release-v090="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./release-v090.js";
+      script.async = false;
+      script.dataset.releaseV090 = "true";
+      document.body.appendChild(script);
+    }
+  }
+
   installDepartureGuard();
   updateReleaseCopy();
   installHiddenSelectSync();
   loadV051UX();
   loadGroupEventRouter();
   loadActionInstructions();
+  loadLiveMeetup();
 })();
