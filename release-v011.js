@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "v0.11.0 · Meetup Intelligence";
+  const VERSION = "v0.11.1 · Meetup Intelligence";
 
   window.NVSRelease011 = true;
   document.documentElement.dataset.nvsRelease = "011";
@@ -19,7 +19,7 @@
 
     const liveNote = document.querySelector(".live-note div");
     if (liveNote) {
-      liveNote.innerHTML = `<strong>v0.11 adds Meetup Intelligence.</strong> The Journey Command Center combines live actions, voluntary check-ins, delays, cancellations, platform changes, transfer risk, meetup impact and optional alerts without background GPS tracking.`;
+      liveNote.innerHTML = `<strong>v0.11.1 hardens Meetup Intelligence.</strong> Realtime alerts now distinguish early from late vehicles, detect connections that no longer work, use mobile-safe PWA notifications, and add Trip Mode quick check-ins plus an optional keep-screen-awake control.`;
     }
 
     const hero = document.querySelector(".hero .subtitle");
