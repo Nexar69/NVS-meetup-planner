@@ -4,6 +4,8 @@ import { vmvRestPlan } from "./vmv-rest.js";
 const DEFAULT_APP_URL = "https://nexar69.github.io/NVS-meetup-planner/";
 const DEFAULT_TTL = 72 * 60 * 60;
 const PLAN_ID = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{6,12}$/;
+const PLAN_ID_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const PUBLIC_PLAN_ID_LENGTH = 11;
 const LIVE_STATUSES = new Set(["left", "on-vehicle", "at-stop", "missed", "arrived", "clear"]);
 
 function json(data, status = 200, headers = {}) {
@@ -38,6 +40,29 @@ function randomCapability() {
   let raw = "";
   bytes.forEach((byte) => { raw += String.fromCharCode(byte); });
   return btoa(raw).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
+}
+
+function randomPlanId(length = PUBLIC_PLAN_ID_LENGTH) {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => PLAN_ID_ALPHABET[byte % PLAN_ID_ALPHABET.length]).join("");
+}
+
+async function migrateToLongPlanId(id, env) {
+  if (!PLAN_ID.test(id) || id.length >= PUBLIC_PLAN_ID_LENGTH) return id;
+  const stored = await env.PLANS.get(`p:${id}`);
+  if (!stored) return id;
+
+  let nextId = randomPlanId();
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (!(await env.PLANS.get(`p:${nextId}`))) break;
+    nextId = randomPlanId();
+  }
+  if (await env.PLANS.get(`p:${nextId}`)) return id;
+
+  await env.PLANS.put(`p:${nextId}`, stored, { expirationTtl: liveTtl(env) });
+  await env.PLANS.delete(`p:${id}`);
+  return nextId;
 }
 
 function validPoint(value) {
@@ -225,8 +250,11 @@ async function createPlanWithCapabilities(request, env, ctx) {
 
   let data;
   try { data = await response.clone().json(); } catch { return response; }
-  const id = String(data?.id || "");
-  if (!PLAN_ID.test(id)) return response;
+  const legacyId = String(data?.id || "");
+  if (!PLAN_ID.test(legacyId)) return response;
+
+  let id = legacyId;
+  try { id = await migrateToLongPlanId(legacyId, env); } catch { id = legacyId; }
 
   const keys = Array.from({ length: memberCount }, () => randomCapability());
   const ownerKey = randomCapability();
@@ -241,7 +269,15 @@ async function createPlanWithCapabilities(request, env, ctx) {
   const headers = new Headers(response.headers);
   headers.set("content-type", "application/json; charset=utf-8");
   headers.set("cache-control", "no-store");
-  return new Response(JSON.stringify({ ...data, memberKeys: keys, ownerKey, revision: 1 }), {
+  const origin = new URL(request.url).origin;
+  return new Response(JSON.stringify({
+    ...data,
+    id,
+    url: `${origin}/p/${id}`,
+    memberKeys: keys,
+    ownerKey,
+    revision: 1,
+  }), {
     status: response.status,
     statusText: response.statusText,
     headers,
@@ -270,6 +306,22 @@ async function freshAppAsset(request, env) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/health" && request.method === "GET") {
+      return json({
+        ok: true,
+        service: "meet-schwerin-worker",
+        release: "v0.11.1",
+        routing: { primary: "vmv-rest", secondary: "vmv-efa", browserFallback: "transitous" },
+        capabilities: {
+          shortPlans: true,
+          sharedCheckins: true,
+          organizerReplan: true,
+          realtimeDisruptions: true,
+          publicPlanIdLength: PUBLIC_PLAN_ID_LENGTH,
+        },
+      }, 200, { "access-control-allow-origin": "*" });
+    }
 
     if (url.pathname === "/service-worker.js") {
       return new Response("", {
