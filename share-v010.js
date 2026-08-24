@@ -91,21 +91,34 @@
     return JSON.stringify((plan?.members || []).map((member) => String(member?.name || "")));
   }
 
+  function pendingResetTarget() {
+    if (pendingShare?.type !== "person" || !Number.isInteger(pendingShare.index)) return { member: null, name: "" };
+    const member = payload()?.members?.[pendingShare.index];
+    return { member: pendingShare.index, name: String(member?.name || `Person ${pendingShare.index + 1}`) };
+  }
+
   function renderManagement() {
     const element = document.getElementById("v010ShareDialog");
     if (!element) return;
     const button = element.querySelector(".v010-share-revoke");
     const note = element.querySelector("#v010ShareSecurityNote");
+    const target = pendingResetTarget();
     if (button) {
       button.hidden = !secureCache;
       button.disabled = rotating || sharing;
-      button.textContent = rotating ? "Resetting…" : "Reset private links";
+      button.textContent = rotating
+        ? "Resetting…"
+        : target.member == null
+          ? "Reset all private links"
+          : `Reset ${target.name}'s private link`;
     }
     if (note) {
       note.hidden = !secureCache;
-      note.textContent = secureCache
-        ? "Organizer control: resetting private links makes every previously issued personal check-in link read-only. Existing visible check-in history is kept."
-        : "";
+      note.textContent = !secureCache
+        ? ""
+        : target.member == null
+          ? "Organizer control: resetting all private links makes every previously issued personal check-in link read-only. Existing visible check-in history is kept."
+          : `Organizer control: resetting ${target.name}'s private link affects only that person's old write key. Other personal links and visible check-in history stay unchanged.`;
     }
   }
 
@@ -238,7 +251,7 @@
       <div class="group-share-copy" id="v010ShareCopy"></div>
       <p class="group-share-warning" id="v010ShareSecurityNote" hidden></p>
       <div class="group-share-actions">
-        <button type="button" class="secondary-button v010-share-revoke" hidden>Reset private links</button>
+        <button type="button" class="secondary-button v010-share-revoke" hidden>Reset all private links</button>
         <button type="button" class="secondary-button v010-share-cancel">Cancel</button>
         <button type="button" class="search-button v010-share-confirm"><span>Share link</span><span aria-hidden="true">↗</span></button>
       </div>`;
@@ -255,14 +268,21 @@
     });
     element.querySelector(".v010-share-revoke")?.addEventListener("click", async () => {
       if (!secureCache || rotating) return;
-      const confirmed = window.confirm("Reset every private personal check-in link for this meetup? Old personal links will stay readable but can no longer post status updates. Existing visible check-ins will remain.");
+      const target = pendingResetTarget();
+      const confirmed = window.confirm(target.member == null
+        ? "Reset every private personal check-in link for this meetup? Old personal links will stay readable but can no longer post status updates. Existing visible check-ins will remain."
+        : `Reset ${target.name}'s private personal check-in link? Their old link will stay readable but can no longer post status updates. Other personal links stay valid.`);
       if (!confirmed) return;
       try {
-        const changed = await rotateCapabilities();
-        if (changed) window.alert("Private check-in links reset. Share fresh personal links with anyone who should still be able to check in.");
+        const changed = await rotateCapabilities(target.member);
+        if (changed) {
+          window.alert(target.member == null
+            ? "All private check-in links reset. Share fresh personal links with anyone who should still be able to check in."
+            : `${target.name}'s old private check-in link is now read-only. Share a fresh personal link with them to restore check-ins.`);
+        }
       } catch (error) {
         console.warn("Private link reset failed", error);
-        window.alert("Could not reset private links. Check your connection and try again.");
+        window.alert("Could not reset the private link. Check your connection and try again.");
       }
     });
     renderManagement();
@@ -281,7 +301,7 @@
     pendingShare = { type, index };
     element.querySelector("#v010ShareTitle").textContent = person ? `Share ${person.name}'s live route` : "Share whole live meetup";
     element.querySelector("#v010ShareCopy").innerHTML = person
-      ? `<p>This creates a <strong>read-only personal route</strong> for ${escapeHtml(person.name)} with a private check-in capability for that person only.</p><p class="group-share-warning">The link contains a random write key. Anyone you forward this exact personal link to can update ${escapeHtml(person.name)}'s voluntary meetup status until the plan expires or you reset the private links.</p>`
+      ? `<p>This creates a <strong>read-only personal route</strong> for ${escapeHtml(person.name)} with a private check-in capability for that person only.</p><p class="group-share-warning">The link contains a random write key. Anyone you forward this exact personal link to can update ${escapeHtml(person.name)}'s voluntary meetup status until the plan expires or you reset that person's private link.</p>`
       : `<p>This creates the <strong>read-only whole-group view</strong>. It can see voluntary check-ins but cannot post as any person.</p><p class="group-share-warning">The shared plan contains group names, starting locations, meetup place/time and route preferences. It expires automatically after about 72 hours.</p>`;
     renderManagement();
     element.showModal();
