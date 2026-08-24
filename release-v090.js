@@ -2,9 +2,12 @@
   const VERSION = "v0.9.0 · Live Meetup Mode";
 
   window.NVSRelease090 = true;
-  document.documentElement.dataset.nvsRelease = "090";
+  if (document.documentElement.dataset.nvsRelease !== "010") {
+    document.documentElement.dataset.nvsRelease = "090";
+  }
 
   function applyReleaseCopy() {
+    if (document.documentElement.dataset.nvsRelease === "010" || window.NVSRelease010) return;
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = VERSION;
 
