@@ -16,6 +16,58 @@
     return recoveryAlert()?.id || "";
   }
 
+  function routeAssignments() {
+    const primary = window.__NVS_LAST_RECOMMENDATIONS__?.primary;
+    return Array.isArray(primary?.assignments)
+      ? primary.assignments.filter((item) => item?.member && item?.route)
+      : [];
+  }
+
+  function assignmentFor(item) {
+    const list = routeAssignments();
+    if (!list.length || !item) return null;
+    if (item.memberId) {
+      const match = list.find((assignment) => assignment?.member?.id === item.memberId);
+      if (match) return match;
+    }
+    if (Number.isInteger(item.memberIndex) && list[item.memberIndex]) return list[item.memberIndex];
+    const focus = Number(window.NVSShare?.getFocusIndex?.() ?? -1);
+    if (Number.isInteger(focus) && focus >= 0 && list[focus]) return list[focus];
+    return list[0];
+  }
+
+  function timetableHint(item) {
+    if (!item) return "";
+    const assignment = assignmentFor(item);
+    const segments = Array.isArray(assignment?.route?.segments) ? assignment.route.segments : [];
+    const index = Number(item.segmentIndex);
+
+    if (String(item.id || "").startsWith("transfer-missed:") && Number.isInteger(index) && index >= 0) {
+      const previous = segments[index - 1];
+      const next = segments[index];
+      const anchor = String(previous?.to || next?.from || "the planned transfer stop").trim();
+      const service = next ? window.NVSIntelligenceCore?.vehicleLabel?.(next) : "the next planned service";
+      return `Known timetable anchor: ${anchor}. The next planned leg is ${service || "the next service"}; refresh before following it.`;
+    }
+
+    if (Number.isInteger(index) && index >= 0 && segments[index]) {
+      const segment = segments[index];
+      const from = String(segment?.from || "the planned stop").trim();
+      const to = String(segment?.to || "the next stop").trim();
+      return `Affected planned leg: ${from} → ${to}. Refresh the timetable before following this leg.`;
+    }
+
+    if (item.kind === "recovery") {
+      return "No current stop is inferred from a voluntary missed-connection check-in; refresh before choosing the next leg.";
+    }
+    return "";
+  }
+
+  function detailWithHint(detail, item) {
+    const hint = timetableHint(item);
+    return hint ? `${detail} ${hint}` : detail;
+  }
+
   function ensureDesk() {
     let desk = document.getElementById("v0111RecoveryDesk");
     if (desk) return desk;
@@ -73,7 +125,7 @@
       return {
         id: item.id,
         title: item.title || "A missed connection was reported",
-        detail: item.detail || "Refresh the timetable and calculate a new way to the meetup.",
+        detail: detailWithHint(item.detail || "Refresh the timetable and calculate a new way to the meetup.", item),
         action: "Refresh & replan",
       };
     }
@@ -81,14 +133,14 @@
       return {
         id: item.id,
         title: "This transfer no longer works",
-        detail: item.detail || "Realtime timing now puts the next departure before your arrival. Replan from the known timetable state.",
+        detail: detailWithHint(item.detail || "Realtime timing now puts the next departure before your arrival. Replan from the known timetable state.", item),
         action: "Find a recovery route",
       };
     }
     return {
       id: item.id,
       title: item.title || "The current plan needs attention",
-      detail: item.detail || "A disruption may prevent the planned meetup. Refresh the timetable before continuing.",
+      detail: detailWithHint(item.detail || "A disruption may prevent the planned meetup. Refresh the timetable before continuing.", item),
       action: "Refresh & replan",
     };
   }
@@ -160,6 +212,7 @@
   window.NVSRecovery0111 = Object.freeze({
     refresh: render,
     getActiveAlert: recoveryAlert,
+    getTimetableHint: timetableHint,
   });
 
   start();
