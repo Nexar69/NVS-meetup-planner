@@ -185,6 +185,15 @@
     }
   }
 
+  function scheduleRender() {
+    clearTimeout(timer);
+    if (document.hidden) return;
+    timer = setTimeout(() => {
+      render();
+      scheduleRender();
+    }, 15_000);
+  }
+
   function attachDialogLifecycle() {
     const dialog = ensureTools()?.closest("dialog");
     if (!dialog || dialog.dataset.v0111Lifecycle === "true") return;
@@ -199,9 +208,8 @@
   function start() {
     ensureTools();
     attachDialogLifecycle();
-    clearInterval(timer);
-    timer = setInterval(render, 15_000);
     render();
+    scheduleRender();
   }
 
   window.addEventListener("nvs-group-recommendations-rendered", () => {
@@ -213,9 +221,14 @@
   window.addEventListener("offline", render);
   window.addEventListener("pageshow", start);
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) releaseWakeLock();
-    else if (wakeWanted && tripDialog()?.open) acquireWakeLock();
+    clearTimeout(timer);
+    if (document.hidden) {
+      releaseWakeLock();
+      return;
+    }
+    if (wakeWanted && tripDialog()?.open) acquireWakeLock();
     render();
+    scheduleRender();
   });
 
   // The v0.11 dialog is created dynamically, so tolerate either load order.
