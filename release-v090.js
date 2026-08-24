@@ -17,5 +17,9 @@
   }
 
   applyReleaseCopy();
-  window.addEventListener("load", applyReleaseCopy);
+  setTimeout(applyReleaseCopy, 300);
+  window.addEventListener("load", () => {
+    applyReleaseCopy();
+    setTimeout(applyReleaseCopy, 120);
+  });
 })();
