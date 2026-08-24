@@ -1,4 +1,4 @@
-const CACHE_NAME = "meet-schwerin-v0.11.1-r4";
+const CACHE_NAME = "meet-schwerin-v0.11.1-r5";
 
 const APP_SHELL = [
   "./",
@@ -20,6 +20,7 @@ const APP_SHELL = [
   "./intelligence-v011.css",
   "./trip-tools-v0111.css",
   "./recovery-v0111.css",
+  "./accessibility-v0111.css",
   "./config.js",
   "./transit.js",
   "./vmv-v080.js",
@@ -49,6 +50,7 @@ const APP_SHELL = [
   "./shared-freshness-v011.js",
   "./trip-tools-v0111.js",
   "./recovery-v0111.js",
+  "./accessibility-v0111.js",
   "./release-v074.js",
   "./release-v080.js",
   "./release-v090.js",
@@ -124,8 +126,6 @@ self.addEventListener("fetch", (event) => {
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
 
-  // Live/shared API responses can contain voluntary check-ins and capabilities.
-  // Never place API responses in the app-shell runtime cache.
   if (requestUrl.pathname.startsWith("/api/")) return;
 
   if (event.request.mode === "navigate") {
