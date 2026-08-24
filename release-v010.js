@@ -2,9 +2,12 @@
   const VERSION = "v0.10.0 · Shared Live Meetup";
 
   window.NVSRelease010 = true;
-  document.documentElement.dataset.nvsRelease = "010";
+  if (!window.NVSRelease011 && document.documentElement.dataset.nvsRelease !== "011") {
+    document.documentElement.dataset.nvsRelease = "010";
+  }
 
   function applyReleaseCopy() {
+    if (window.NVSRelease011 || document.documentElement.dataset.nvsRelease === "011") return;
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = VERSION;
 

@@ -81,13 +81,20 @@ function geometryCoordinates(value) {
   return [];
 }
 
+function remarkText(remark) {
+  return String(remark?.summary || remark?.text || remark?.type || "").trim();
+}
+
 function normalizeStopover(stopover) {
   const stop = stopover?.stop || stopover?.station || stopover;
+  const actualTrack = String(stopover?.departurePlatform || stopover?.arrivalPlatform || "");
+  const plannedTrack = String(stopover?.plannedDeparturePlatform || stopover?.plannedArrivalPlatform || "");
   return {
     name: String(stop?.name || stopover?.name || "Stop"),
     arrival: asIso(stopover?.arrival || stopover?.plannedArrival),
     departure: asIso(stopover?.departure || stopover?.plannedDeparture),
-    track: String(stopover?.departurePlatform || stopover?.arrivalPlatform || stopover?.plannedDeparturePlatform || stopover?.plannedArrivalPlatform || ""),
+    track: actualTrack || plannedTrack,
+    plannedTrack,
     point: point(stop),
     cancelled: Boolean(stopover?.cancelled),
   };
@@ -109,6 +116,13 @@ function normalizeLeg(leg, index) {
   const departureDelay = Number(leg?.departureDelay);
   const arrivalDelay = Number(leg?.arrivalDelay);
   const geometry = geometryCoordinates(leg?.polyline || leg?.geometry);
+  const plannedPlatformFrom = String(leg?.plannedDeparturePlatform || "");
+  const plannedPlatformTo = String(leg?.plannedArrivalPlatform || "");
+  const platformFrom = String(leg?.departurePlatform || plannedPlatformFrom || "");
+  const platformTo = String(leg?.arrivalPlatform || plannedPlatformTo || "");
+  const remarks = (Array.isArray(leg?.remarks) ? leg.remarks : []).map(remarkText).filter(Boolean).slice(0, 8);
+  const cancelled = Boolean(leg?.cancelled || stopovers.some((stop) => stop.cancelled));
+  const platformChanged = Boolean(plannedPlatformFrom && platformFrom && plannedPlatformFrom !== platformFrom);
 
   return {
     index,
@@ -123,16 +137,21 @@ function normalizeLeg(leg, index) {
     departure,
     arrival,
     duration: Math.max(1, Math.round((new Date(arrival) - new Date(departure)) / 60000)),
-    platformFrom: String(leg?.departurePlatform || leg?.plannedDeparturePlatform || ""),
-    platformTo: String(leg?.arrivalPlatform || leg?.plannedArrivalPlatform || ""),
+    platformFrom,
+    platformTo,
+    plannedPlatformFrom,
+    plannedPlatformTo,
     headsign: String(leg?.direction || ""),
     tripId: String(leg?.tripId || ""),
     intermediateStops,
     instructions: [],
     departureDelay: Number.isFinite(departureDelay) ? Math.round(departureDelay / 60) : 0,
     arrivalDelay: Number.isFinite(arrivalDelay) ? Math.round(arrivalDelay / 60) : 0,
+    cancelled,
+    remarks,
     realtime: Boolean(
-      leg?.cancelled ||
+      cancelled ||
+      platformChanged ||
       (Number.isFinite(departureDelay) && departureDelay !== 0) ||
       (Number.isFinite(arrivalDelay) && arrivalDelay !== 0) ||
       (leg?.departure && leg?.plannedDeparture && leg.departure !== leg.plannedDeparture) ||
@@ -175,6 +194,7 @@ function normalizeJourney(journey, index) {
     description: segments.map((segment) => segment.title).filter((value, i, all) => value !== all[i - 1]).join(" → "),
     transfers: Math.max(0, transitSegments.length - 1),
     realtime: segments.some((segment) => segment.realtime),
+    disrupted: segments.some((segment) => segment.cancelled || Math.max(segment.departureDelay || 0, segment.arrivalDelay || 0) >= 5),
     geometry: combineGeometry(segments),
     segments,
     source: "vmv-rest",
