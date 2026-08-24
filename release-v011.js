@@ -19,7 +19,7 @@
 
     const liveNote = document.querySelector(".live-note div");
     if (liveNote) {
-      liveNote.innerHTML = `<strong>v0.11.1 hardens Meetup Intelligence.</strong> Realtime alerts now distinguish early from late vehicles, detect connections that no longer work, use mobile-safe PWA notifications, and add Trip Mode quick check-ins plus an optional keep-screen-awake control.`;
+      liveNote.innerHTML = `<strong>v0.11.1 hardens Meetup Intelligence.</strong> Realtime alerts distinguish early from late vehicles and impossible transfers, Trip Mode adds voluntary quick check-ins and optional screen wake lock, mobile PWA notifications are safer, and organizers can reset private personal check-in links without erasing visible check-in history.`;
     }
 
     const hero = document.querySelector(".hero .subtitle");
