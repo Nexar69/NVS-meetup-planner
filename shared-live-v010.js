@@ -42,6 +42,12 @@
     return key;
   }
 
+  function forgetCapability() {
+    const storageKey = capabilityStorageKey();
+    if (!storageKey) return;
+    try { sessionStorage.removeItem(storageKey); } catch {}
+  }
+
   function capabilityKey() {
     const fromUrl = new URLSearchParams(window.location.search).get("k") || "";
     if (fromUrl.length >= 20) return rememberCapability(fromUrl);
@@ -133,6 +139,12 @@
         headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
         body: JSON.stringify({ member: focus, key, status, note: status === "clear" ? "" : suggestedNote(status) }),
       });
+      if (response.status === 403) {
+        forgetCapability();
+        const note = document.getElementById("v010CheckinNote");
+        if (note) note.textContent = "This private check-in link was reset by the organizer and is now read-only. Ask for a fresh personal link to check in again.";
+        throw new Error("CHECKIN_CAPABILITY_REVOKED");
+      }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const next = await response.json();
       liveState = { ...(liveState || {}), ...next };
@@ -141,7 +153,9 @@
     } catch (error) {
       console.warn("Shared check-in failed", error);
       const note = document.getElementById("v010CheckinNote");
-      if (note) note.textContent = "Could not update the shared status. This link may be an older read-only link, or you may be offline.";
+      if (note && error?.message !== "CHECKIN_CAPABILITY_REVOKED") {
+        note.textContent = "Could not update the shared status. This link may be an older read-only link, or you may be offline.";
+      }
     } finally {
       sending = false;
       render();
@@ -274,7 +288,7 @@
         legacy.className = "v010-legacy-note";
         panel.querySelector("#v010StatusList")?.insertAdjacentElement("beforebegin", legacy);
       }
-      legacy.textContent = "This personal link does not have a check-in capability in this tab. It stays read-only; open the original private personal link from the organizer to enable voluntary check-ins.";
+      legacy.textContent = "This personal link does not have a current check-in capability in this tab. It stays read-only; open a fresh private personal link from the organizer to enable voluntary check-ins.";
     } else {
       legacy?.remove();
     }
