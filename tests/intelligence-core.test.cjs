@@ -65,6 +65,27 @@ function assignment(overrides = {}) {
 
 {
   const item = assignment();
+  item.route.segments[0].departureDelay = -8;
+  item.route.segments[0].arrivalDelay = -5;
+  const alerts = core.routeAlerts(item, at(15));
+  assert.equal(alerts.some((entry) => entry.kind === "disruption" && entry.delayMinutes), false, "an early-running vehicle must not be described as late");
+  assert.equal(core.segmentDelay(item.route.segments[0]), 0, "negative delay values should not count as lateness");
+}
+
+{
+  const item = assignment();
+  item.route.segments[0].arrival = at(31);
+  item.route.segments[1].departure = at(28);
+  const alerts = core.routeAlerts(item, at(20));
+  const missed = alerts.find((entry) => entry.id.startsWith("transfer-missed:"));
+  assert.ok(missed, "an impossible realtime transfer should produce an alert");
+  assert.equal(missed.severity, "critical");
+  assert.equal(missed.replan, true);
+  assert.equal(missed.transferMinutes, -3);
+}
+
+{
+  const item = assignment();
   item.route.segments[0].plannedPlatformFrom = "B";
   item.route.segments[0].platformFrom = "C";
   const alerts = core.routeAlerts(item, at(15));
