@@ -1,4 +1,18 @@
-/* v0.7.3 route convergence */
+/* v0.8.1 route convergence */
+
+/* Use the exact app artwork in the header instead of reconstructing it from
+   individually positioned CSS nodes. This stays stable across mobile text
+   scaling and shared-view rendering. */
+.brand-mark {
+  overflow: hidden;
+  background: url("./icons/icon.svg") center / cover no-repeat;
+}
+
+.brand-mark::before,
+.brand-mark::after,
+.brand-mark .brand-node {
+  display: none;
+}
 
 .convergence-marker-wrap {
   background: transparent;
@@ -116,12 +130,15 @@
   opacity: 0.55;
 }
 
+/* Match journey.css exactly: every route step and lifecycle event uses the
+   same 44px time column, 14px rail column and 8px gap. */
 .timeline-convergence-event {
   display: grid;
-  grid-template-columns: 48px 18px minmax(0, 1fr);
-  align-items: start;
+  grid-template-columns: 44px 14px minmax(0, 1fr);
+  align-items: stretch;
   gap: 8px;
-  margin: 4px 0 10px;
+  min-height: 58px;
+  margin: 0;
 }
 
 .timeline-convergence-time {
@@ -129,33 +146,47 @@
   color: #475467;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  text-align: left;
 }
 
 .timeline-convergence-rail {
   position: relative;
-  display: flex;
-  justify-content: center;
-  min-height: 38px;
+  min-height: 100%;
 }
 
+/* Rail center = x 7px, identical to journey.css (.timeline-rail line at x 6..8). */
 .timeline-convergence-rail::before {
   position: absolute;
-  top: -8px;
-  bottom: -10px;
+  top: -7px;
+  bottom: -7px;
+  left: 6px;
   width: 2px;
   background: #d0d5dd;
   content: "";
 }
 
+/* Start has no line above it; begin at the marker center and continue down. */
+.timeline-convergence-event.start .timeline-convergence-rail::before {
+  top: 14px;
+}
+
+/* The final event receives the incoming rail and terminates at its marker. */
+.timeline-convergence-event.everyone .timeline-convergence-rail::before {
+  top: -7px;
+  bottom: auto;
+  height: 21px;
+}
+
 .timeline-convergence-star {
-  position: relative;
+  position: absolute;
   z-index: 1;
+  top: 5px;
+  left: -2px;
   display: grid;
   width: 18px;
   height: 18px;
   place-items: center;
-  margin-top: 5px;
+  margin: 0;
   border: 2px solid #fff;
   border-radius: 999px;
   background: #101828;
@@ -175,9 +206,18 @@
   box-shadow: 0 0 0 2px #039855;
 }
 
+/* A route segment marked `last` used to terminate its rail before our appended
+   final-arrival event. If a generated lifecycle row follows it, keep the rail
+   connected through that row. */
+.timeline-step.last:has(+ .timeline-convergence-event) .timeline-rail::before {
+  bottom: -7px;
+}
+
 .timeline-convergence-copy {
   display: grid;
+  align-self: start;
   gap: 2px;
+  margin-bottom: 10px;
   padding: 7px 9px;
   border: 1px solid #d0d5dd;
   border-radius: 11px;
@@ -192,6 +232,11 @@
 .timeline-convergence-event.everyone .timeline-convergence-copy {
   border-color: #abefc6;
   background: #ecfdf3;
+}
+
+.timeline-convergence-event.start .timeline-convergence-copy {
+  border-color: #d0d5dd;
+  background: #fff;
 }
 
 .timeline-convergence-copy strong {
@@ -228,9 +273,11 @@
 }
 
 @media (max-width: 620px) {
+  /* Keep the exact same rail columns on mobile; changing these was what made
+     the line visibly zig-zag between normal steps and meetup cards. */
   .timeline-convergence-event {
-    grid-template-columns: 42px 16px minmax(0, 1fr);
-    gap: 6px;
+    grid-template-columns: 44px 14px minmax(0, 1fr);
+    gap: 8px;
   }
 
   .timeline-convergence-copy {
