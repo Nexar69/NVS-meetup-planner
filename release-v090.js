@@ -1,6 +1,9 @@
 (() => {
   const VERSION = "v0.9.0 · Live Meetup Mode";
 
+  window.NVSRelease090 = true;
+  document.documentElement.dataset.nvsRelease = "090";
+
   function applyReleaseCopy() {
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = VERSION;
