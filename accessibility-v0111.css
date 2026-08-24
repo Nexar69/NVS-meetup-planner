@@ -1,0 +1,12 @@
+:where(.v011-button,.v011-replan,.v011-inline-replan,.v011-trip-close,.v011-settings-close,.v010-checkin-actions button,.v010-checkin-foot button,.v0111-checkin-grid button,.v0111-wake){min-width:44px;min-height:44px}
+:where(button,a,input,select,textarea,[tabindex]):focus-visible{outline:3px solid currentColor;outline-offset:3px}
+.v011-trip-dialog:focus-visible,.v011-settings-dialog:focus-visible{outline:none}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  .v011-trip-dialog::backdrop,.v011-settings-dialog::backdrop{backdrop-filter:none}
+  .v011-trip-buttons{backdrop-filter:none}
+}
+@media (forced-colors: active){
+  :where(.v011-primary,.v011-trip-alert,.v011-setting,.v011-mini,.v010-shared-live,.v0111-trip-tools){forced-color-adjust:auto}
+  .v011-alert-icon,.v011-diagnostics span{border:1px solid currentColor}
+}
