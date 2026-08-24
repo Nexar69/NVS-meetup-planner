@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "v0.8.2 · Cleaner journey details";
+  const VERSION = "v0.8.3 · Action-first journey directions";
   const DISPLAY_KEY = "meet-schwerin-display-v1";
   const results = document.getElementById("results");
   const badge = document.getElementById("dataBadgeLabel");
@@ -98,8 +98,8 @@
     if (liveNote) {
       const backend = window.NVSConfig?.hasBackend;
       liveNote.innerHTML = backend
-        ? `<strong>v0.8.2 keeps journeys cleaner.</strong> VMV remains preferred with Transitous fallback, short shared links stay active, and intermediate stop lists are now optional instead of filling every route by default.`
-        : `<strong>v0.8.2 is backend-ready.</strong> Transitous remains active until the Cloudflare Worker URL is configured; intermediate stop lists are optional and short-link sharing falls back safely.`;
+        ? `<strong>v0.8.3 makes routes easier to follow.</strong> VMV remains preferred with Transitous fallback, short shared links stay active, intermediate stops remain optional, and journey legs now lead with clear actions like Board, Stay on, Walk to and stay on until.`
+        : `<strong>v0.8.3 is backend-ready.</strong> Transitous remains active until the Cloudflare Worker URL is configured; action-first directions and optional intermediate stops still work locally.`;
     }
     if (badge && !badge.textContent?.includes("Checking") && !badge.textContent?.includes("Loading")) {
       badge.textContent = fallback ? `${providerLabel(currentProvider)} fallback` : providerLabel(currentProvider);
