@@ -62,6 +62,9 @@ const tripTools = read("trip-tools-v0111.js");
 assert.match(tripTools, /NVSSharedLive\.checkIn/, "Trip Mode should expose voluntary personal check-ins");
 assert.match(tripTools, /wakeLock\.request\("screen"\)/, "Trip Mode should support optional screen wake lock");
 assert.match(tripTools, /No GPS/, "Trip Mode check-ins must keep the no-GPS privacy copy");
+assert.match(tripTools, /function scheduleRender/, "Trip Mode utilities should use a visibility-aware refresh scheduler");
+assert.match(tripTools, /if \(document\.hidden\) return;/, "hidden pages should stop periodic Trip Mode utility refreshes");
+assert.doesNotMatch(tripTools, /setInterval\(render/, "Trip Mode utilities must not keep a fixed render interval alive while hidden");
 
 const recovery = read("recovery-v0111.js");
 assert.match(recovery, /getAlerts/, "recovery desk should consume the existing intelligence alert model");
