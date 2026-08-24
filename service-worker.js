@@ -44,6 +44,7 @@ const APP_SHELL = [
   "./shared-live-v010.js",
   "./intelligence-core.js",
   "./intelligence-v011.js",
+  "./shared-freshness-v011.js",
   "./release-v074.js",
   "./release-v080.js",
   "./release-v090.js",
