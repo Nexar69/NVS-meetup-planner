@@ -6,6 +6,11 @@
 .v010-head h2{margin:0;color:#101828;font-size:20px;line-height:1.15}
 .v010-head p{margin:0;color:#667085;font-size:11px;line-height:1.4}
 .v010-sync{flex:0 0 auto;padding:5px 8px;border:1px solid #e4e7ec;border-radius:999px;background:#f9fafb;color:#667085;font-size:9px;font-weight:850}
+.v010-plan-update{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:11px 12px;border:1px solid #b2ddff;border-radius:13px;background:#eff8ff;color:#1849a9}
+.v010-plan-update>div{display:grid;gap:2px}
+.v010-plan-update strong{font-size:12px}
+.v010-plan-update small{color:#475467;font-size:9px;line-height:1.4}
+.v010-plan-update button{flex:0 0 auto;min-height:34px;padding:6px 9px;border:1px solid #84adff;border-radius:9px;background:#fff;color:#175cd3;font:inherit;font-size:9px;font-weight:900;cursor:pointer}
 .v010-alert{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#f2f4f7;color:#344054;font-size:12px;font-weight:800}
 .v010-alert.warn{border:1px solid #fdb022;background:#fffaeb;color:#93370d}
 .v010-alert.good{border:1px solid #abefc6;background:#ecfdf3;color:#067647}
@@ -34,4 +39,4 @@
 .v010-person.manual.warn{border-color:#fecdca;background:#fef3f2}
 .v010-person.manual.good{border-color:#abefc6;background:#ecfdf3}
 .v010-person.manual .v010-source{background:#101828;color:#fff}
-@media(max-width:620px){.v010-shared-live{padding:14px;border-radius:17px}.v010-head{align-items:flex-start}.v010-head h2{font-size:17px}.v010-checkin-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.v010-checkin-actions button:last-child{grid-column:1/-1}.v010-checkin-foot{align-items:flex-start;flex-direction:column}.v010-person{grid-template-columns:12px minmax(0,1fr)}.v010-source{grid-column:2;justify-self:start}.v010-person small,.v010-person em{white-space:normal}}
+@media(max-width:620px){.v010-shared-live{padding:14px;border-radius:17px}.v010-head{align-items:flex-start}.v010-head h2{font-size:17px}.v010-plan-update{align-items:stretch;flex-direction:column}.v010-plan-update button{width:100%}.v010-checkin-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.v010-checkin-actions button:last-child{grid-column:1/-1}.v010-checkin-foot{align-items:flex-start;flex-direction:column}.v010-person{grid-template-columns:12px minmax(0,1fr)}.v010-source{grid-column:2;justify-self:start}.v010-person small,.v010-person em{white-space:normal}}
