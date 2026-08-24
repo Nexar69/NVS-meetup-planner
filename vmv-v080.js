@@ -22,6 +22,53 @@
     return Number.isFinite(lat) && Number.isFinite(lon) ? [lat, lon] : null;
   }
 
+  function locationPoint(key) {
+    const location = base.LOCATIONS?.[key];
+    if (!location) return null;
+    const lat = Number(location.lat);
+    const lon = Number(location.lon);
+    return Number.isFinite(lat) && Number.isFinite(lon) ? [lat, lon] : null;
+  }
+
+  function pointDistanceSquared(a, b) {
+    if (!a || !b) return 0;
+    const dLat = Number(a[0]) - Number(b[0]);
+    const dLon = Number(a[1]) - Number(b[1]);
+    return dLat * dLat + dLon * dLon;
+  }
+
+  function globallyValid(point) {
+    return Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1]) && Math.abs(point[0]) <= 90 && Math.abs(point[1]) <= 180;
+  }
+
+  function schwerinPenalty(point) {
+    if (!globallyValid(point)) return 1_000_000;
+    const [lat, lon] = point;
+    // Generous regional envelope: wide enough for normal trips around Schwerin,
+    // but very effective at spotting accidental [lon,lat] pairs such as [11,53].
+    if (lat >= 53.2 && lat <= 54.0 && lon >= 10.6 && lon <= 12.3) return 0;
+    return 100;
+  }
+
+  function orientationScore(points, fromPoint, toPoint) {
+    if (!points.length) return 1_000_000;
+    const first = points[0];
+    const last = points[points.length - 1];
+    let score = schwerinPenalty(first) + schwerinPenalty(last);
+    if (fromPoint) score += pointDistanceSquared(first, fromPoint) * 20;
+    if (toPoint) score += pointDistanceSquared(last, toPoint) * 20;
+    return score;
+  }
+
+  function orientGeometry(points, fromPoint = null, toPoint = null) {
+    const clean = (Array.isArray(points) ? points : []).map(revivePoint).filter(Boolean);
+    if (clean.length < 2) return clean;
+    const swapped = clean.map(([a, b]) => [b, a]);
+    const directScore = orientationScore(clean, fromPoint, toPoint);
+    const swappedScore = orientationScore(swapped, fromPoint, toPoint);
+    return swappedScore + 0.000001 < directScore ? swapped : clean;
+  }
+
   function reviveStop(stop) {
     if (!stop || typeof stop !== "object") return stop;
     return {
@@ -32,11 +79,46 @@
     };
   }
 
+  function normalizeRouteGeometry(route, origin, destination) {
+    const routeFrom = locationPoint(origin);
+    const routeTo = locationPoint(destination);
+    const segments = Array.isArray(route?.segments) ? route.segments.map((segment) => {
+      const fromPoint = revivePoint(segment?.fromPoint);
+      const toPoint = revivePoint(segment?.toPoint);
+      return {
+        ...segment,
+        fromPoint,
+        toPoint,
+        geometry: orientGeometry(segment?.geometry, fromPoint, toPoint),
+        intermediateStops: Array.isArray(segment?.intermediateStops)
+          ? segment.intermediateStops.map(reviveStop)
+          : [],
+      };
+    }) : [];
+
+    let geometry = orientGeometry(route?.geometry, routeFrom, routeTo);
+    if (geometry.length < 2 && segments.length) {
+      geometry = [];
+      for (const segment of segments) {
+        const points = segment.geometry?.length >= 2
+          ? segment.geometry
+          : [segment.fromPoint, segment.toPoint].filter(Boolean);
+        points.forEach((point, index) => {
+          const previous = geometry[geometry.length - 1];
+          if (index === 0 && previous && previous[0] === point[0] && previous[1] === point[1]) return;
+          geometry.push(point);
+        });
+      }
+    }
+
+    return { ...route, geometry, segments };
+  }
+
   function reviveRoute(route, origin, destination) {
     const departure = asDate(route?.departure);
     const arrival = asDate(route?.arrival);
     if (!departure || !arrival || arrival <= departure) return null;
-    return {
+    return normalizeRouteGeometry({
       ...route,
       origin,
       destination,
@@ -54,7 +136,7 @@
         geometry: Array.isArray(segment.geometry) ? segment.geometry.map(revivePoint).filter(Boolean) : [],
         intermediateStops: Array.isArray(segment.intermediateStops) ? segment.intermediateStops.map(reviveStop) : [],
       })) : [],
-    };
+    }, origin, destination);
   }
 
   function endpointFor(originKey, destinationKey, target) {
@@ -116,11 +198,15 @@
     }
 
     const routes = await base.fetchRoutes(origin, destination, target);
+    const normalizedRoutes = routes.map((route) => normalizeRouteGeometry({
+      ...route,
+      provider: route.provider || "Transitous",
+    }, origin, destination));
     lastProvider = "Transitous";
     window.dispatchEvent(new CustomEvent("nvs-routing-provider", {
       detail: { provider: lastProvider, fallback: Boolean(config.backendUrl), reason: lastFallbackReason },
     }));
-    return routes.map((route) => ({ ...route, provider: route.provider || "Transitous" }));
+    return normalizedRoutes;
   }
 
   window.NVSTransit = Object.freeze({
