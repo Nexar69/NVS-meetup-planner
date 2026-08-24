@@ -1,10 +1,11 @@
 (() => {
-  const VERSION = "v0.8 · VMV routing + short share links";
+  const VERSION = "v0.8.1 · Stable iPad map + VMV short links";
   const results = document.getElementById("results");
   const badge = document.getElementById("dataBadgeLabel");
   const liveNote = document.querySelector(".live-note div");
   let currentProvider = window.NVSTransit?.getProviderStatus?.().provider || "Transitous";
   let fallback = false;
+  let fallbackReason = "";
   let timer = null;
 
   function escapeHtml(value) {
@@ -26,11 +27,14 @@
     if (liveNote) {
       const backend = window.NVSConfig?.hasBackend;
       liveNote.innerHTML = backend
-        ? `<strong>v0.8 prefers VMV.</strong> Routes use VMV / MV FÄHRT GUT when available, automatically fall back to Transitous, and shared plans use short 72-hour links.`
-        : `<strong>v0.8 is backend-ready.</strong> Transitous remains active until the Cloudflare Worker URL is configured; short-link sharing automatically falls back to encoded links.`;
+        ? `<strong>v0.8.1 prefers VMV.</strong> Routes use VMV / MV FÄHRT GUT when available, fall back to Transitous automatically, shared plans use short 72-hour links, and the iPad map now repairs its tile grid after PWA/viewport restores.`
+        : `<strong>v0.8.1 is backend-ready.</strong> Transitous remains active until the Cloudflare Worker URL is configured; short-link sharing automatically falls back to encoded links.`;
     }
     if (badge && !badge.textContent?.includes("Checking") && !badge.textContent?.includes("Loading")) {
       badge.textContent = fallback ? `${providerLabel(currentProvider)} fallback` : providerLabel(currentProvider);
+      badge.title = fallback && fallbackReason
+        ? `VMV unavailable for this request (${fallbackReason}); Transitous was used automatically.`
+        : `Routing provider: ${providerLabel(currentProvider)}`;
     }
   }
 
@@ -61,6 +65,7 @@
   window.addEventListener("nvs-routing-provider", (event) => {
     currentProvider = event.detail?.provider || currentProvider;
     fallback = Boolean(event.detail?.fallback);
+    fallbackReason = String(event.detail?.reason || "");
     updateCopy();
   });
   window.addEventListener("nvs-group-recommendations-rendered", decorateProviders);
