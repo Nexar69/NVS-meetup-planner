@@ -1,6 +1,27 @@
 import app from "./index.js";
 import { vmvRestPlan } from "./vmv-rest.js";
 
+const DEFAULT_APP_URL = "https://nexar69.github.io/NVS-meetup-planner/";
+
+async function freshAppAsset(request, env) {
+  const url = new URL(request.url);
+  if (request.method !== "GET" || !/\.(?:js|css|html|webmanifest)$/i.test(url.pathname)) return null;
+  const appBase = new URL(env.APP_URL || DEFAULT_APP_URL);
+  const target = new URL(url.pathname.replace(/^\/+/, ""), appBase);
+  const response = await fetch(target.toString(), {
+    headers: { Accept: request.headers.get("Accept") || "*/*" },
+    cf: { cacheTtl: 0, cacheEverything: false },
+  });
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", "no-store");
+  headers.set("access-control-allow-origin", "*");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -13,6 +34,14 @@ export default {
         status: 404,
         headers: { "cache-control": "no-store" },
       });
+    }
+
+    // Shared viewers proxy the GitHub Pages app. Code/config assets must stay
+    // fresh so a short link cannot keep an old UI for several minutes after a
+    // deployment. Images/icons can still use the older proxy cache in index.js.
+    if (!url.pathname.startsWith("/api/") && !url.pathname.startsWith("/p/")) {
+      const fresh = await freshAppAsset(request, env);
+      if (fresh) return fresh;
     }
 
     // Prefer the VMV-specific REST service used by current community VMV clients.
