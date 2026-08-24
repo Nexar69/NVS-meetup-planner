@@ -30,7 +30,7 @@ assert.match(release, /v0\.11\.1 · Meetup Intelligence/, "release copy must ide
 assert.match(release, /dataset\.nvsRelease = "011"/, "v0.11 must own the release marker");
 
 const serviceWorker = read("service-worker.js");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r1/, "service worker cache must be v0.11.1");
+assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r2/, "service worker cache must be the latest v0.11.1 revision");
 for (const asset of [
   "intelligence-core.js",
   "intelligence-v011.js",
@@ -42,6 +42,10 @@ for (const asset of [
   assert.match(serviceWorker, new RegExp(asset.replaceAll(".", "\\.")), `${asset} must be in the app shell`);
 }
 assert.match(serviceWorker, /SKIP_WAITING/, "service worker must support explicit update activation");
+assert.match(serviceWorker, /notificationclick/, "PWA notifications should focus or reopen Meet Schwerin when tapped");
+assert.match(serviceWorker, /clients\.matchAll/, "notification clicks should prefer an existing app window");
+assert.match(serviceWorker, /pathname\.startsWith\("\/api\/"\)/, "the service worker must explicitly bypass API requests");
+assert.doesNotMatch(serviceWorker, /APP_SHELL[\s\S]*"\.\/api\//, "API endpoints must never be part of the offline app shell");
 
 const intelligence = read("intelligence-v011.js");
 assert.match(intelligence, /serviceWorker\.ready/, "system notifications should prefer the active PWA service worker");
