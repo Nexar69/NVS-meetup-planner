@@ -1,4 +1,4 @@
-const CACHE_NAME = "meet-schwerin-v0.11.1-r1";
+const CACHE_NAME = "meet-schwerin-v0.11.1-r2";
 
 const APP_SHELL = [
   "./",
@@ -81,6 +81,22 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const ownOrigin = self.location.origin;
+    const existing = windows.find((client) => {
+      try { return new URL(client.url).origin === ownOrigin; } catch { return false; }
+    });
+    if (existing) {
+      await existing.focus();
+      return;
+    }
+    await self.clients.openWindow("./");
+  })());
+});
+
 async function updateCache(request, response, navigation = false) {
   if (!response?.ok) return response;
   const cache = await caches.open(CACHE_NAME);
@@ -105,6 +121,10 @@ self.addEventListener("fetch", (event) => {
 
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
+
+  // Live/shared API responses can contain voluntary check-ins and capabilities.
+  // Never place API responses in the app-shell runtime cache.
+  if (requestUrl.pathname.startsWith("/api/")) return;
 
   if (event.request.mode === "navigate") {
     event.respondWith(networkFirst(event.request, true));
