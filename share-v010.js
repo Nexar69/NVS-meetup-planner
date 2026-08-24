@@ -5,6 +5,16 @@
   const timeInput = document.getElementById("time");
   let secureCache = null;
   let sharing = false;
+  let pendingShare = null;
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
 
   function locationFor(key) {
     return window.NVSTransit?.LOCATIONS?.[key] || null;
@@ -102,7 +112,90 @@
     return { ...secureCache, plan };
   }
 
-  async function deliver(index) {
+  function dialog() {
+    let element = document.getElementById("v010ShareDialog");
+    if (element) return element;
+    element = document.createElement("dialog");
+    element.id = "v010ShareDialog";
+    element.className = "group-share-dialog";
+    element.innerHTML = `
+      <div class="group-share-head">
+        <div><p class="section-kicker">Share live plan</p><h2 id="v010ShareTitle">Share route</h2></div>
+        <button type="button" class="group-share-close" aria-label="Close">×</button>
+      </div>
+      <div class="group-share-copy" id="v010ShareCopy"></div>
+      <div class="group-share-actions">
+        <button type="button" class="secondary-button v010-share-cancel">Cancel</button>
+        <button type="button" class="search-button v010-share-confirm"><span>Share link</span><span aria-hidden="true">↗</span></button>
+      </div>`;
+    document.body.appendChild(element);
+    element.querySelector(".group-share-close")?.addEventListener("click", () => element.close());
+    element.querySelector(".v010-share-cancel")?.addEventListener("click", () => element.close());
+    element.addEventListener("click", (event) => { if (event.target === element) element.close(); });
+    element.querySelector(".v010-share-confirm")?.addEventListener("click", async () => {
+      const action = pendingShare;
+      pendingShare = null;
+      element.close();
+      if (action?.type === "group") await deliverGroup();
+      if (action?.type === "person") await deliverPerson(action.index);
+    });
+    return element;
+  }
+
+  function confirmShare(type, index = -1) {
+    if (window.NVSShare?.isViewer?.()) return;
+    const plan = payload();
+    if (!plan) {
+      window.alert("Find a live group recommendation before sharing it.");
+      return;
+    }
+    const element = dialog();
+    const person = type === "person" ? plan.members[index] : null;
+    pendingShare = { type, index };
+    element.querySelector("#v010ShareTitle").textContent = person ? `Share ${person.name}'s live route` : "Share whole live meetup";
+    element.querySelector("#v010ShareCopy").innerHTML = person
+      ? `<p>This creates a <strong>read-only personal route</strong> for ${escapeHtml(person.name)} with a private check-in capability for that person only.</p><p class="group-share-warning">The link contains a random write key. Anyone you forward this exact personal link to can update ${escapeHtml(person.name)}'s voluntary meetup status until the plan expires.</p>`
+      : `<p>This creates the <strong>read-only whole-group view</strong>. It can see voluntary check-ins but cannot post as any person.</p><p class="group-share-warning">The shared plan contains group names, starting locations, meetup place/time and route preferences. It expires automatically after about 72 hours.</p>`;
+    element.showModal();
+  }
+
+  async function nativeShare({ title, text, url }) {
+    if (navigator.share) {
+      await navigator.share({ title, text, url });
+      return;
+    }
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+      window.alert("Link copied.");
+      return;
+    }
+    window.prompt("Copy this link:", url);
+  }
+
+  async function deliverGroup() {
+    if (sharing) return;
+    sharing = true;
+    try {
+      const stored = await createSecurePlan();
+      if (!stored) {
+        window.NVSShare?.shareGroup?.();
+        return;
+      }
+      await nativeShare({
+        title: `Meetup to ${stored.plan.destination.label} — Meet Schwerin`,
+        text: `Read-only Meet Schwerin group plan to ${stored.plan.destination.label}. Voluntary check-ins from personal links appear here.`,
+        url: stored.url,
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      console.warn("Secure group share unavailable", error);
+      window.NVSShare?.shareGroup?.();
+    } finally {
+      sharing = false;
+    }
+  }
+
+  async function deliverPerson(index) {
     if (sharing || window.NVSShare?.isViewer?.()) return;
     sharing = true;
     try {
@@ -118,18 +211,11 @@
       const url = new URL(stored.url);
       url.searchParams.set("me", String(index + 1));
       url.searchParams.set("k", key);
-      const shareUrl = url.toString();
-      const title = `Your route to ${stored.plan.destination.label} — Meet Schwerin`;
-      const text = `${person.name}'s read-only Meet Schwerin route. This personal link can voluntarily update only ${person.name}'s meetup status.`;
-
-      if (navigator.share) {
-        await navigator.share({ title, text, url: shareUrl });
-      } else if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shareUrl);
-        window.alert(`${person.name}'s personal link was copied.`);
-      } else {
-        window.prompt("Copy this personal route link:", shareUrl);
-      }
+      await nativeShare({
+        title: `Your route to ${stored.plan.destination.label} — Meet Schwerin`,
+        text: `${person.name}'s read-only Meet Schwerin route. This personal link can voluntarily update only ${person.name}'s meetup status.`,
+        url: url.toString(),
+      });
     } catch (error) {
       if (error?.name === "AbortError") return;
       console.warn("Secure personal share unavailable", error);
@@ -148,21 +234,33 @@
     return [...primary.querySelectorAll(".group-card-person")].indexOf(row);
   }
 
-  // Capture before the v0.7.2 button handler so personal links can receive their
-  // v0.10 capability without changing the legacy group-share implementation.
   document.addEventListener("click", (event) => {
-    const button = event.target.closest?.(".person-share-link");
-    if (!button || window.NVSShare?.isViewer?.()) return;
-    const index = memberIndexFor(button);
-    if (index < 0) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    deliver(index);
+    if (window.NVSShare?.isViewer?.()) return;
+
+    const personButton = event.target.closest?.(".person-share-link");
+    if (personButton) {
+      const index = memberIndexFor(personButton);
+      if (index < 0) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      confirmShare("person", index);
+      return;
+    }
+
+    const groupButton = event.target.closest?.("#shareMeetupButton");
+    if (groupButton) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      confirmShare("group");
+    }
   }, true);
 
   ["nvs-group-change", "nvs-priority-change", "nvs-timing-change"].forEach((name) => {
     window.addEventListener(name, () => { secureCache = null; });
   });
 
-  window.NVSShare010 = Object.freeze({ sharePerson: deliver });
+  window.NVSShare010 = Object.freeze({
+    shareGroup: () => confirmShare("group"),
+    sharePerson: (index) => confirmShare("person", Number(index)),
+  });
 })();
