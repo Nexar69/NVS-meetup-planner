@@ -11,6 +11,8 @@ const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
   "intelligence-v011.css",
   "trip-tools-v0111.js",
   "trip-tools-v0111.css",
+  "recovery-v0111.js",
+  "recovery-v0111.css",
   "release-v011.js",
   "service-worker.js",
   "v05.js",
@@ -24,19 +26,23 @@ assert.match(loader, /intelligence-v011\.js/, "v0.11 UI must be loaded");
 assert.match(loader, /release-v011\.js/, "v0.11 release owner must be loaded");
 assert.match(loader, /loadTripTools0111\(\)/, "v0.11.1 Trip Mode tools must be loaded");
 assert.match(loader, /trip-tools-v0111\.js/, "Trip Mode tool runtime must be referenced");
+assert.match(loader, /loadRecovery0111\(\)/, "v0.11.1 recovery desk must be loaded");
+assert.match(loader, /recovery-v0111\.js/, "recovery runtime must be referenced");
 
 const release = read("release-v011.js");
 assert.match(release, /v0\.11\.1 · Meetup Intelligence/, "release copy must identify v0.11.1");
 assert.match(release, /dataset\.nvsRelease = "011"/, "v0.11 must own the release marker");
 
 const serviceWorker = read("service-worker.js");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r2/, "service worker cache must be the latest v0.11.1 revision");
+assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r3/, "service worker cache must be the latest v0.11.1 revision");
 for (const asset of [
   "intelligence-core.js",
   "intelligence-v011.js",
   "intelligence-v011.css",
   "trip-tools-v0111.js",
   "trip-tools-v0111.css",
+  "recovery-v0111.js",
+  "recovery-v0111.css",
   "release-v011.js",
 ]) {
   assert.match(serviceWorker, new RegExp(asset.replaceAll(".", "\\.")), `${asset} must be in the app shell`);
@@ -55,6 +61,12 @@ const tripTools = read("trip-tools-v0111.js");
 assert.match(tripTools, /NVSSharedLive\.checkIn/, "Trip Mode should expose voluntary personal check-ins");
 assert.match(tripTools, /wakeLock\.request\("screen"\)/, "Trip Mode should support optional screen wake lock");
 assert.match(tripTools, /No GPS/, "Trip Mode check-ins must keep the no-GPS privacy copy");
+
+const recovery = read("recovery-v0111.js");
+assert.match(recovery, /getAlerts/, "recovery desk should consume the existing intelligence alert model");
+assert.match(recovery, /hasPendingPlanUpdate/, "recovery desk should prioritize organizer plan updates");
+assert.match(recovery, /No background location/, "recovery UI must state its location privacy boundary");
+assert.match(recovery, /navigator\.onLine/, "recovery actions should degrade safely while offline");
 
 const vmv = read("worker/src/vmv-rest.js");
 assert.match(vmv, /plannedPlatformFrom/, "VMV adapter must preserve planned platform");
