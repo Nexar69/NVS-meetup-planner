@@ -63,6 +63,29 @@ function samplePlan(destinationLabel = "Gymnasium Neumühler Schule") {
   assert.equal(healthData.capabilities.sharedCheckins, true);
   assert.equal(healthData.capabilities.publicPlanIdLength, 11);
 
+  const forbiddenCreate = await worker.fetch(new Request(`${workerOrigin}/api/plans`, {
+    method: "POST",
+    headers: { Origin: "https://attacker.example", "content-type": "application/json", "x-meet-schwerin": "1" },
+    body: JSON.stringify({ plan: samplePlan() }),
+  }), env, {});
+  assert.equal(forbiddenCreate.status, 403, "cross-origin sites must not be allowed to create stored meetup plans");
+
+  const legacyId = "AbC2345";
+  await env.PLANS.put(`p:${legacyId}`, JSON.stringify(samplePlan("Legacy meetup")));
+  const legacyRead = await worker.fetch(new Request(`${workerOrigin}/api/live/${legacyId}`), env, {});
+  assert.equal(legacyRead.status, 200, "existing legacy short IDs must remain readable after ID hardening");
+  const legacyLive = await legacyRead.json();
+  assert.equal(legacyLive.planId, legacyId);
+  assert.equal(legacyLive.memberCount, 2);
+
+  const legacyWrite = await worker.fetch(new Request(`${workerOrigin}/api/live/${legacyId}`, {
+    method: "POST",
+    headers: { Origin: origin, "content-type": "application/json", "x-meet-schwerin": "1" },
+    body: JSON.stringify({ member: 0, status: "left", key: "" }),
+  }), env, {});
+  assert.equal(legacyWrite.status, 403, "legacy links without v0.10 capability keys must remain check-in read-only");
+  await env.PLANS.delete(`p:${legacyId}`);
+
   const create = await worker.fetch(new Request(`${workerOrigin}/api/plans`, {
     method: "POST",
     headers: { Origin: origin, "content-type": "application/json", "x-meet-schwerin": "1" },
@@ -114,7 +137,7 @@ function samplePlan(destinationLabel = "Gymnasium Neumühler Schule") {
   assert.equal(liveData.revision, 2, "viewers should observe organizer plan revision changes");
   assert.equal(liveData.members["0"].status, "left", "live check-ins should survive organizer replans");
 
-  console.log("worker-live: shared plan security and coordination passed");
+  console.log("worker-live: shared plan security, compatibility and coordination passed");
 })().catch((error) => {
   console.error(error);
   process.exit(1);
