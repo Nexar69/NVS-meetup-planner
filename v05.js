@@ -121,9 +121,19 @@
     document.body.appendChild(script);
   }
 
+  function loadActionInstructions() {
+    if (document.querySelector('script[data-action-instructions="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "./instructions-v083.js";
+    script.defer = true;
+    script.dataset.actionInstructions = "true";
+    document.body.appendChild(script);
+  }
+
   installDepartureGuard();
   updateReleaseCopy();
   installHiddenSelectSync();
   loadV051UX();
   loadGroupEventRouter();
+  loadActionInstructions();
 })();
