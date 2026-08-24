@@ -75,6 +75,9 @@ assert.match(sharedLive, /history\.replaceState/, "opened personal links should 
 assert.match(sharedLive, /params\.delete\("k"\)/, "URL sanitization must remove only the private capability parameter");
 assert.match(sharedLive, /sessionStorage\.getItem/, "reloads in the same tab should retain the check-in capability");
 assert.doesNotMatch(sharedLive, /localStorage\.setItem\([^\n]*capability/i, "personal write capabilities should not be persisted in long-lived localStorage");
+assert.match(sharedLive, /function schedulePoll/, "shared-live should use a visibility-aware polling scheduler");
+assert.match(sharedLive, /document\.hidden \|\| !planId\(\)/, "hidden shared pages should not schedule background polling wakeups");
+assert.doesNotMatch(sharedLive, /setInterval\(poll/, "shared-live must not keep a fixed poll interval running while hidden");
 
 const vmv = read("worker/src/vmv-rest.js");
 assert.match(vmv, /plannedPlatformFrom/, "VMV adapter must preserve planned platform");
