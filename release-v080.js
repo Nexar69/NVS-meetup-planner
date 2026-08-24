@@ -93,14 +93,18 @@
   }
 
   function updateCopy() {
-    const version = document.getElementById("versionLabel");
-    if (version) version.textContent = VERSION;
-    if (liveNote) {
-      const backend = window.NVSConfig?.hasBackend;
-      liveNote.innerHTML = backend
-        ? `<strong>v0.8.3 makes routes easier to follow.</strong> VMV remains preferred with Transitous fallback, short shared links stay active, intermediate stops remain optional, and journey legs now lead with clear actions like Board, Stay on, Walk to and stay on until.`
-        : `<strong>v0.8.3 is backend-ready.</strong> Transitous remains active until the Cloudflare Worker URL is configured; action-first directions and optional intermediate stops still work locally.`;
+    const v090OwnsReleaseCopy = window.NVSRelease090 || document.documentElement.dataset.nvsRelease === "090";
+    if (!v090OwnsReleaseCopy) {
+      const version = document.getElementById("versionLabel");
+      if (version) version.textContent = VERSION;
+      if (liveNote) {
+        const backend = window.NVSConfig?.hasBackend;
+        liveNote.innerHTML = backend
+          ? `<strong>v0.8.3 makes routes easier to follow.</strong> VMV remains preferred with Transitous fallback, short shared links stay active, intermediate stops remain optional, and journey legs now lead with clear actions like Board, Stay on, Walk to and stay on until.`
+          : `<strong>v0.8.3 is backend-ready.</strong> Transitous remains active until the Cloudflare Worker URL is configured; action-first directions and optional intermediate stops still work locally.`;
+      }
     }
+
     if (badge && !badge.textContent?.includes("Checking") && !badge.textContent?.includes("Loading")) {
       badge.textContent = fallback ? `${providerLabel(currentProvider)} fallback` : providerLabel(currentProvider);
       badge.title = fallback && fallbackReason
