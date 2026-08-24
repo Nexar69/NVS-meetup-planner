@@ -9,6 +9,7 @@
 .v010-alert{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#f2f4f7;color:#344054;font-size:12px;font-weight:800}
 .v010-alert.warn{border:1px solid #fdb022;background:#fffaeb;color:#93370d}
 .v010-alert.good{border:1px solid #abefc6;background:#ecfdf3;color:#067647}
+.v010-legacy-note{margin:0 0 12px;padding:9px 11px;border:1px solid #e4e7ec;border-radius:11px;background:#f9fafb;color:#667085;font-size:10px;line-height:1.45}
 .v010-checkin{margin-bottom:14px;padding:12px;border:1px solid #e4e7ec;border-radius:14px;background:#f9fafb}
 .v010-checkin>strong{display:block;margin-bottom:8px;color:#344054;font-size:11px}
 .v010-checkin-actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}
