@@ -226,6 +226,24 @@
     }
   }
 
+  function loadTripTools0111() {
+    if (!document.querySelector('link[data-trip-tools-v0111="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./trip-tools-v0111.css";
+      link.dataset.tripToolsV0111 = "true";
+      document.head.appendChild(link);
+    }
+
+    if (!document.querySelector('script[data-trip-tools-v0111="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./trip-tools-v0111.js";
+      script.async = false;
+      script.dataset.tripToolsV0111 = "true";
+      document.body.appendChild(script);
+    }
+  }
+
   installDepartureGuard();
   updateReleaseCopy();
   installHiddenSelectSync();
@@ -235,4 +253,5 @@
   loadLiveMeetup();
   loadSharedLiveMeetup();
   loadMeetupIntelligence();
+  loadTripTools0111();
 })();
