@@ -166,6 +166,15 @@
     }
   }
 
+  function schedulePoll(delay = POLL_MS) {
+    clearTimeout(timer);
+    if (document.hidden || !planId()) return;
+    timer = setTimeout(async () => {
+      await poll();
+      schedulePoll();
+    }, delay);
+  }
+
   function ensurePanel() {
     if (!planId() || !sharedPlan()) return null;
     let panel = document.getElementById("sharedLiveV010");
@@ -304,16 +313,21 @@
     if (!planId() || !sharedPlan()) return;
     sanitizeCapabilityUrl();
     ensurePanel();
-    poll();
-    clearInterval(timer);
-    timer = setInterval(poll, POLL_MS);
+    void poll();
+    schedulePoll();
     render();
   }
 
   window.addEventListener("nvs-group-recommendations-rendered", render);
   window.addEventListener("nvs-display-options-change", render);
-  window.addEventListener("pageshow", () => { poll(); render(); });
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+  window.addEventListener("pageshow", () => { void poll(); schedulePoll(); render(); });
+  document.addEventListener("visibilitychange", () => {
+    clearTimeout(timer);
+    if (!document.hidden) {
+      void poll();
+      schedulePoll();
+    }
+  });
   window.addEventListener("load", start);
 
   window.NVSSharedLive = Object.freeze({
