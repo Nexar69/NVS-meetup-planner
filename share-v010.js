@@ -5,6 +5,7 @@
   const timeInput = document.getElementById("time");
   let secureCache = null;
   let sharing = false;
+  let rotating = false;
   let pendingShare = null;
   let syncTimer = null;
 
@@ -90,6 +91,24 @@
     return JSON.stringify((plan?.members || []).map((member) => String(member?.name || "")));
   }
 
+  function renderManagement() {
+    const element = document.getElementById("v010ShareDialog");
+    if (!element) return;
+    const button = element.querySelector(".v010-share-revoke");
+    const note = element.querySelector("#v010ShareSecurityNote");
+    if (button) {
+      button.hidden = !secureCache;
+      button.disabled = rotating || sharing;
+      button.textContent = rotating ? "Resetting…" : "Reset private links";
+    }
+    if (note) {
+      note.hidden = !secureCache;
+      note.textContent = secureCache
+        ? "Organizer control: resetting private links makes every previously issued personal check-in link read-only. Existing visible check-in history is kept."
+        : "";
+    }
+  }
+
   async function syncExistingPlan(nextPlan) {
     if (!secureCache?.id || !secureCache?.ownerKey || !config.backendUrl) return false;
     const plan = nextPlan || payload();
@@ -98,6 +117,7 @@
     const identity = identitySignature(plan);
     if (identity !== secureCache.identity) {
       secureCache = null;
+      renderManagement();
       return false;
     }
 
@@ -113,6 +133,7 @@
     });
     if (response.status === 409) {
       secureCache = null;
+      renderManagement();
       return false;
     }
     if (!response.ok) throw new Error(`LIVE_PLAN_SYNC_HTTP_${response.status}`);
@@ -142,6 +163,7 @@
     if (secureCache) {
       if (secureCache.identity !== identity) {
         secureCache = null;
+        renderManagement();
       } else {
         if (secureCache.signature !== sig) await syncExistingPlan(plan);
         if (secureCache?.signature === sig) return { ...secureCache, plan };
@@ -170,7 +192,36 @@
       revision: Number(data.revision) || 1,
       expiresIn: data.expiresIn || 259200,
     };
+    renderManagement();
     return { ...secureCache, plan };
+  }
+
+  async function rotateCapabilities(member = null) {
+    if (!secureCache?.id || !secureCache?.ownerKey || !config.backendUrl || rotating) return false;
+    rotating = true;
+    renderManagement();
+    try {
+      const response = await fetch(`${String(config.backendUrl).replace(/\/$/, "")}/api/live/${secureCache.id}/capabilities`, {
+        method: "POST",
+        mode: "cors",
+        credentials: "omit",
+        headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
+        body: JSON.stringify({ key: secureCache.ownerKey, ...(Number.isInteger(member) ? { member } : {}) }),
+      });
+      if (!response.ok) throw new Error(`CAPABILITY_ROTATE_HTTP_${response.status}`);
+      const data = await response.json();
+      if (!Array.isArray(data?.memberKeys) || data.memberKeys.length !== secureCache.memberKeys.length) {
+        throw new Error("CAPABILITY_ROTATE_BAD_RESPONSE");
+      }
+      secureCache.memberKeys = data.memberKeys;
+      window.dispatchEvent(new CustomEvent("nvs-share-capabilities-rotated", {
+        detail: { id: secureCache.id, member: Number.isInteger(member) ? member : null },
+      }));
+      return true;
+    } finally {
+      rotating = false;
+      renderManagement();
+    }
   }
 
   function dialog() {
@@ -185,7 +236,9 @@
         <button type="button" class="group-share-close" aria-label="Close">×</button>
       </div>
       <div class="group-share-copy" id="v010ShareCopy"></div>
+      <p class="group-share-warning" id="v010ShareSecurityNote" hidden></p>
       <div class="group-share-actions">
+        <button type="button" class="secondary-button v010-share-revoke" hidden>Reset private links</button>
         <button type="button" class="secondary-button v010-share-cancel">Cancel</button>
         <button type="button" class="search-button v010-share-confirm"><span>Share link</span><span aria-hidden="true">↗</span></button>
       </div>`;
@@ -200,6 +253,19 @@
       if (action?.type === "group") await deliverGroup();
       if (action?.type === "person") await deliverPerson(action.index);
     });
+    element.querySelector(".v010-share-revoke")?.addEventListener("click", async () => {
+      if (!secureCache || rotating) return;
+      const confirmed = window.confirm("Reset every private personal check-in link for this meetup? Old personal links will stay readable but can no longer post status updates. Existing visible check-ins will remain.");
+      if (!confirmed) return;
+      try {
+        const changed = await rotateCapabilities();
+        if (changed) window.alert("Private check-in links reset. Share fresh personal links with anyone who should still be able to check in.");
+      } catch (error) {
+        console.warn("Private link reset failed", error);
+        window.alert("Could not reset private links. Check your connection and try again.");
+      }
+    });
+    renderManagement();
     return element;
   }
 
@@ -215,8 +281,9 @@
     pendingShare = { type, index };
     element.querySelector("#v010ShareTitle").textContent = person ? `Share ${person.name}'s live route` : "Share whole live meetup";
     element.querySelector("#v010ShareCopy").innerHTML = person
-      ? `<p>This creates a <strong>read-only personal route</strong> for ${escapeHtml(person.name)} with a private check-in capability for that person only.</p><p class="group-share-warning">The link contains a random write key. Anyone you forward this exact personal link to can update ${escapeHtml(person.name)}'s voluntary meetup status until the plan expires.</p>`
+      ? `<p>This creates a <strong>read-only personal route</strong> for ${escapeHtml(person.name)} with a private check-in capability for that person only.</p><p class="group-share-warning">The link contains a random write key. Anyone you forward this exact personal link to can update ${escapeHtml(person.name)}'s voluntary meetup status until the plan expires or you reset the private links.</p>`
       : `<p>This creates the <strong>read-only whole-group view</strong>. It can see voluntary check-ins but cannot post as any person.</p><p class="group-share-warning">The shared plan contains group names, starting locations, meetup place/time and route preferences. It expires automatically after about 72 hours.</p>`;
+    renderManagement();
     element.showModal();
   }
 
@@ -236,6 +303,7 @@
   async function deliverGroup() {
     if (sharing) return;
     sharing = true;
+    renderManagement();
     try {
       const stored = await createSecurePlan();
       if (!stored) {
@@ -253,12 +321,14 @@
       window.NVSShare?.shareGroup?.();
     } finally {
       sharing = false;
+      renderManagement();
     }
   }
 
   async function deliverPerson(index) {
     if (sharing || window.NVSShare?.isViewer?.()) return;
     sharing = true;
+    renderManagement();
     try {
       const stored = await createSecurePlan();
       if (!stored) {
@@ -283,6 +353,7 @@
       window.NVSShare?.sharePerson?.(index);
     } finally {
       sharing = false;
+      renderManagement();
     }
   }
 
@@ -324,6 +395,8 @@
     shareGroup: () => confirmShare("group"),
     sharePerson: (index) => confirmShare("person", Number(index)),
     sync: () => syncExistingPlan(),
+    resetPrivateLinks: () => rotateCapabilities(),
+    resetPersonLink: (index) => rotateCapabilities(Number(index)),
     getPlanId: () => secureCache?.id || null,
   });
 })();
