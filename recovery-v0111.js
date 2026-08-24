@@ -2,15 +2,6 @@
   let timer = null;
   let snoozedId = "";
 
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
   function alerts() {
     const values = window.NVSIntelligence?.getAlerts?.();
     return Array.isArray(values) ? values : [];
@@ -18,6 +9,11 @@
 
   function recoveryAlert() {
     return alerts().find((item) => item?.replan || item?.kind === "recovery" || String(item?.id || "").startsWith("transfer-missed:")) || null;
+  }
+
+  function activeId() {
+    if (window.NVSSharedLive?.hasPendingPlanUpdate?.()) return "pending-plan-update";
+    return recoveryAlert()?.id || "";
   }
 
   function ensureDesk() {
@@ -49,8 +45,7 @@
     else document.querySelector("main.app")?.appendChild(desk);
 
     desk.querySelector("#v0111RecoveryLater")?.addEventListener("click", () => {
-      const item = recoveryAlert();
-      snoozedId = item?.id || "pending-plan-update";
+      snoozedId = activeId();
       render();
     });
     desk.querySelector("#v0111RecoveryAction")?.addEventListener("click", () => {
@@ -148,7 +143,7 @@
     "online",
     "offline",
   ].forEach((name) => window.addEventListener(name, () => {
-    if (snoozedId && recoveryAlert()?.id !== snoozedId) snoozedId = "";
+    if (snoozedId && activeId() !== snoozedId) snoozedId = "";
     render();
   }));
 
