@@ -83,7 +83,8 @@ assert.match(recovery, /navigator\.onLine/, "recovery actions should degrade saf
 
 const secureShare = read("share-v010.js");
 assert.match(secureShare, /\/capabilities/, "organizer sharing should call the capability rotation endpoint");
-assert.match(secureShare, /Reset private links/, "organizer sharing should expose explicit private-link revocation");
+assert.match(secureShare, /Reset all private links/, "group sharing should expose all-member private-link revocation");
+assert.match(secureShare, /Reset \$\{target\.name\}'s private link/, "personal sharing should expose member-scoped private-link revocation");
 assert.match(secureShare, /window\.confirm/, "private-link reset must require an explicit confirmation");
 assert.match(secureShare, /resetPrivateLinks/, "organizer share API should expose all-member revocation");
 assert.match(secureShare, /resetPersonLink/, "organizer share API should support single-member rotation");
