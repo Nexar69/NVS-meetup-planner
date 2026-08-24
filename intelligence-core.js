@@ -24,10 +24,12 @@
     return minutesBetween(now, value);
   }
 
+  // VMV delay values may be negative when a vehicle is running early. Only
+  // positive delay should be described as "late" or used as group-impact delay.
   function segmentDelay(segment) {
     const values = [Number(segment?.departureDelay), Number(segment?.arrivalDelay)]
       .filter(Number.isFinite);
-    return values.length ? Math.max(...values.map((value) => Math.abs(value))) : 0;
+    return values.length ? Math.max(0, ...values) : 0;
   }
 
   function isCancelled(segment) {
@@ -149,9 +151,19 @@
       }
 
       const next = segments[currentIndex + 1];
-      if (next) {
+      if (next && next?.mode !== "WALK") {
         const gap = minutesBetween(current?.arrival, next?.departure);
-        if (gap != null && gap >= 0 && gap <= 6 && next?.mode !== "WALK") {
+        if (gap != null && gap < 0) {
+          const missedBy = Math.max(1, Math.ceil(Math.abs(gap)));
+          alerts.push(alert(
+            `transfer-missed:${member.id || "member"}:${currentIndex + 1}`,
+            "critical",
+            "transfer",
+            `Connection no longer works`,
+            `${vehicleLabel(next)} is due to leave ${current.to || next.from || "the transfer stop"} about ${missedBy} min before this leg now arrives. Refresh & replan.`,
+            { memberId: member.id, segmentIndex: currentIndex + 1, transferMinutes: gap, replan: true },
+          ));
+        } else if (gap != null && gap <= 6) {
           alerts.push(alert(
             `transfer:${member.id || "member"}:${currentIndex + 1}`,
             gap <= 3 ? "warn" : "info",
