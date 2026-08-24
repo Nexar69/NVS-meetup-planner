@@ -157,6 +157,14 @@
   }
 
   function loadSharedLiveMeetup() {
+    if (!document.querySelector('script[data-share-v010="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./share-v010.js";
+      script.async = false;
+      script.dataset.shareV010 = "true";
+      document.body.appendChild(script);
+    }
+
     if (!document.querySelector('link[data-shared-live-v010="true"]')) {
       const link = document.createElement("link");
       link.rel = "stylesheet";
