@@ -1,4 +1,4 @@
-const CACHE_NAME = "meet-schwerin-v0.8.1-r5";
+const CACHE_NAME = "meet-schwerin-v0.8.2-r1";
 
 const APP_SHELL = [
   "./",
