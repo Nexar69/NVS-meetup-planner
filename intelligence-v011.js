@@ -228,6 +228,7 @@
     dialog.querySelector("#v011TripSettings")?.addEventListener("click", openSettings);
     dialog.querySelector("#v011TripReplan")?.addEventListener("click", replan);
     dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+    dialog.addEventListener("close", scheduleTick);
     return dialog;
   }
 
@@ -317,6 +318,7 @@
     const dialog = ensureTripDialog();
     renderTripMode();
     if (!dialog.open) dialog.showModal();
+    scheduleTick();
   }
 
   function replan() {
@@ -548,6 +550,19 @@
     renderTimer = setTimeout(render, delay);
   }
 
+  function tickDelay() {
+    return document.getElementById("v011TripDialog")?.open ? 1_000 : 5_000;
+  }
+
+  function scheduleTick() {
+    clearTimeout(tick);
+    if (document.hidden) return;
+    tick = setTimeout(() => {
+      render();
+      scheduleTick();
+    }, tickDelay());
+  }
+
   function start() {
     readPrefs();
     fixBrandIcon();
@@ -557,8 +572,7 @@
     ensureUpdateBanner();
     renderSettings();
     render();
-    clearInterval(tick);
-    tick = setInterval(render, 1_000);
+    scheduleTick();
     installUpdateWatcher();
   }
 
@@ -573,8 +587,17 @@
     "offline",
   ].forEach((name) => window.addEventListener(name, () => scheduleRender()));
 
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleRender(); });
-  window.addEventListener("pageshow", () => scheduleRender());
+  document.addEventListener("visibilitychange", () => {
+    clearTimeout(tick);
+    if (!document.hidden) {
+      scheduleRender();
+      scheduleTick();
+    }
+  });
+  window.addEventListener("pageshow", () => {
+    scheduleRender();
+    scheduleTick();
+  });
   window.addEventListener("load", start);
   if (results) new MutationObserver(() => scheduleRender(40)).observe(results, { childList: true, subtree: true });
   if (connectionLabel) new MutationObserver(() => scheduleRender(20)).observe(connectionLabel, { childList: true, characterData: true, subtree: true });
