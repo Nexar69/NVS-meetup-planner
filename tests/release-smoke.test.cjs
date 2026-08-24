@@ -80,6 +80,9 @@ assert.match(recovery, /getAlerts/, "recovery desk should consume the existing i
 assert.match(recovery, /hasPendingPlanUpdate/, "recovery desk should prioritize organizer plan updates");
 assert.match(recovery, /No background location/, "recovery UI must state its location privacy boundary");
 assert.match(recovery, /navigator\.onLine/, "recovery actions should degrade safely while offline");
+assert.match(recovery, /Known timetable anchor:/, "impossible transfers should explain the known timetable transfer point");
+assert.match(recovery, /No current stop is inferred/, "voluntary missed-connection recovery must explicitly avoid inferring a current stop");
+assert.doesNotMatch(recovery, /navigator\.geolocation|watchPosition|getCurrentPosition/, "recovery guidance must never introduce location tracking");
 
 const secureShare = read("share-v010.js");
 assert.match(secureShare, /\/capabilities/, "organizer sharing should call the capability rotation endpoint");
