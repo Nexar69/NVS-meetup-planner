@@ -13,6 +13,23 @@
     document.body.appendChild(script);
   }
 
+  function loadAccessibility0111() {
+    if (!document.querySelector('link[data-accessibility-v0111="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./accessibility-v0111.css";
+      link.dataset.accessibilityV0111 = "true";
+      document.head.appendChild(link);
+    }
+    if (!document.querySelector('script[data-accessibility-v0111="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./accessibility-v0111.js";
+      script.async = false;
+      script.dataset.accessibilityV0111 = "true";
+      document.body.appendChild(script);
+    }
+  }
+
   function applyReleaseCopy() {
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = VERSION;
@@ -31,10 +48,12 @@
   }
 
   loadFreshnessGuard();
+  loadAccessibility0111();
   applyReleaseCopy();
   setTimeout(applyReleaseCopy, 400);
   window.addEventListener("load", () => {
     loadFreshnessGuard();
+    loadAccessibility0111();
     applyReleaseCopy();
     setTimeout(applyReleaseCopy, 180);
   });
