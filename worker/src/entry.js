@@ -210,6 +210,41 @@ async function liveApi(request, env, id) {
   return json({ ok: true, planId: id, updatedAt: live.updatedAt, members: live.members }, 200, cors);
 }
 
+async function rotateCapabilitiesApi(request, env, id) {
+  const cors = liveCors(request, env);
+  if (!cors) return json({ error: "origin_not_allowed" }, 403);
+  if (!PLAN_ID.test(id)) return json({ error: "invalid_plan_id" }, 400, cors);
+  const plan = await readStoredPlan(id, env);
+  if (!plan || !Array.isArray(plan.members)) return json({ error: "not_found" }, 404, cors);
+
+  const raw = await request.text();
+  if (raw.length > 1500) return json({ error: "payload_too_large" }, 413, cors);
+  let body;
+  try { body = JSON.parse(raw); } catch { return json({ error: "bad_json" }, 400, cors); }
+
+  const ownerKey = await readOwnerKey(id, env);
+  if (!ownerKey || String(body?.key || "") !== ownerKey) return json({ error: "capability_rotation_not_authorized" }, 403, cors);
+
+  const current = await readCapabilities(id, env);
+  const requestedMember = body?.member == null ? null : Number(body.member);
+  if (requestedMember != null && (!Number.isInteger(requestedMember) || requestedMember < 0 || requestedMember >= plan.members.length)) {
+    return json({ error: "invalid_member" }, 400, cors);
+  }
+
+  const next = Array.from({ length: plan.members.length }, (_, index) => {
+    if (requestedMember == null || requestedMember === index) return randomCapability();
+    return current[index] || randomCapability();
+  });
+  await env.PLANS.put(`caps:${id}`, JSON.stringify(next), { expirationTtl: liveTtl(env) });
+  return json({
+    ok: true,
+    planId: id,
+    member: requestedMember,
+    memberKeys: next,
+    rotatedAt: Date.now(),
+  }, 200, cors);
+}
+
 async function updatePlanApi(request, env, id) {
   const cors = liveCors(request, env);
   if (!cors) return json({ error: "origin_not_allowed" }, 403);
@@ -317,6 +352,7 @@ export default {
           shortPlans: true,
           sharedCheckins: true,
           organizerReplan: true,
+          capabilityRevocation: true,
           realtimeDisruptions: true,
           publicPlanIdLength: PUBLIC_PLAN_ID_LENGTH,
         },
@@ -328,6 +364,15 @@ export default {
         status: 404,
         headers: { "cache-control": "no-store" },
       });
+    }
+
+    const capabilityMatch = url.pathname.match(/^\/api\/live\/([A-Za-z0-9]+)\/capabilities$/);
+    if (capabilityMatch && request.method === "OPTIONS") {
+      const cors = liveCors(request, env);
+      return cors ? new Response(null, { status: 204, headers: cors }) : json({ error: "origin_not_allowed" }, 403);
+    }
+    if (capabilityMatch && request.method === "POST") {
+      return rotateCapabilitiesApi(request, env, capabilityMatch[1]);
     }
 
     const planUpdateMatch = url.pathname.match(/^\/api\/live\/([A-Za-z0-9]+)\/plan$/);
