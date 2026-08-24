@@ -13,6 +13,8 @@ const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
   "trip-tools-v0111.css",
   "recovery-v0111.js",
   "recovery-v0111.css",
+  "accessibility-v0111.js",
+  "accessibility-v0111.css",
   "share-v010.js",
   "shared-live-v010.js",
   "release-v011.js",
@@ -36,9 +38,12 @@ const release = read("release-v011.js");
 assert.match(release, /v0\.11\.1 · Meetup Intelligence/, "release copy must identify v0.11.1");
 assert.match(release, /dataset\.nvsRelease = "011"/, "v0.11 must own the release marker");
 assert.match(release, /reset private personal check-in links/i, "release copy should mention organizer revocation control");
+assert.match(release, /loadAccessibility0111/, "v0.11.1 release owner should load accessibility hardening");
+assert.match(release, /accessibility-v0111\.js/, "accessibility runtime must be wired by the release owner");
+assert.match(release, /accessibility-v0111\.css/, "accessibility styles must be wired by the release owner");
 
 const serviceWorker = read("service-worker.js");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r4/, "service worker cache must be the latest v0.11.1 revision");
+assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r5/, "service worker cache must be the latest v0.11.1 revision");
 for (const asset of [
   "intelligence-core.js",
   "intelligence-v011.js",
@@ -47,6 +52,8 @@ for (const asset of [
   "trip-tools-v0111.css",
   "recovery-v0111.js",
   "recovery-v0111.css",
+  "accessibility-v0111.js",
+  "accessibility-v0111.css",
   "share-v010.js",
   "shared-live-v010.js",
   "release-v011.js",
