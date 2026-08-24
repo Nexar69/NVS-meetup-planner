@@ -2,6 +2,100 @@ import app from "./index.js";
 import { vmvRestPlan } from "./vmv-rest.js";
 
 const DEFAULT_APP_URL = "https://nexar69.github.io/NVS-meetup-planner/";
+const DEFAULT_TTL = 72 * 60 * 60;
+const PLAN_ID = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{6,12}$/;
+const LIVE_STATUSES = new Set(["left", "on-vehicle", "at-stop", "missed", "arrived", "clear"]);
+
+function json(data, status = 200, headers = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers },
+  });
+}
+
+function liveCors(request, env) {
+  const origin = request.headers.get("Origin") || "";
+  const appOrigin = new URL(env.APP_URL || DEFAULT_APP_URL).origin;
+  const workerOrigin = new URL(request.url).origin;
+  const allowed = !origin || origin === appOrigin || origin === workerOrigin || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  if (!allowed) return null;
+  return {
+    "access-control-allow-origin": origin || workerOrigin,
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "content-type,x-meet-schwerin",
+    "access-control-max-age": "86400",
+    vary: "Origin",
+  };
+}
+
+function liveTtl(env) {
+  return Math.max(3600, Math.min(Number(env.PLAN_TTL_SECONDS) || DEFAULT_TTL, 7 * 24 * 60 * 60));
+}
+
+async function readStoredPlan(id, env) {
+  if (!PLAN_ID.test(id)) return null;
+  const raw = await env.PLANS.get(`p:${id}`);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+async function readLiveState(id, env) {
+  const raw = await env.PLANS.get(`live:${id}`);
+  if (!raw) return { v: 1, updatedAt: null, members: {} };
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.v === 1 && parsed.members && typeof parsed.members === "object"
+      ? parsed
+      : { v: 1, updatedAt: null, members: {} };
+  } catch {
+    return { v: 1, updatedAt: null, members: {} };
+  }
+}
+
+async function liveApi(request, env, id) {
+  const cors = liveCors(request, env);
+  if (!cors) return json({ error: "origin_not_allowed" }, 403);
+  if (!PLAN_ID.test(id)) return json({ error: "invalid_plan_id" }, 400, cors);
+  const plan = await readStoredPlan(id, env);
+  if (!plan || !Array.isArray(plan.members)) return json({ error: "not_found" }, 404, cors);
+
+  if (request.method === "GET") {
+    const live = await readLiveState(id, env);
+    return json({
+      planId: id,
+      memberCount: plan.members.length,
+      updatedAt: live.updatedAt,
+      members: live.members,
+    }, 200, cors);
+  }
+
+  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405, cors);
+  const raw = await request.text();
+  if (raw.length > 1500) return json({ error: "payload_too_large" }, 413, cors);
+  let body;
+  try { body = JSON.parse(raw); } catch { return json({ error: "bad_json" }, 400, cors); }
+
+  const member = Number(body?.member);
+  const status = String(body?.status || "");
+  if (!Number.isInteger(member) || member < 0 || member >= plan.members.length) return json({ error: "invalid_member" }, 400, cors);
+  if (!LIVE_STATUSES.has(status)) return json({ error: "invalid_status" }, 400, cors);
+
+  const live = await readLiveState(id, env);
+  if (status === "clear") {
+    delete live.members[String(member)];
+  } else {
+    const note = String(body?.note || "").trim().replace(/\s+/g, " ").slice(0, 80);
+    live.members[String(member)] = {
+      status,
+      note,
+      at: Date.now(),
+    };
+  }
+  live.v = 1;
+  live.updatedAt = Date.now();
+  await env.PLANS.put(`live:${id}`, JSON.stringify(live), { expirationTtl: liveTtl(env) });
+  return json({ ok: true, planId: id, updatedAt: live.updatedAt, members: live.members }, 200, cors);
+}
 
 async function freshAppAsset(request, env) {
   const url = new URL(request.url);
@@ -34,6 +128,15 @@ export default {
         status: 404,
         headers: { "cache-control": "no-store" },
       });
+    }
+
+    const liveMatch = url.pathname.match(/^\/api\/live\/([A-Za-z0-9]+)$/);
+    if (liveMatch && request.method === "OPTIONS") {
+      const cors = liveCors(request, env);
+      return cors ? new Response(null, { status: 204, headers: cors }) : json({ error: "origin_not_allowed" }, 403);
+    }
+    if (liveMatch && (request.method === "GET" || request.method === "POST")) {
+      return liveApi(request, env, liveMatch[1]);
     }
 
     // Shared viewers proxy the GitHub Pages app. Code/config assets must stay
