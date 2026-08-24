@@ -40,7 +40,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
         const normalized = typeof key === "string" ? key : key.url;
         return cacheEntries.get(normalized) || null;
       },
-      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r4"]; },
+      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r5"]; },
       async delete(key) { deleted.push(key); return true; },
     },
     self: {
@@ -97,6 +97,8 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     assert.equal(rt.addedShells.length, 1, "install should precache one app shell");
     assert.ok(rt.addedShells[0].includes("./index.html"));
     assert.ok(rt.addedShells[0].includes("./recovery-v0111.js"));
+    assert.ok(rt.addedShells[0].includes("./accessibility-v0111.js"), "accessibility runtime should be available offline");
+    assert.ok(rt.addedShells[0].includes("./accessibility-v0111.css"), "accessibility styles should be available offline");
   }
 
   {
@@ -158,7 +160,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     assert.deepEqual(rt.opened, ["./"], "notification click should reopen the PWA when no app window exists");
   }
 
-  console.log("service-worker-behavior: privacy, offline, update, and notification behavior passed");
+  console.log("service-worker-behavior: privacy, offline, update, notification and accessibility-shell behavior passed");
 })().catch((error) => {
   console.error(error);
   process.exit(1);
