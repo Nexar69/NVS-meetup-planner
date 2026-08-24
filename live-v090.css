@@ -1,0 +1,188 @@
+/* v0.9.0: timetable-aware Live Meetup Mode. */
+.live090-panel {
+  display: none;
+  margin: 0 0 28px;
+  padding: 20px;
+  border: 1px solid #d0d5dd;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 12px 36px rgba(16, 24, 40, 0.08);
+}
+
+.live090-panel.visible { display: block; }
+
+.live090-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.live090-head-copy { display: grid; gap: 3px; }
+.live090-head h2 { margin: 0; color: #101828; font-size: 22px; }
+.live090-head p { margin: 0; color: #667085; font-size: 12px; line-height: 1.45; }
+
+.live090-kicker {
+  color: #175cd3;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.live090-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.live090-button {
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid #d0d5dd;
+  border-radius: 11px;
+  background: #fff;
+  color: #344054;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+}
+.live090-button.primary { border-color: #101828; background: #101828; color: #fff; }
+.live090-button.active { border-color: #75e0a7; background: #ecfdf3; color: #067647; }
+.live090-button:disabled { cursor: wait; opacity: .6; }
+
+.live090-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(240px, .75fr);
+  gap: 12px;
+}
+
+.live090-focus,
+.live090-health {
+  padding: 15px;
+  border: 1px solid #e4e7ec;
+  border-radius: 16px;
+  background: #f9fafb;
+}
+
+.live090-focus-top,
+.live090-health-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.live090-focus-top span:first-child,
+.live090-health-top span:first-child {
+  color: #667085;
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.live090-state-pill {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #eaecf0;
+  color: #475467;
+  font-size: 9px;
+  font-weight: 900;
+}
+.live090-state-pill.good { background: #dcfae6; color: #067647; }
+.live090-state-pill.warn { background: #fef0c7; color: #b54708; }
+.live090-state-pill.live { background: #d1e9ff; color: #175cd3; }
+
+.live090-focus strong,
+.live090-health strong {
+  display: block;
+  color: #101828;
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.live090-focus p,
+.live090-health p {
+  margin: 5px 0 0;
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.live090-next {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eaecf0;
+  color: #475467;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.live090-next b { color: #344054; }
+
+.live090-progress {
+  overflow: hidden;
+  height: 6px;
+  margin-top: 11px;
+  border-radius: 999px;
+  background: #eaecf0;
+}
+.live090-progress > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #1570ef;
+  transition: width .45s ease;
+}
+
+.live090-members {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.live090-member {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 10px 11px;
+  border: 1px solid #e4e7ec;
+  border-radius: 13px;
+  background: #fff;
+}
+.live090-member-dot { width: 10px; height: 10px; margin-top: 3px; border-radius: 999px; }
+.live090-member strong { color: #101828; font-size: 11px; }
+.live090-member small { display: block; margin-top: 2px; color: #667085; font-size: 9.5px; line-height: 1.35; }
+
+.live090-note {
+  margin: 12px 2px 0;
+  color: #98a2b3;
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+.live090-current .timeline-copy { position: relative; }
+.live090-current .timeline-copy::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -9px;
+  width: 3px;
+  border-radius: 999px;
+  background: #1570ef;
+  content: "";
+}
+.live090-next-step .timeline-copy { opacity: .88; }
+.live090-past { opacity: .56; }
+
+.live090-share-current { white-space: nowrap; }
+
+@media (max-width: 760px) {
+  .live090-panel { padding: 15px; border-radius: 18px; }
+  .live090-head { align-items: stretch; flex-direction: column; }
+  .live090-actions { justify-content: stretch; }
+  .live090-actions .live090-button { flex: 1 1 auto; }
+  .live090-grid { grid-template-columns: minmax(0, 1fr); }
+  .live090-members { grid-template-columns: minmax(0, 1fr); }
+}
