@@ -88,10 +88,11 @@
     const vehicle = vehicleName(segment);
     const direction = text(segment?.headsign);
     const stay = isStayOn(segment);
-    const verb = stay ? "Stay on" : "Board";
+    const title = `${stay ? "Stay on " : ""}${vehicle}${to ? ` → ${to}` : ""}`;
+    const boarding = from ? (stay ? `Continue from ${from}` : `Board at ${from}`) : "";
     return {
-      title: `${verb} ${vehicle}${direction ? ` toward ${direction}` : ""}`,
-      detail: [from, to ? `stay on until ${to}` : "", durationText].filter(Boolean).join(" · "),
+      title,
+      detail: [boarding, direction ? `toward ${direction}` : "", durationText].filter(Boolean).join(" · "),
       status: delay,
     };
   }
