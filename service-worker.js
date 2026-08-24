@@ -1,4 +1,4 @@
-const CACHE_NAME = "meet-schwerin-v0.10.0-r3";
+const CACHE_NAME = "meet-schwerin-v0.11.0-r1";
 
 const APP_SHELL = [
   "./",
@@ -17,6 +17,7 @@ const APP_SHELL = [
   "./ux-v051.css",
   "./live-v090.css",
   "./shared-live-v010.css",
+  "./intelligence-v011.css",
   "./config.js",
   "./transit.js",
   "./vmv-v080.js",
@@ -41,10 +42,13 @@ const APP_SHELL = [
   "./live-v090.js",
   "./share-v010.js",
   "./shared-live-v010.js",
+  "./intelligence-core.js",
+  "./intelligence-v011.js",
   "./release-v074.js",
   "./release-v080.js",
   "./release-v090.js",
   "./release-v010.js",
+  "./release-v011.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/icon-192.png",
@@ -52,12 +56,11 @@ const APP_SHELL = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting()),
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
@@ -105,14 +108,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Code/config files are network-first while online. This prevents an iOS PWA
-  // from mixing a new HTML shell with stale JavaScript after a deployment.
   if (/\.(?:js|css|html|webmanifest)$/i.test(requestUrl.pathname)) {
     event.respondWith(networkFirst(event.request, false));
     return;
   }
 
-  // Static images/icons stay cache-first, but refresh in the background.
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const fresh = fetch(event.request)
