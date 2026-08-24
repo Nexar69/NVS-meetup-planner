@@ -13,10 +13,12 @@ const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
   "trip-tools-v0111.css",
   "recovery-v0111.js",
   "recovery-v0111.css",
+  "share-v010.js",
   "shared-live-v010.js",
   "release-v011.js",
   "service-worker.js",
   "v05.js",
+  "worker/src/entry.js",
   "worker/src/vmv-rest.js",
 ].forEach((file) => assert.equal(fs.existsSync(path.join(root, file)), true, `${file} should exist`));
 
@@ -35,7 +37,7 @@ assert.match(release, /v0\.11\.1 · Meetup Intelligence/, "release copy must ide
 assert.match(release, /dataset\.nvsRelease = "011"/, "v0.11 must own the release marker");
 
 const serviceWorker = read("service-worker.js");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r3/, "service worker cache must be the latest v0.11.1 revision");
+assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r4/, "service worker cache must be the latest v0.11.1 revision");
 for (const asset of [
   "intelligence-core.js",
   "intelligence-v011.js",
@@ -44,6 +46,7 @@ for (const asset of [
   "trip-tools-v0111.css",
   "recovery-v0111.js",
   "recovery-v0111.css",
+  "share-v010.js",
   "release-v011.js",
 ]) {
   assert.match(serviceWorker, new RegExp(asset.replaceAll(".", "\\.")), `${asset} must be in the app shell`);
@@ -76,6 +79,13 @@ assert.match(recovery, /hasPendingPlanUpdate/, "recovery desk should prioritize 
 assert.match(recovery, /No background location/, "recovery UI must state its location privacy boundary");
 assert.match(recovery, /navigator\.onLine/, "recovery actions should degrade safely while offline");
 
+const secureShare = read("share-v010.js");
+assert.match(secureShare, /\/capabilities/, "organizer sharing should call the capability rotation endpoint");
+assert.match(secureShare, /Reset private links/, "organizer sharing should expose explicit private-link revocation");
+assert.match(secureShare, /window\.confirm/, "private-link reset must require an explicit confirmation");
+assert.match(secureShare, /resetPrivateLinks/, "organizer share API should expose all-member revocation");
+assert.match(secureShare, /resetPersonLink/, "organizer share API should support single-member rotation");
+
 const sharedLive = read("shared-live-v010.js");
 assert.match(sharedLive, /sessionStorage\.setItem/, "personal check-in capability should move into tab-scoped storage after opening");
 assert.match(sharedLive, /history\.replaceState/, "opened personal links should remove the write capability from the address bar");
@@ -85,6 +95,11 @@ assert.doesNotMatch(sharedLive, /localStorage\.setItem\([^\n]*capability/i, "per
 assert.match(sharedLive, /function schedulePoll/, "shared-live should use a visibility-aware polling scheduler");
 assert.match(sharedLive, /document\.hidden \|\| !planId\(\)/, "hidden shared pages should not schedule background polling wakeups");
 assert.doesNotMatch(sharedLive, /setInterval\(poll/, "shared-live must not keep a fixed poll interval running while hidden");
+
+const workerEntry = read("worker/src/entry.js");
+assert.match(workerEntry, /rotateCapabilitiesApi/, "Worker must expose organizer-controlled capability rotation");
+assert.match(workerEntry, /capability_rotation_not_authorized/, "capability rotation must require the organizer key");
+assert.match(workerEntry, /capabilityRevocation:\s*true/, "health diagnostics should advertise revocation support");
 
 const vmv = read("worker/src/vmv-rest.js");
 assert.match(vmv, /plannedPlatformFrom/, "VMV adapter must preserve planned platform");
