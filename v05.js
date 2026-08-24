@@ -156,6 +156,32 @@
     }
   }
 
+  function loadSharedLiveMeetup() {
+    if (!document.querySelector('link[data-shared-live-v010="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./shared-live-v010.css";
+      link.dataset.sharedLiveV010 = "true";
+      document.head.appendChild(link);
+    }
+
+    if (!document.querySelector('script[data-shared-live-v010="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./shared-live-v010.js";
+      script.async = false;
+      script.dataset.sharedLiveV010 = "true";
+      document.body.appendChild(script);
+    }
+
+    if (!document.querySelector('script[data-release-v010="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./release-v010.js";
+      script.async = false;
+      script.dataset.releaseV010 = "true";
+      document.body.appendChild(script);
+    }
+  }
+
   installDepartureGuard();
   updateReleaseCopy();
   installHiddenSelectSync();
@@ -163,4 +189,5 @@
   loadGroupEventRouter();
   loadActionInstructions();
   loadLiveMeetup();
+  loadSharedLiveMeetup();
 })();
