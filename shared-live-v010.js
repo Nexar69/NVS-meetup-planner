@@ -1,5 +1,6 @@
 (() => {
   const POLL_MS = 12_000;
+  const CAPABILITY_PREFIX = "meet-schwerin-checkin-capability:";
   const STATUS_COPY = {
     left: { icon: "↗", label: "Left", tone: "live" },
     "on-vehicle": { icon: "●", label: "On vehicle", tone: "live" },
@@ -28,8 +29,36 @@
     return match?.[1] || "";
   }
 
+  function capabilityStorageKey() {
+    const id = planId();
+    return id ? `${CAPABILITY_PREFIX}${id}` : "";
+  }
+
+  function rememberCapability(value) {
+    const key = String(value || "");
+    const storageKey = capabilityStorageKey();
+    if (key.length < 20 || !storageKey) return "";
+    try { sessionStorage.setItem(storageKey, key); } catch {}
+    return key;
+  }
+
   function capabilityKey() {
-    return new URLSearchParams(window.location.search).get("k") || "";
+    const fromUrl = new URLSearchParams(window.location.search).get("k") || "";
+    if (fromUrl.length >= 20) return rememberCapability(fromUrl);
+    const storageKey = capabilityStorageKey();
+    if (!storageKey) return "";
+    try { return sessionStorage.getItem(storageKey) || ""; } catch { return ""; }
+  }
+
+  function sanitizeCapabilityUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const key = params.get("k") || "";
+    if (key.length < 20) return;
+    rememberCapability(key);
+    params.delete("k");
+    const query = params.toString();
+    const clean = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash || ""}`;
+    try { window.history.replaceState(window.history.state, "", clean); } catch {}
   }
 
   function sharedPlan() {
@@ -224,7 +253,9 @@
         ? "Reload the updated plan before posting another check-in."
         : current?.status
           ? `Your latest check-in: ${STATUS_COPY[current.status]?.label || current.status}${current.note ? ` · ${current.note}` : ""} · ${ago(current.at)}`
-          : "Tap only what you want to share with this meetup.";
+          : canCheckIn()
+            ? "Private check-in key is kept only in this tab after opening; it is hidden from the address bar."
+            : "Tap only what you want to share with this meetup.";
     }
 
     let legacy = panel.querySelector(".v010-legacy-note");
@@ -234,7 +265,7 @@
         legacy.className = "v010-legacy-note";
         panel.querySelector("#v010StatusList")?.insertAdjacentElement("beforebegin", legacy);
       }
-      legacy.textContent = "This personal link was created before v0.10 check-in keys. It stays read-only; generate a new personal Link from the planner to enable voluntary check-ins.";
+      legacy.textContent = "This personal link does not have a check-in capability in this tab. It stays read-only; open the original private personal link from the organizer to enable voluntary check-ins.";
     } else {
       legacy?.remove();
     }
@@ -271,6 +302,7 @@
 
   function start() {
     if (!planId() || !sharedPlan()) return;
+    sanitizeCapabilityUrl();
     ensurePanel();
     poll();
     clearInterval(timer);
