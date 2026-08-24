@@ -445,20 +445,42 @@
     }
   }
 
+  async function showSystemNotification(item) {
+    const options = {
+      body: item.detail || "Meet Schwerin travel alert",
+      icon: "./icons/icon-192.png",
+      badge: "./icons/icon-192.png",
+      tag: `meet-schwerin-${item.id}`,
+      renotify: false,
+    };
+
+    // Mobile/home-screen PWAs should use the service worker notification API.
+    // The Notification constructor is retained only as a desktop fallback.
+    if ("serviceWorker" in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        if (registration?.showNotification) {
+          await registration.showNotification(item.title, options);
+          return true;
+        }
+      } catch {}
+    }
+
+    try {
+      new Notification(item.title, options);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function maybeNotify(item) {
     if (!prefs.systemNotifications || !item || !("Notification" in window) || Notification.permission !== "granted") return;
     if (!["critical", "warn", "action"].includes(item.severity)) return;
     const previous = notified.get(item.id) || 0;
     if (Date.now() - previous < 120_000) return;
     notified.set(item.id, Date.now());
-    try {
-      new Notification(item.title, {
-        body: item.detail || "Meet Schwerin travel alert",
-        icon: "./icons/icon-192.png",
-        tag: `meet-schwerin-${item.id}`,
-        renotify: false,
-      });
-    } catch {}
+    void showSystemNotification(item);
     if (notified.size > 80) {
       notified = new Map([...notified.entries()].slice(-40));
     }
