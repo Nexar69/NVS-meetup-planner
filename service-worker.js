@@ -1,4 +1,4 @@
-const CACHE_NAME = "meet-schwerin-v0.8.0-r2";
+const CACHE_NAME = "meet-schwerin-v0.8.1-r1";
 
 const APP_SHELL = [
   "./",
@@ -67,6 +67,25 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+async function updateCache(request, response, navigation = false) {
+  if (!response?.ok) return response;
+  const cache = await caches.open(CACHE_NAME);
+  const key = navigation ? "./index.html" : request;
+  await cache.put(key, response.clone());
+  return response;
+}
+
+async function networkFirst(request, navigation = false) {
+  try {
+    const response = await fetch(request, { cache: "no-cache" });
+    return await updateCache(request, response, navigation);
+  } catch {
+    const cached = await caches.match(navigation ? "./index.html" : request);
+    if (cached) return cached;
+    throw new Error("NETWORK_AND_CACHE_MISS");
+  }
+}
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
@@ -74,31 +93,24 @@ self.addEventListener("fetch", (event) => {
   if (requestUrl.origin !== self.location.origin) return;
 
   if (event.request.mode === "navigate") {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", copy));
-          return response;
-        })
-        .catch(() => caches.match("./index.html")),
-    );
+    event.respondWith(networkFirst(event.request, true));
     return;
   }
 
+  // Code/config files are network-first while online. This prevents an iOS PWA
+  // from mixing a new HTML shell with stale JavaScript after a deployment.
+  if (/\.(?:js|css|html|webmanifest)$/i.test(requestUrl.pathname)) {
+    event.respondWith(networkFirst(event.request, false));
+    return;
+  }
+
+  // Static images/icons stay cache-first, but refresh in the background.
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      const networkFetch = fetch(event.request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          }
-          return response;
-        })
+      const fresh = fetch(event.request)
+        .then((response) => updateCache(event.request, response, false))
         .catch(() => cached);
-
-      return cached || networkFetch;
+      return cached || fresh;
     }),
   );
 });
