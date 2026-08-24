@@ -26,6 +26,10 @@
     return match?.[1] || "";
   }
 
+  function capabilityKey() {
+    return new URLSearchParams(window.location.search).get("k") || "";
+  }
+
   function sharedPlan() {
     return window.NVSShare?.getSharedPlan?.() || null;
   }
@@ -33,6 +37,10 @@
   function focusIndex() {
     const value = Number(window.NVSShare?.getFocusIndex?.() ?? -1);
     return Number.isInteger(value) ? value : -1;
+  }
+
+  function canCheckIn() {
+    return focusIndex() >= 0 && capabilityKey().length >= 20;
   }
 
   function apiUrl() {
@@ -84,14 +92,15 @@
   async function sendStatus(status) {
     const url = apiUrl();
     const focus = focusIndex();
-    if (!url || focus < 0 || sending) return;
+    const key = capabilityKey();
+    if (!url || focus < 0 || !key || sending) return;
     sending = true;
     render();
     try {
       const response = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
-        body: JSON.stringify({ member: focus, status, note: status === "clear" ? "" : suggestedNote(status) }),
+        body: JSON.stringify({ member: focus, key, status, note: status === "clear" ? "" : suggestedNote(status) }),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       liveState = await response.json();
@@ -100,7 +109,7 @@
     } catch (error) {
       console.warn("Shared check-in failed", error);
       const note = document.getElementById("v010CheckinNote");
-      if (note) note.textContent = "Could not update the shared status. Try again when you're online.";
+      if (note) note.textContent = "Could not update the shared status. This link may be an older read-only link, or you may be offline.";
     } finally {
       sending = false;
       render();
@@ -168,7 +177,7 @@
     const arrived = states.filter((item) => item?.status === "arrived");
     if (missed.length) {
       const names = missed.map((item) => members[item.index]?.name || `Person ${item.index + 1}`);
-      return { cls: "warn", text: `Replan suggested — ${names.join(" + ")} ${names.length === 1 ? "reported" : "reported"} a missed connection.` };
+      return { cls: "warn", text: `Replan suggested — ${names.join(" + ")} reported a missed connection.` };
     }
     if (members.length && arrived.length === members.length) {
       return { cls: "good", text: "Everyone confirmed here 🎉" };
@@ -190,7 +199,7 @@
     if (sync) sync.textContent = liveState?.updatedAt ? `Synced ${ago(liveState.updatedAt)}` : "No check-ins yet";
 
     const checkin = panel.querySelector("#v010Checkin");
-    if (checkin) checkin.hidden = focus < 0;
+    if (checkin) checkin.hidden = !canCheckIn();
     panel.querySelectorAll("[data-v010-status]").forEach((button) => { button.disabled = sending; });
 
     const current = focus >= 0 ? values[String(focus)] : null;
@@ -199,6 +208,18 @@
       note.textContent = current?.status
         ? `Your latest check-in: ${STATUS_COPY[current.status]?.label || current.status}${current.note ? ` · ${current.note}` : ""} · ${ago(current.at)}`
         : "Tap only what you want to share with this meetup.";
+    }
+
+    let legacy = panel.querySelector(".v010-legacy-note");
+    if (focus >= 0 && !canCheckIn()) {
+      if (!legacy) {
+        legacy = document.createElement("p");
+        legacy.className = "v010-legacy-note";
+        panel.querySelector("#v010StatusList")?.insertAdjacentElement("beforebegin", legacy);
+      }
+      legacy.textContent = "This personal link was created before v0.10 check-in keys. It stays read-only; generate a new personal Link from the planner to enable voluntary check-ins.";
+    } else {
+      legacy?.remove();
     }
 
     const alert = panel.querySelector("#v010Alert");
@@ -249,6 +270,7 @@
   window.NVSSharedLive = Object.freeze({
     getPlanId: planId,
     getState: () => liveState,
+    canCheckIn,
     refresh: poll,
     checkIn: sendStatus,
   });
