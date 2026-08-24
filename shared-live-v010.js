@@ -11,6 +11,8 @@
   let timer = null;
   let liveState = null;
   let sending = false;
+  let loadedRevision = null;
+  let pendingRevision = null;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -103,7 +105,8 @@
         body: JSON.stringify({ member: focus, key, status, note: status === "clear" ? "" : suggestedNote(status) }),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      liveState = await response.json();
+      const next = await response.json();
+      liveState = { ...(liveState || {}), ...next };
       render();
       window.dispatchEvent(new CustomEvent("nvs-shared-live-change", { detail: liveState }));
     } catch (error) {
@@ -122,7 +125,11 @@
     try {
       const response = await fetch(url, { method: "GET", cache: "no-store" });
       if (!response.ok) return;
-      liveState = await response.json();
+      const next = await response.json();
+      const revision = Math.max(1, Number(next?.revision) || 1);
+      if (loadedRevision == null) loadedRevision = revision;
+      else if (revision > loadedRevision) pendingRevision = revision;
+      liveState = next;
       render();
       window.dispatchEvent(new CustomEvent("nvs-shared-live-change", { detail: liveState }));
     } catch {
@@ -145,6 +152,10 @@
           <p>Voluntary check-ins only. No GPS or background location.</p>
         </div>
         <span class="v010-sync" id="v010Sync">Connecting…</span>
+      </div>
+      <div class="v010-plan-update" id="v010PlanUpdate" hidden>
+        <div><strong>Plan updated</strong><small>The organizer changed this meetup. Reload to use the new route.</small></div>
+        <button type="button" id="v010ReloadPlan">Reload updated plan</button>
       </div>
       <div class="v010-alert" id="v010Alert" hidden></div>
       <div class="v010-checkin" id="v010Checkin" hidden>
@@ -169,6 +180,7 @@
     panel.querySelectorAll("[data-v010-status]").forEach((button) => {
       button.addEventListener("click", () => sendStatus(button.dataset.v010Status));
     });
+    panel.querySelector("#v010ReloadPlan")?.addEventListener("click", () => window.location.reload());
     return panel;
   }
 
@@ -198,16 +210,21 @@
     const sync = panel.querySelector("#v010Sync");
     if (sync) sync.textContent = liveState?.updatedAt ? `Synced ${ago(liveState.updatedAt)}` : "No check-ins yet";
 
+    const updateBanner = panel.querySelector("#v010PlanUpdate");
+    if (updateBanner) updateBanner.hidden = pendingRevision == null;
+
     const checkin = panel.querySelector("#v010Checkin");
     if (checkin) checkin.hidden = !canCheckIn();
-    panel.querySelectorAll("[data-v010-status]").forEach((button) => { button.disabled = sending; });
+    panel.querySelectorAll("[data-v010-status]").forEach((button) => { button.disabled = sending || pendingRevision != null; });
 
     const current = focus >= 0 ? values[String(focus)] : null;
     const note = panel.querySelector("#v010CheckinNote");
     if (note) {
-      note.textContent = current?.status
-        ? `Your latest check-in: ${STATUS_COPY[current.status]?.label || current.status}${current.note ? ` · ${current.note}` : ""} · ${ago(current.at)}`
-        : "Tap only what you want to share with this meetup.";
+      note.textContent = pendingRevision != null
+        ? "Reload the updated plan before posting another check-in."
+        : current?.status
+          ? `Your latest check-in: ${STATUS_COPY[current.status]?.label || current.status}${current.note ? ` · ${current.note}` : ""} · ${ago(current.at)}`
+          : "Tap only what you want to share with this meetup.";
     }
 
     let legacy = panel.querySelector(".v010-legacy-note");
@@ -271,6 +288,7 @@
     getPlanId: planId,
     getState: () => liveState,
     canCheckIn,
+    hasPendingPlanUpdate: () => pendingRevision != null,
     refresh: poll,
     checkIn: sendStatus,
   });
