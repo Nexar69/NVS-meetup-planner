@@ -244,6 +244,24 @@
     }
   }
 
+  function loadRecovery0111() {
+    if (!document.querySelector('link[data-recovery-v0111="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./recovery-v0111.css";
+      link.dataset.recoveryV0111 = "true";
+      document.head.appendChild(link);
+    }
+
+    if (!document.querySelector('script[data-recovery-v0111="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./recovery-v0111.js";
+      script.async = false;
+      script.dataset.recoveryV0111 = "true";
+      document.body.appendChild(script);
+    }
+  }
+
   installDepartureGuard();
   updateReleaseCopy();
   installHiddenSelectSync();
@@ -254,4 +272,5 @@
   loadSharedLiveMeetup();
   loadMeetupIntelligence();
   loadTripTools0111();
+  loadRecovery0111();
 })();
