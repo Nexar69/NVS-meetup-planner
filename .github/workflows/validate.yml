@@ -61,3 +61,8 @@ jobs:
           }
           console.log(`Verified ${refs.length} app-shell entries.`);
           NODE
+
+      - name: Run meetup intelligence tests
+        run: |
+          node tests/intelligence-core.test.cjs
+          node tests/release-smoke.test.cjs
