@@ -31,6 +31,8 @@
   }
 
   function updateReleaseCopy() {
+    const current = Number(document.documentElement.dataset.nvsRelease || 0);
+    if (current >= 90) return;
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = "v0.7.0 · Group planning + first-meet priorities";
 
@@ -190,6 +192,40 @@
     }
   }
 
+  function loadMeetupIntelligence() {
+    if (!document.querySelector('link[data-intelligence-v011="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./intelligence-v011.css";
+      link.dataset.intelligenceV011 = "true";
+      document.head.appendChild(link);
+    }
+
+    if (!document.querySelector('script[data-intelligence-core="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./intelligence-core.js";
+      script.async = false;
+      script.dataset.intelligenceCore = "true";
+      document.body.appendChild(script);
+    }
+
+    if (!document.querySelector('script[data-intelligence-v011="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./intelligence-v011.js";
+      script.async = false;
+      script.dataset.intelligenceV011 = "true";
+      document.body.appendChild(script);
+    }
+
+    if (!document.querySelector('script[data-release-v011="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./release-v011.js";
+      script.async = false;
+      script.dataset.releaseV011 = "true";
+      document.body.appendChild(script);
+    }
+  }
+
   installDepartureGuard();
   updateReleaseCopy();
   installHiddenSelectSync();
@@ -198,4 +234,5 @@
   loadActionInstructions();
   loadLiveMeetup();
   loadSharedLiveMeetup();
+  loadMeetupIntelligence();
 })();
