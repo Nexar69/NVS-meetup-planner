@@ -18,6 +18,13 @@
     return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(date);
   }
 
+  function asDate(value) {
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
   function safeColor(value, fallback) {
     const color = String(value || "").trim();
     return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
@@ -66,7 +73,7 @@
         <strong>First join:</strong>
         ${escapeHtml(first.title)} · ${escapeHtml(first.label)} · <strong>${formatTime(first.time)}</strong>
       </span>
-      ${everyoneTime instanceof Date ? ` · everyone together <strong>${formatTime(everyoneTime)}</strong>` : ""}
+      ${everyoneTime instanceof Date ? ` · everyone arrives <strong>${formatTime(everyoneTime)}</strong>` : ""}
     `;
   }
 
@@ -76,17 +83,77 @@
       : "";
     const icon = event.final ? "👥" : "★";
     const style = event.final ? "" : ` style="background:${escapeHtml(mixedGradient(event))}"`;
+    const title = event.final ? "Everyone arrives" : event.title;
     return `
-      <div class="timeline-convergence-event ${escapeHtml(event.kind || "meet")}">
+      <div class="timeline-convergence-event ${escapeHtml(event.kind || "meet")}" data-convergence-generated="true">
         <div class="timeline-convergence-time">${formatTime(event.time)}</div>
         <div class="timeline-convergence-rail"><span class="timeline-convergence-star ${event.final ? "" : "mixed"}"${style}>${icon}</span></div>
         <div class="timeline-convergence-copy">
-          <strong>${escapeHtml(event.title)}</strong>
+          <strong>${escapeHtml(title)}</strong>
           <span>${escapeHtml(event.label)}</span>
           ${shared}
         </div>
       </div>
     `;
+  }
+
+  function withPlatform(name, platform) {
+    const cleanName = String(name || "").trim();
+    const cleanPlatform = String(platform || "").trim();
+    if (!cleanPlatform) return cleanName;
+    if (!cleanName) return `Stop ${cleanPlatform}`;
+    const nameLower = cleanName.toLocaleLowerCase("de-DE");
+    const platformLower = cleanPlatform.toLocaleLowerCase("de-DE");
+    if (
+      nameLower.endsWith(` ${platformLower}`) ||
+      nameLower.endsWith(`(${platformLower})`) ||
+      nameLower.includes(`bstg. ${platformLower}`) ||
+      nameLower.includes(`steig ${platformLower}`) ||
+      nameLower.includes(`gleis ${platformLower}`)
+    ) return cleanName;
+    return `${cleanName} ${cleanPlatform}`;
+  }
+
+  function startHtml(assignment) {
+    const route = assignment?.route;
+    const member = assignment?.member;
+    const departure = asDate(route?.departure);
+    if (!member || !departure) return "";
+    const firstSegment = Array.isArray(route?.segments) ? route.segments.find(Boolean) : null;
+    const origin = firstSegment
+      ? withPlatform(firstSegment.from, firstSegment.platformFrom)
+      : (locationFor(member.originKey)?.label || member.originKey || "Starting point");
+    const color = safeColor(member.color, "#2563eb");
+    return `
+      <div class="timeline-convergence-event start" data-convergence-generated="true">
+        <div class="timeline-convergence-time">${formatTime(departure)}</div>
+        <div class="timeline-convergence-rail"><span class="timeline-convergence-star" style="background:${escapeHtml(color)};box-shadow:0 0 0 2px ${escapeHtml(color)}">▶</span></div>
+        <div class="timeline-convergence-copy">
+          <strong>Start</strong>
+          <span>${escapeHtml(origin)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function nodeFromHtml(html) {
+    const template = document.createElement("template");
+    template.innerHTML = String(html || "").trim();
+    return template.content.firstElementChild || null;
+  }
+
+  function stepTime(node, index, assignment) {
+    const segment = Array.isArray(assignment?.route?.segments) ? assignment.route.segments[index] : null;
+    const segmentTime = asDate(segment?.departure);
+    if (segmentTime) return segmentTime;
+
+    const match = String(node?.querySelector(".timeline-time")?.textContent || "").match(/^(\d{1,2}):(\d{2})$/);
+    const routeStart = asDate(assignment?.route?.departure);
+    if (!match || !routeStart) return new Date((routeStart?.getTime?.() || 0) + index * 60_000);
+    const candidate = new Date(routeStart);
+    candidate.setHours(Number(match[1]), Number(match[2]), 0, 0);
+    if (candidate.getTime() < routeStart.getTime() - 12 * 60 * 60 * 1000) candidate.setDate(candidate.getDate() + 1);
+    return candidate;
   }
 
   function decorateTimelines(card, group, analysis) {
@@ -96,30 +163,55 @@
 
     timelines.forEach((timeline, index) => {
       const assignment = assignments[index];
-      if (!assignment?.member) return;
+      if (!assignment?.member || !assignment?.route) return;
+      const timelineSteps = timeline.querySelector(".timeline-steps");
+      if (!timelineSteps) return;
+
+      // Remove the old v0.7.3 summary block if a cached copy left one behind.
+      timeline.querySelector(".route-convergence-events")?.remove();
+
       const events = (analysis.memberEvents?.[assignment.member.id] || [])
         .filter((event) => event?.time instanceof Date)
         .sort((a, b) => a.time - b.time);
-      const existing = timeline.querySelector(".route-convergence-events");
-      if (!events.length) {
-        existing?.remove();
-        return;
-      }
+      const departure = asDate(assignment.route.departure);
+      const signature = [
+        departure?.getTime?.() || "",
+        ...events.map((event) => `${event.id}:${event.time.getTime()}:${event.memberIds?.join(",") || ""}`),
+      ].join("|");
+      if (timelineSteps.dataset.convergenceSignature === signature) return;
 
-      const signature = events.map((event) => `${event.id}:${event.time.getTime()}:${event.memberIds?.join(",") || ""}`).join("|");
-      if (existing?.dataset.signature === signature) return;
-      existing?.remove();
+      const originalSteps = [...timelineSteps.children].filter((node) => node.classList?.contains("timeline-step"));
+      if (!originalSteps.length) return;
 
-      const container = document.createElement("div");
-      container.className = "route-convergence-events";
-      container.dataset.signature = signature;
-      container.innerHTML = events.map((event) => eventHtml(event, assignment.member.id)).join("");
+      // Clear only previously generated lifecycle/join rows; keep the real route steps.
+      [...timelineSteps.querySelectorAll('[data-convergence-generated="true"]')].forEach((node) => node.remove());
 
-      const heading = timeline.querySelector(".route-timeline-heading");
-      const fallbackNote = timeline.querySelector(".timeline-fallback-note");
-      if (fallbackNote) fallbackNote.insertAdjacentElement("afterend", container);
-      else if (heading) heading.insertAdjacentElement("afterend", container);
-      else timeline.prepend(container);
+      const entries = originalSteps.map((node, stepIndex) => ({
+        time: stepTime(node, stepIndex, assignment),
+        priority: 2,
+        node,
+      }));
+
+      const startNode = nodeFromHtml(startHtml(assignment));
+      if (startNode && departure) entries.push({ time: departure, priority: 0, node: startNode });
+
+      events.forEach((event) => {
+        const node = nodeFromHtml(eventHtml(event, assignment.member.id));
+        if (!node) return;
+        // A join at the same timestamp as a new leg should be shown before boarding
+        // that next leg; the final arrival naturally sorts to the bottom.
+        entries.push({ time: event.time, priority: event.final ? 3 : 1, node });
+      });
+
+      entries.sort((a, b) => {
+        const timeDiff = a.time - b.time;
+        return timeDiff || a.priority - b.priority;
+      });
+
+      const fragment = document.createDocumentFragment();
+      entries.forEach((entry) => fragment.appendChild(entry.node));
+      timelineSteps.replaceChildren(fragment);
+      timelineSteps.dataset.convergenceSignature = signature;
     });
   }
 
@@ -153,9 +245,6 @@
       subtree: true,
     });
   }
-
-  const version = document.getElementById("versionLabel");
-  if (version) version.textContent = "v0.7.3 · Stable map + meaningful joins";
 
   decorateExisting();
 })();
