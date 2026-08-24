@@ -4,6 +4,15 @@
   window.NVSRelease011 = true;
   document.documentElement.dataset.nvsRelease = "011";
 
+  function loadFreshnessGuard() {
+    if (document.querySelector('script[data-shared-freshness-v011="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "./shared-freshness-v011.js";
+    script.async = false;
+    script.dataset.sharedFreshnessV011 = "true";
+    document.body.appendChild(script);
+  }
+
   function applyReleaseCopy() {
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = VERSION;
@@ -21,9 +30,11 @@
     document.title = "Meet Schwerin · Meetup Intelligence";
   }
 
+  loadFreshnessGuard();
   applyReleaseCopy();
   setTimeout(applyReleaseCopy, 400);
   window.addEventListener("load", () => {
+    loadFreshnessGuard();
     applyReleaseCopy();
     setTimeout(applyReleaseCopy, 180);
   });
