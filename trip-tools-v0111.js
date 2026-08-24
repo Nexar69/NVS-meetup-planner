@@ -21,6 +21,11 @@
     return Boolean(window.NVSSharedLive?.canCheckIn?.());
   }
 
+  function focusIndex() {
+    const value = Number(window.NVSShare?.getFocusIndex?.() ?? -1);
+    return Number.isInteger(value) ? value : -1;
+  }
+
   function relativeAge(timestamp) {
     const seconds = Math.max(0, Math.floor((Date.now() - Number(timestamp || 0)) / 1000));
     if (seconds < 10) return "just now";
@@ -89,14 +94,26 @@
     return tools;
   }
 
+  function statusWasApplied(status, beforeAt) {
+    const focus = focusIndex();
+    const members = window.NVSSharedLive?.getState?.()?.members || {};
+    const entry = focus >= 0 ? members[String(focus)] : null;
+    if (status === "clear") return !entry;
+    return Boolean(entry?.status === status && Number(entry?.at) !== Number(beforeAt));
+  }
+
   async function sendStatus(status) {
     if (!canCheckIn() || sendingStatus || !window.NVSSharedLive?.checkIn) return;
     sendingStatus = true;
     render();
     const state = document.getElementById("v0111CheckinState");
     if (state) state.textContent = "Updating…";
+
+    const focus = focusIndex();
+    const beforeAt = Number(window.NVSSharedLive?.getState?.()?.members?.[String(focus)]?.at || 0);
     try {
       await window.NVSSharedLive.checkIn(status);
+      if (!statusWasApplied(status, beforeAt)) throw new Error("CHECKIN_NOT_CONFIRMED");
       if (state) state.textContent = status === "clear" ? "Check-in cleared." : "Shared just now.";
       window.NVSSharedLive.refresh?.();
     } catch {
@@ -172,7 +189,11 @@
     const dialog = ensureTools()?.closest("dialog");
     if (!dialog || dialog.dataset.v0111Lifecycle === "true") return;
     dialog.dataset.v0111Lifecycle = "true";
-    dialog.addEventListener("close", () => releaseWakeLock());
+    dialog.addEventListener("close", async () => {
+      wakeWanted = false;
+      await releaseWakeLock();
+      render();
+    });
   }
 
   function start() {
