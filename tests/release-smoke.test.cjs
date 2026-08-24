@@ -35,6 +35,7 @@ assert.match(loader, /recovery-v0111\.js/, "recovery runtime must be referenced"
 const release = read("release-v011.js");
 assert.match(release, /v0\.11\.1 · Meetup Intelligence/, "release copy must identify v0.11.1");
 assert.match(release, /dataset\.nvsRelease = "011"/, "v0.11 must own the release marker");
+assert.match(release, /reset private personal check-in links/i, "release copy should mention organizer revocation control");
 
 const serviceWorker = read("service-worker.js");
 assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r4/, "service worker cache must be the latest v0.11.1 revision");
@@ -47,6 +48,7 @@ for (const asset of [
   "recovery-v0111.js",
   "recovery-v0111.css",
   "share-v010.js",
+  "shared-live-v010.js",
   "release-v011.js",
 ]) {
   assert.match(serviceWorker, new RegExp(asset.replaceAll(".", "\\.")), `${asset} must be in the app shell`);
@@ -88,6 +90,8 @@ assert.match(secureShare, /resetPersonLink/, "organizer share API should support
 
 const sharedLive = read("shared-live-v010.js");
 assert.match(sharedLive, /sessionStorage\.setItem/, "personal check-in capability should move into tab-scoped storage after opening");
+assert.match(sharedLive, /sessionStorage\.removeItem/, "a revoked personal capability should be removed from the current tab");
+assert.match(sharedLive, /CHECKIN_CAPABILITY_REVOKED/, "revoked personal links should downgrade themselves to read-only after authorization failure");
 assert.match(sharedLive, /history\.replaceState/, "opened personal links should remove the write capability from the address bar");
 assert.match(sharedLive, /params\.delete\("k"\)/, "URL sanitization must remove only the private capability parameter");
 assert.match(sharedLive, /sessionStorage\.getItem/, "reloads in the same tab should retain the check-in capability");
