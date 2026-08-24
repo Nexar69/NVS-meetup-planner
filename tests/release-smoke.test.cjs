@@ -13,6 +13,7 @@ const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
   "trip-tools-v0111.css",
   "recovery-v0111.js",
   "recovery-v0111.css",
+  "shared-live-v010.js",
   "release-v011.js",
   "service-worker.js",
   "v05.js",
@@ -67,6 +68,13 @@ assert.match(recovery, /getAlerts/, "recovery desk should consume the existing i
 assert.match(recovery, /hasPendingPlanUpdate/, "recovery desk should prioritize organizer plan updates");
 assert.match(recovery, /No background location/, "recovery UI must state its location privacy boundary");
 assert.match(recovery, /navigator\.onLine/, "recovery actions should degrade safely while offline");
+
+const sharedLive = read("shared-live-v010.js");
+assert.match(sharedLive, /sessionStorage\.setItem/, "personal check-in capability should move into tab-scoped storage after opening");
+assert.match(sharedLive, /history\.replaceState/, "opened personal links should remove the write capability from the address bar");
+assert.match(sharedLive, /params\.delete\("k"\)/, "URL sanitization must remove only the private capability parameter");
+assert.match(sharedLive, /sessionStorage\.getItem/, "reloads in the same tab should retain the check-in capability");
+assert.doesNotMatch(sharedLive, /localStorage\.setItem\([^\n]*capability/i, "personal write capabilities should not be persisted in long-lived localStorage");
 
 const vmv = read("worker/src/vmv-rest.js");
 assert.match(vmv, /plannedPlatformFrom/, "VMV adapter must preserve planned platform");
