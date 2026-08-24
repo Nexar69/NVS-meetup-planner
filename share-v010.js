@@ -6,6 +6,7 @@
   let secureCache = null;
   let sharing = false;
   let pendingShare = null;
+  let syncTimer = null;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -85,11 +86,67 @@
     });
   }
 
+  function identitySignature(plan) {
+    return JSON.stringify((plan?.members || []).map((member) => String(member?.name || "")));
+  }
+
+  async function syncExistingPlan(nextPlan) {
+    if (!secureCache?.id || !secureCache?.ownerKey || !config.backendUrl) return false;
+    const plan = nextPlan || payload();
+    if (!plan) return false;
+
+    const identity = identitySignature(plan);
+    if (identity !== secureCache.identity) {
+      secureCache = null;
+      return false;
+    }
+
+    const sig = signature(plan);
+    if (sig === secureCache.signature) return true;
+
+    const response = await fetch(`${String(config.backendUrl).replace(/\/$/, "")}/api/live/${secureCache.id}/plan`, {
+      method: "POST",
+      mode: "cors",
+      credentials: "omit",
+      headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
+      body: JSON.stringify({ key: secureCache.ownerKey, plan }),
+    });
+    if (response.status === 409) {
+      secureCache = null;
+      return false;
+    }
+    if (!response.ok) throw new Error(`LIVE_PLAN_SYNC_HTTP_${response.status}`);
+    const data = await response.json();
+    secureCache.signature = sig;
+    secureCache.revision = Number(data?.revision) || secureCache.revision || 1;
+    window.dispatchEvent(new CustomEvent("nvs-live-plan-synced", {
+      detail: { id: secureCache.id, revision: secureCache.revision },
+    }));
+    return true;
+  }
+
+  function scheduleSync() {
+    clearTimeout(syncTimer);
+    if (!secureCache) return;
+    syncTimer = setTimeout(() => {
+      syncExistingPlan().catch((error) => console.warn("Shared live plan sync failed", error));
+    }, 700);
+  }
+
   async function createSecurePlan() {
     const plan = payload();
     if (!plan || !config.backendUrl) return null;
     const sig = signature(plan);
-    if (secureCache?.signature === sig) return { ...secureCache, plan };
+    const identity = identitySignature(plan);
+
+    if (secureCache) {
+      if (secureCache.identity !== identity) {
+        secureCache = null;
+      } else {
+        if (secureCache.signature !== sig) await syncExistingPlan(plan);
+        if (secureCache?.signature === sig) return { ...secureCache, plan };
+      }
+    }
 
     const response = await fetch(`${String(config.backendUrl).replace(/\/$/, "")}/api/plans`, {
       method: "POST",
@@ -100,13 +157,17 @@
     });
     if (!response.ok) throw new Error(`SECURE_SHARE_HTTP_${response.status}`);
     const data = await response.json();
-    if (!data?.url || !Array.isArray(data.memberKeys) || data.memberKeys.length < plan.members.length) {
+    if (!data?.id || !data?.url || !data?.ownerKey || !Array.isArray(data.memberKeys) || data.memberKeys.length < plan.members.length) {
       throw new Error("SECURE_SHARE_CAPABILITIES_MISSING");
     }
     secureCache = {
+      id: data.id,
+      identity,
       signature: sig,
       url: data.url,
+      ownerKey: data.ownerKey,
       memberKeys: data.memberKeys,
+      revision: Number(data.revision) || 1,
       expiresIn: data.expiresIn || 259200,
     };
     return { ...secureCache, plan };
@@ -255,12 +316,14 @@
     }
   }, true);
 
-  ["nvs-group-change", "nvs-priority-change", "nvs-timing-change"].forEach((name) => {
-    window.addEventListener(name, () => { secureCache = null; });
-  });
+  window.addEventListener("nvs-group-recommendations-rendered", scheduleSync);
+  window.addEventListener("nvs-priority-change", scheduleSync);
+  window.addEventListener("nvs-timing-change", scheduleSync);
 
   window.NVSShare010 = Object.freeze({
     shareGroup: () => confirmShare("group"),
     sharePerson: (index) => confirmShare("person", Number(index)),
+    sync: () => syncExistingPlan(),
+    getPlanId: () => secureCache?.id || null,
   });
 })();
