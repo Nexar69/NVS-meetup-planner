@@ -20,7 +20,7 @@ function expiryOptions(expiresAt) {
   const nowSeconds = Math.floor(Date.now() / 1000);
   const expirySeconds = Math.ceil(expires / 1000);
   // KV requires expiration to be at least 60 seconds in the future. The
-  // application still enforces the exact logical expiresAt before serving data.
+  // gateway still enforces the exact logical expiresAt before serving data.
   return expirySeconds > nowSeconds + 60
     ? { expiration: expirySeconds }
     : { expirationTtl: 60 };
@@ -65,9 +65,24 @@ function liveMatch(pathname) {
   return pathname.match(/^\/api\/live\/([23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{6,12})(?:\/(plan|capabilities))?$/);
 }
 
-async function expiredResponse(id, env, headers = {}) {
+function sessionIdFromPath(pathname) {
+  const live = liveMatch(pathname);
+  if (live) return live[1];
+  const planApi = pathname.match(/^\/api\/plans\/([23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{6,12})$/);
+  if (planApi) return planApi[1];
+  const sharedPage = pathname.match(/^\/p\/([23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{6,12})\/?$/);
+  return sharedPage?.[1] || "";
+}
+
+async function expiredResponse(id, env, pathname) {
   await deleteSession(id, env);
-  return json({ error: "not_found", expired: true, planId: id }, 404, headers);
+  if (pathname.startsWith("/p/")) {
+    return new Response("This shared meetup has expired. Ask the organizer for a new Meet Schwerin link.", {
+      status: 404,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
+  return json({ error: "not_found", expired: true, planId: id }, 404);
 }
 
 async function parseJsonResponse(response) {
@@ -85,7 +100,7 @@ function replaceJson(response, data) {
   });
 }
 
-async function handleCreatedPlan(request, response, env) {
+async function handleCreatedPlan(response, env) {
   if (!response.ok) return response;
   const data = await parseJsonResponse(response);
   const id = String(data?.id || "");
@@ -126,12 +141,13 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const match = liveMatch(url.pathname);
+    const sessionId = sessionIdFromPath(url.pathname);
     let beforeMeta = null;
 
-    if (match) {
-      beforeMeta = await readMeta(match[1], env);
+    if (sessionId) {
+      beforeMeta = await readMeta(sessionId, env);
       if (beforeMeta?.expiresAt && Date.now() >= beforeMeta.expiresAt) {
-        return expiredResponse(match[1], env);
+        return expiredResponse(sessionId, env, url.pathname);
       }
     }
 
@@ -142,7 +158,7 @@ export default {
     }
 
     if (url.pathname === "/api/plans" && request.method === "POST") {
-      return handleCreatedPlan(request, response, env);
+      return handleCreatedPlan(response, env);
     }
 
     if (!match || !response.ok || !beforeMeta?.expiresAt) return response;
