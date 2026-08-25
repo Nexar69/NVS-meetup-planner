@@ -1,6 +1,7 @@
 (() => {
   const UPDATE_MS = 20_000;
   const MAX_WATCH_MIN = 6;
+  const MAX_LEAD_MIN = 30;
   let timer = null;
   let lastMarkup = "";
 
@@ -53,9 +54,11 @@
       const arrival = asDate(current.arrival);
       const departure = asDate(next.departure);
       if (!arrival || !departure || departure.getTime() <= now) continue;
+      const leadMinutes = (departure.getTime() - now) / 60_000;
+      if (leadMinutes > MAX_LEAD_MIN) continue;
       const gap = transferGapMinutes(current, next);
       if (gap == null || gap > MAX_WATCH_MIN) continue;
-      candidates.push({ index, current, next, gap, arrival, departure });
+      candidates.push({ index, current, next, gap, arrival, departure, leadMinutes });
     }
     return candidates.sort((a, b) => a.departure - b.departure);
   }
