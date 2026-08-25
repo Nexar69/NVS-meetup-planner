@@ -126,11 +126,38 @@ const walkContinuation = guidanceForRoute({
 }, now);
 assert.match(walkContinuation.detail, /planned walking leg starts there/);
 
+const sampleRoute = {
+  segments: [{
+    mode: "TRAM",
+    modeLabel: "Tram",
+    line: "3",
+    from: "Stauffenbergstraße",
+    to: "Krebsförden",
+    departure: at(0),
+    arrival: at(12),
+  }],
+};
+const missedGuidance = guidanceForRoute(sampleRoute, now, { status: "missed" });
+assert.equal(missedGuidance.eyebrow, "Your voluntary update");
+assert.match(missedGuidance.title, /reported a missed connection/);
+assert.match(missedGuidance.detail, /Recovery Desk|fresh route/);
+assert.doesNotMatch(missedGuidance.detail, /currently on Tram 3/, "a fresh missed-connection report must override contradictory timetable riding copy");
+
+const arrivedGuidance = guidanceForRoute(sampleRoute, now, { status: "arrived" });
+assert.equal(arrivedGuidance.eyebrow, "Confirmed by you");
+assert.match(arrivedGuidance.title, /You're at the meetup/);
+assert.match(arrivedGuidance.detail, /voluntary arrival check-in/);
+
+const ordinaryWithNonOverrideStatus = guidanceForRoute(sampleRoute, now, { status: "left" });
+assert.match(ordinaryWithNonOverrideStatus.title, /Krebsförden/);
+
 assert.match(source, /personalSharedPlan/);
 assert.match(source, /sharedLiveV010/);
 assert.match(source, /insertAdjacentElement\("afterend", sharedPanel\)/, "voluntary shared-live controls should be moved directly below the personal plan");
 assert.match(source, /function removeGuidance\(\)/, "stale guidance should be removable when a personal route disappears");
 assert.match(source, /mutationRefreshQueued/, "DOM mutation refreshes should be coalesced instead of rerendering for every mutation");
+assert.match(source, /checkinFreshness/, "trip guidance should honor the same stale-check-in policy as meetup intelligence");
+assert.match(source, /15 \* 60_000/, "trip guidance should retain a safe 15-minute freshness fallback if the intelligence core is unavailable");
 assert.match(source, /aria-live/);
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "guidance must remain timetable-only and never introduce location tracking");
 assert.match(css, /body\.shared-viewer \.v051-viewing-chip\{display:none!important\}/, "shared viewers should not show the planner-only Viewing badge over the detailed journey header");
@@ -140,4 +167,4 @@ assert.match(css, /forced-colors/);
 assert.match(release, /trip-guidance-v0111\.js/);
 assert.match(release, /trip-guidance-v0111\.css/);
 
-console.log("trip-guidance: executable approaching-stop, one-minute alert, transfer, shared-view polish, stale cleanup, placement, accessibility and no-GPS behavior passed");
+console.log("trip-guidance: executable approaching-stop, one-minute alert, transfer, voluntary-status override, shared-view polish, stale cleanup, placement, accessibility and no-GPS behavior passed");
