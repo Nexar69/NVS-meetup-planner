@@ -71,7 +71,7 @@ assert.match(intelligence, /serviceWorker\.ready/, "system notifications should 
 assert.match(intelligence, /showNotification/, "system notifications should support mobile\/home-screen PWAs");
 assert.match(intelligence, /function scheduleTick/, "intelligence should use an adaptive render scheduler");
 assert.match(intelligence, /open \? 1_000 : 5_000/, "Trip Mode should retain 1-second guidance while the normal planner refreshes less aggressively");
-assert.match(intelligence, /if \(document\.hidden\) return;/, "hidden pages should suspend periodic intelligence rendering");
+assert.match(intelligence, /function nextTickDelay[\s\S]*if \(document\.hidden\) return null;/, "hidden pages should suspend periodic intelligence rendering");
 assert.doesNotMatch(intelligence, /setInterval\(render,\s*1_000\)/, "the command center must not render every second indefinitely outside Trip Mode");
 
 const tripTools = read("trip-tools-v0111.js");
