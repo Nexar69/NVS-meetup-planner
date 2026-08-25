@@ -38,6 +38,17 @@
     return line && !mode.toLowerCase().includes(line.toLowerCase()) ? `${mode} ${line}` : mode;
   }
 
+  function cleanPlatform(value) {
+    return String(value || "").trim();
+  }
+
+  function platformChange(segment) {
+    const planned = cleanPlatform(segment?.plannedPlatformFrom);
+    const current = cleanPlatform(segment?.platformFrom);
+    if (!planned || !current || planned === current) return null;
+    return { planned, current };
+  }
+
   function transferGapMinutes(current, next) {
     const arrival = asDate(current?.arrival)?.getTime();
     const departure = asDate(next?.departure)?.getTime();
@@ -69,28 +80,43 @@
     if (!transfer) return null;
     const stop = String(transfer.current?.to || transfer.next?.from || "your transfer stop");
     const nextVehicle = vehicleLabel(transfer.next);
-    const platform = String(transfer.next?.platformFrom || "").trim();
+    const platform = cleanPlatform(transfer.next?.platformFrom);
+    const platformDrift = platformChange(transfer.next);
     const departure = formatTime(transfer.next?.departure);
+    const untilDeparture = Math.max(0, Math.ceil(transfer.leadMinutes));
+    const platformCopy = platformDrift
+      ? ` Platform changed from ${platformDrift.planned} to ${platformDrift.current}; follow the live platform signs.`
+      : platform
+        ? ` Platform ${platform}.`
+        : "";
     if (transfer.gap < 0) {
       return {
         tone: "critical",
         eyebrow: "Connection protection",
         title: "This planned connection no longer fits",
-        detail: `${nextVehicle} is due to leave ${stop} about ${Math.max(1, Math.abs(transfer.gap))} min before the previous leg arrives. Use Recovery Desk or replan instead of relying on this transfer.`,
+        detail: `${nextVehicle} is due to leave ${stop} about ${Math.max(1, Math.abs(transfer.gap))} min before the previous leg arrives.${platformCopy} Use Recovery Desk or replan instead of relying on this transfer.`,
         gap: transfer.gap,
         stop,
         segmentIndex: transfer.index + 1,
+        platformChanged: Boolean(platformDrift),
       };
     }
     const tight = transfer.gap <= 3;
+    const tone = tight || platformDrift ? "warn" : "info";
+    const eyebrow = platformDrift
+      ? "Connection protection · platform changed"
+      : tight
+        ? "Connection protection · tight"
+        : "Connection protection";
     return {
-      tone: tight ? "warn" : "info",
-      eyebrow: tight ? "Connection protection · tight" : "Connection protection",
+      tone,
+      eyebrow,
       title: `${Math.max(0, transfer.gap)} min transfer at ${stop}`,
-      detail: `Next: ${nextVehicle}${platform ? ` · platform ${platform}` : ""}${departure ? ` · around ${departure}` : ""}. ${tight ? "Keep the next leg in mind and be ready to change promptly." : "This is worth watching, but no action is needed yet."}`,
+      detail: `Next: ${nextVehicle}${departure ? ` · around ${departure}` : ""}${untilDeparture <= 10 ? ` · departs in about ${Math.max(1, untilDeparture)} min` : ""}.${platformCopy} ${platformDrift ? "Allow a little extra attention for the changed boarding point." : tight ? "Keep the next leg in mind and be ready to change promptly." : "This is worth watching, but no action is needed yet."}`,
       gap: transfer.gap,
       stop,
       segmentIndex: transfer.index + 1,
+      platformChanged: Boolean(platformDrift),
     };
   }
 
@@ -192,6 +218,6 @@
     else refresh();
   });
 
-  window.NVSTransferWatch0111 = Object.freeze({ transferGapMinutes, transferCandidates, transferModel, focusedFreshEntry, blockingVoluntaryState, freshMissed, render, refresh });
+  window.NVSTransferWatch0111 = Object.freeze({ transferGapMinutes, transferCandidates, transferModel, platformChange, focusedFreshEntry, blockingVoluntaryState, freshMissed, render, refresh });
   refresh();
 })();
