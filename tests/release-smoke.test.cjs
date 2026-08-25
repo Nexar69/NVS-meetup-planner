@@ -20,6 +20,8 @@ const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
   "provider-health-v0111.css",
   "shared-expiry-v0111.js",
   "shared-expiry-v0111.css",
+  "trip-guidance-v0111.js",
+  "trip-guidance-v0111.css",
   "share-v010.js",
   "shared-live-v010.js",
   "release-v011.js",
@@ -27,6 +29,7 @@ const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
   "v05.js",
   "worker/src/entry.js",
   "worker/src/lifecycle-entry.js",
+  "worker/src/plan-equivalence.js",
   "worker/src/vmv-rest.js",
 ].forEach((file) => assert.equal(fs.existsSync(path.join(root, file)), true, `${file} should exist`));
 
@@ -53,9 +56,12 @@ assert.match(release, /routing-coalesce-v0111\.js/, "routing coalescer must be w
 assert.match(release, /loadSharedExpiry0111/, "v0.11.1 release owner should load authoritative shared-session expiry UX");
 assert.match(release, /shared-expiry-v0111\.js/, "shared expiry runtime must be wired by the release owner");
 assert.match(release, /shared-expiry-v0111\.css/, "shared expiry styles must be wired by the release owner");
+assert.match(release, /loadTripGuidance0111/, "v0.11.1 release owner should load personal journey guidance");
+assert.match(release, /trip-guidance-v0111\.js/, "trip guidance runtime must be wired by the release owner");
+assert.match(release, /trip-guidance-v0111\.css/, "trip guidance styles must be wired by the release owner");
 
 const serviceWorker = read("service-worker.js");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r8/, "service worker cache must be the latest v0.11.1 revision");
+assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r9/, "service worker cache must be the latest v0.11.1 revision");
 for (const asset of [
   "intelligence-core.js",
   "intelligence-v011.js",
@@ -71,6 +77,8 @@ for (const asset of [
   "provider-health-v0111.css",
   "shared-expiry-v0111.js",
   "shared-expiry-v0111.css",
+  "trip-guidance-v0111.js",
+  "trip-guidance-v0111.css",
   "share-v010.js",
   "shared-live-v010.js",
   "release-v011.js",
@@ -123,6 +131,12 @@ assert.match(expiry, /nvs-shared-session-expired/, "expiry runtime should emit a
 assert.doesNotMatch(expiry, /259200|72\s*hours|3\s*days/i, "viewer expiry UX must not guess the configured TTL");
 assert.doesNotMatch(expiry, /geolocation|watchPosition|getCurrentPosition/, "expiry UX must not introduce location tracking");
 
+const tripGuidance = read("trip-guidance-v0111.js");
+assert.match(tripGuidance, /personalSharedPlan/, "personal guidance should anchor to the personal plan");
+assert.match(tripGuidance, /sharedLiveV010/, "personal guidance should reposition the voluntary status panel");
+assert.match(tripGuidance, /Next important stop/, "guidance should warn about approaching planned stops");
+assert.doesNotMatch(tripGuidance, /geolocation|watchPosition|getCurrentPosition/, "personal guidance must stay timetable-only");
+
 const secureShare = read("share-v010.js");
 assert.match(secureShare, /\/capabilities/, "organizer sharing should call the capability rotation endpoint");
 assert.match(secureShare, /Reset all private links/, "group sharing should expose all-member private-link revocation");
@@ -153,10 +167,12 @@ assert.match(lifecycleEntry, /authoritativeExpiry:\s*true/, "lifecycle health di
 assert.match(lifecycleEntry, /normalizeSessionExpiry/, "lifecycle gateway should normalize session records onto one deadline");
 assert.match(lifecycleEntry, /expiresAt/, "lifecycle gateway should expose exact expiry metadata");
 assert.match(lifecycleEntry, /deleteSession/, "expired sessions should be removed deterministically");
+assert.match(lifecycleEntry, /plansEquivalent/, "lifecycle gateway should suppress no-op plan revision churn");
+assert.match(lifecycleEntry, /unchanged:\s*true/, "no-op plan updates should be explicitly reported as unchanged");
 
 const vmv = read("worker/src/vmv-rest.js");
 assert.match(vmv, /plannedPlatformFrom/, "VMV adapter must preserve planned platform");
 assert.match(vmv, /cancelled/, "VMV adapter must preserve cancellation state");
 assert.match(vmv, /remarks/, "VMV adapter must preserve disruption remarks");
 
-console.log("release-smoke: v0.11.1 wiring and authoritative expiry look consistent");
+console.log("release-smoke: v0.11.1 wiring, r9 guidance and no-op plan revision protection look consistent");
