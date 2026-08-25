@@ -240,8 +240,8 @@
     dialog.className = "v011-settings-dialog";
     dialog.innerHTML = `
       <div class="v011-settings-shell">
-        <div class="v011-settings-head"><div><span class="v011-kicker">Alerts</span><h2>Travel alert settings</h2></div><button type="button" class="v011-settings-close" aria-label="Close">×</button></div>
-        <p class="v011-settings-copy">Choose what Meet Schwerin should surface. System notifications are optional and only requested when you turn them on.</p>
+        <div class="v011-settings-head"><div><span class="v011-kicker">Alerts</span><h2 id="v011SettingsTitle">Travel alert settings</h2></div><button type="button" class="v011-settings-close" aria-label="Close alert settings">×</button></div>
+        <p class="v011-settings-copy" id="v011SettingsDescription">Choose what Meet Schwerin should surface. System notifications are optional and only requested when you turn them on.</p>
         <div class="v011-settings-list">
           ${settingRow("leave", "Leave & get-off alerts", "Tell me when to start and when my stop is coming up.")}
           ${settingRow("transfer", "Transfer alerts", "Warn about the next connection and tight transfers.")}
@@ -454,10 +454,9 @@
       badge: "./icons/icon-192.png",
       tag: `meet-schwerin-${item.id}`,
       renotify: false,
+      data: { url: "./" },
     };
 
-    // Mobile/home-screen PWAs should use the service worker notification API.
-    // The Notification constructor is retained only as a desktop fallback.
     if ("serviceWorker" in navigator) {
       try {
         const registration = await navigator.serviceWorker.ready;
@@ -545,22 +544,34 @@
     mark.querySelectorAll(".brand-node").forEach((node) => { node.hidden = true; });
   }
 
-  function scheduleRender(delay = 20) {
-    clearTimeout(renderTimer);
-    renderTimer = setTimeout(render, delay);
+  function clearTick() {
+    if (tick) clearTimeout(tick);
+    tick = null;
   }
 
-  function tickDelay() {
+  function nextTickDelay() {
+    if (document.hidden) return null;
     return document.getElementById("v011TripDialog")?.open ? 1_000 : 5_000;
   }
 
   function scheduleTick() {
-    clearTimeout(tick);
-    if (document.hidden) return;
+    clearTick();
+    const delay = nextTickDelay();
+    if (delay == null) return;
     tick = setTimeout(() => {
+      tick = null;
       render();
       scheduleTick();
-    }, tickDelay());
+    }, delay);
+  }
+
+  function scheduleRender(delay = 20) {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(() => {
+      renderTimer = null;
+      render();
+      scheduleTick();
+    }, delay);
   }
 
   function start() {
@@ -588,16 +599,10 @@
   ].forEach((name) => window.addEventListener(name, () => scheduleRender()));
 
   document.addEventListener("visibilitychange", () => {
-    clearTimeout(tick);
-    if (!document.hidden) {
-      scheduleRender();
-      scheduleTick();
-    }
+    if (document.hidden) clearTick();
+    else scheduleRender();
   });
-  window.addEventListener("pageshow", () => {
-    scheduleRender();
-    scheduleTick();
-  });
+  window.addEventListener("pageshow", () => scheduleRender());
   window.addEventListener("load", start);
   if (results) new MutationObserver(() => scheduleRender(40)).observe(results, { childList: true, subtree: true });
   if (connectionLabel) new MutationObserver(() => scheduleRender(20)).observe(connectionLabel, { childList: true, characterData: true, subtree: true });
