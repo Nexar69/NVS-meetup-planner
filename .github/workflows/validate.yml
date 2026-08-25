@@ -79,6 +79,7 @@ jobs:
           node tests/share-expiry-cache.test.cjs
           node tests/trip-guidance.test.cjs
           node tests/trip-guidance-transfer-window.test.cjs
+          node tests/trip-guidance-observer.test.cjs
           node tests/intelligence-voluntary-sync.test.cjs
           node tests/worker-plan-equivalence.test.cjs
           node tests/worker-config.test.cjs
