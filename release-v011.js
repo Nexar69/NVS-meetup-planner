@@ -99,6 +99,15 @@
     }
   }
 
+  function loadIntelligenceVoluntarySync0111() {
+    if (document.querySelector('script[data-intelligence-voluntary-sync-v0111="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "./intelligence-voluntary-sync-v0111.js";
+    script.async = false;
+    script.dataset.intelligenceVoluntarySyncV0111 = "true";
+    document.body.appendChild(script);
+  }
+
   function applyReleaseCopy() {
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = VERSION;
@@ -116,6 +125,7 @@
   loadProviderHealth0111();
   loadSharedExpiry0111();
   loadTripGuidance0111();
+  loadIntelligenceVoluntarySync0111();
   applyReleaseCopy();
   setTimeout(applyReleaseCopy, 400);
   window.addEventListener("load", () => {
@@ -126,6 +136,7 @@
     loadProviderHealth0111();
     loadSharedExpiry0111();
     loadTripGuidance0111();
+    loadIntelligenceVoluntarySync0111();
     applyReleaseCopy();
     setTimeout(applyReleaseCopy, 180);
   });
