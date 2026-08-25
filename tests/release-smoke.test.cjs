@@ -61,7 +61,7 @@ assert.match(release, /trip-guidance-v0111\.js/, "trip guidance runtime must be 
 assert.match(release, /trip-guidance-v0111\.css/, "trip guidance styles must be wired by the release owner");
 
 const serviceWorker = read("service-worker.js");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r10/, "service worker cache must be the latest v0.11.1 revision");
+assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r11/, "service worker cache must be the latest v0.11.1 revision");
 for (const asset of [
   "intelligence-core.js",
   "intelligence-v011.js",
@@ -136,6 +136,9 @@ assert.match(tripGuidance, /personalSharedPlan/, "personal guidance should ancho
 assert.match(tripGuidance, /sharedLiveV010/, "personal guidance should reposition the voluntary status panel");
 assert.match(tripGuidance, /Next important stop/, "guidance should warn about approaching planned stops");
 assert.match(tripGuidance, /Your stop is coming up/, "guidance should escalate calmly in the final planned minute");
+assert.match(tripGuidance, /You reported a missed connection/, "fresh voluntary missed-connection state should override contradictory timetable guidance");
+assert.match(tripGuidance, /Confirmed by you/, "fresh voluntary arrival state should take precedence over timetable-only completion copy");
+assert.match(tripGuidance, /checkinFreshness/, "trip guidance should obey the shared stale-check-in boundary");
 assert.match(tripGuidance, /function removeGuidance/, "guidance should clear stale cards when the personal route disappears");
 assert.doesNotMatch(tripGuidance, /geolocation|watchPosition|getCurrentPosition/, "personal guidance must stay timetable-only");
 
@@ -180,4 +183,4 @@ assert.match(vmv, /plannedPlatformFrom/, "VMV adapter must preserve planned plat
 assert.match(vmv, /cancelled/, "VMV adapter must preserve cancellation state");
 assert.match(vmv, /remarks/, "VMV adapter must preserve disruption remarks");
 
-console.log("release-smoke: v0.11.1 wiring, r10 guidance/shared-view polish and no-op plan revision protection look consistent");
+console.log("release-smoke: v0.11.1 wiring, r11 status-aware guidance/shared-view polish and no-op plan revision protection look consistent");
