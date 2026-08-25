@@ -46,7 +46,7 @@ assert.equal(typeof guidanceForRoute, "function", "trip guidance should expose i
 const at = (minutes) => new Date(Date.UTC(2026, 7, 25, 8, minutes, 0));
 const now = at(10).getTime();
 
-const transferGuidance = guidanceForRoute({
+const transferRoute = {
   segments: [
     {
       mode: "TRAM",
@@ -67,12 +67,47 @@ const transferGuidance = guidanceForRoute({
       arrival: at(25),
     },
   ],
-}, now);
+};
+const transferGuidance = guidanceForRoute(transferRoute, now);
 assert.equal(transferGuidance.eyebrow, "Next important stop");
 assert.match(transferGuidance.title, /Stauffenbergstraße in about 5 min/);
 assert.match(transferGuidance.detail, /Get ready to leave at Stauffenbergstraße/);
 assert.match(transferGuidance.detail, /Next: Tram 3/);
 assert.match(transferGuidance.detail, /currently on Tram 2/);
+
+const confirmedOnVehicle = guidanceForRoute(transferRoute, now, { status: "on-vehicle" });
+assert.equal(confirmedOnVehicle.eyebrow, "Confirmed on board");
+assert.match(confirmedOnVehicle.title, /Stauffenbergstraße in about 5 min/);
+assert.match(confirmedOnVehicle.detail, /voluntary check-in confirms you're on board/);
+assert.match(confirmedOnVehicle.detail, /Next: Tram 3/);
+
+const futureRoute = {
+  segments: [{
+    mode: "TRAM",
+    modeLabel: "Tram",
+    line: "4",
+    from: "Marienplatz",
+    to: "Platz der Freiheit",
+    departure: at(14),
+    arrival: at(20),
+  }],
+};
+const confirmedAtStop = guidanceForRoute(futureRoute, now, { status: "at-stop" });
+assert.equal(confirmedAtStop.eyebrow, "Confirmed by you");
+assert.match(confirmedAtStop.title, /You're at a stop/);
+assert.match(confirmedAtStop.detail, /Next planned service: Tram 4 from Marienplatz/);
+assert.match(confirmedAtStop.detail, /be ready to board/);
+
+const conflictingAtStop = guidanceForRoute(transferRoute, now, { status: "at-stop" });
+assert.match(conflictingAtStop.detail, /differs from the timetable/);
+assert.match(conflictingAtStop.detail, /expects Tram 2 to be underway/);
+assert.doesNotMatch(conflictingAtStop.detail, /You're currently on Tram 2/, "an explicit at-stop check-in must not be contradicted by inferred riding copy");
+
+const aheadOfTimetableOnVehicle = guidanceForRoute(futureRoute, now, { status: "on-vehicle" });
+assert.equal(aheadOfTimetableOnVehicle.eyebrow, "Confirmed on board");
+assert.match(aheadOfTimetableOnVehicle.title, /You're on board/);
+assert.match(aheadOfTimetableOnVehicle.detail, /check-in is ahead of the timetable state/);
+assert.match(aheadOfTimetableOnVehicle.detail, /Tram 4/);
 
 const urgentGuidance = guidanceForRoute({
   segments: [{
@@ -158,6 +193,8 @@ assert.match(source, /function removeGuidance\(\)/, "stale guidance should be re
 assert.match(source, /mutationRefreshQueued/, "DOM mutation refreshes should be coalesced instead of rerendering for every mutation");
 assert.match(source, /checkinFreshness/, "trip guidance should honor the same stale-check-in policy as meetup intelligence");
 assert.match(source, /15 \* 60_000/, "trip guidance should retain a safe 15-minute freshness fallback if the intelligence core is unavailable");
+assert.match(source, /Confirmed on board/, "fresh on-vehicle reports should be reflected explicitly instead of contradicted by timetable-only state");
+assert.match(source, /You're at a stop/, "fresh at-stop reports should be reflected explicitly instead of contradicted by timetable-only state");
 assert.match(source, /aria-live/);
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "guidance must remain timetable-only and never introduce location tracking");
 assert.match(css, /body\.shared-viewer \.v051-viewing-chip\{display:none!important\}/, "shared viewers should not show the planner-only Viewing badge over the detailed journey header");
@@ -167,4 +204,4 @@ assert.match(css, /forced-colors/);
 assert.match(release, /trip-guidance-v0111\.js/);
 assert.match(release, /trip-guidance-v0111\.css/);
 
-console.log("trip-guidance: executable approaching-stop, one-minute alert, transfer, voluntary-status override, shared-view polish, stale cleanup, placement, accessibility and no-GPS behavior passed");
+console.log("trip-guidance: executable approaching-stop, transfer, voluntary on-board/at-stop/missed/arrived precedence, shared-view polish, stale cleanup, placement, accessibility and no-GPS behavior passed");
