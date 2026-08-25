@@ -70,6 +70,7 @@ jobs:
           node tests/accessibility-smoke.test.cjs
           node tests/dialog-accessibility-behavior.test.cjs
           node tests/shared-live-scheduler.test.cjs
+          node tests/shared-plan-update.test.cjs
           node tests/routing-coalescer.test.cjs
           node tests/provider-health.test.cjs
           node tests/service-worker-behavior.test.cjs
