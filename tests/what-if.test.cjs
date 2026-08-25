@@ -1,0 +1,87 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+const convergenceSource = fs.readFileSync(path.resolve(__dirname, "../convergence.js"), "utf8");
+const source = fs.readFileSync(path.resolve(__dirname, "../what-if-v0111.js"), "utf8");
+const css = fs.readFileSync(path.resolve(__dirname, "../what-if-v0111.css"), "utf8");
+
+const listeners = {};
+const window = { addEventListener(name, fn) { listeners[name] = fn; } };
+const document = {
+  addEventListener() {},
+  getElementById() { return null; },
+};
+vm.runInNewContext(convergenceSource, { window, Date, Math, Number, String, Array, Object, Map, Set });
+vm.runInNewContext(source, { window, document, Date, Math, Number, String, Array, Object, Intl, Map, Set });
+
+const api = window.NVSWhatIf0111;
+assert.equal(typeof api?.simulate, "function");
+assert.equal(typeof api?.delayedGroup, "function");
+assert.equal(typeof api?.shiftRoute, "function");
+
+const at = (minute) => new Date(Date.UTC(2026, 7, 25, 8, minute, 0));
+const group = {
+  destination: "School",
+  latestArrival: at(30),
+  assignments: [
+    {
+      member: { id: "a", name: "A" },
+      route: {
+        departure: at(0), arrival: at(25), geometry: [[53.6, 11.4], [53.61, 11.41]],
+        segments: [
+          { mode: "TRAM", line: "2", from: "A start", to: "Join", departure: at(0), arrival: at(10), intermediateStops: [{ name: "Mid", arrival: at(5), departure: at(5) }] },
+          { mode: "TRAM", line: "3", from: "Join", to: "School", departure: at(12), arrival: at(25) },
+        ],
+      },
+    },
+    {
+      member: { id: "b", name: "B" },
+      route: {
+        departure: at(3), arrival: at(30), geometry: [[53.5, 11.3], [53.61, 11.41]],
+        segments: [
+          { mode: "TRAM", line: "4", from: "B start", to: "Join", departure: at(3), arrival: at(10) },
+          { mode: "TRAM", line: "3", from: "Join", to: "School", departure: at(12), arrival: at(30) },
+        ],
+      },
+    },
+  ],
+};
+
+const shifted = api.delayedGroup(group, 0, 5);
+assert.notEqual(shifted, group);
+assert.notEqual(shifted.assignments[0].route, group.assignments[0].route);
+assert.equal(shifted.assignments[0].route.departure.getTime(), at(5).getTime());
+assert.equal(shifted.assignments[0].route.segments[0].arrival.getTime(), at(15).getTime());
+assert.equal(shifted.assignments[0].route.segments[0].intermediateStops[0].arrival.getTime(), at(10).getTime());
+assert.equal(shifted.assignments[1].route.departure.getTime(), at(3).getTime(), "other member route must stay unchanged");
+assert.equal(group.assignments[0].route.departure.getTime(), at(0).getTime(), "real group must not be mutated");
+assert.deepEqual(group.assignments[0].route.geometry, [[53.6, 11.4], [53.61, 11.41]], "simulation must not mutate geometry");
+
+const result5 = api.simulate(group, 0, 5, at(1).getTime());
+assert.equal(result5.localOnly, true);
+assert.equal(result5.memberName, "A");
+assert.equal(result5.delay, 5);
+assert.equal(result5.beforeSpread, 5);
+assert.ok(result5.afterSpread >= result5.beforeSpread);
+assert.match(result5.detail, /join|converge|arrival spread|recovery/i);
+
+const result10 = api.simulate(group, 1, 10, at(1).getTime());
+assert.equal(result10.memberName, "B");
+assert.equal(result10.delay, 10);
+assert.equal(result10.hypothetical.assignments[1].route.arrival.getTime(), at(40).getTime());
+assert.equal(result10.hypothetical.latestArrival.getTime(), at(40).getTime());
+
+const normalizedDelay = api.simulate(group, 0, 999, at(1).getTime());
+assert.equal(normalizedDelay.delay, 5, "unsupported delay choices should stay bounded to the safe UI presets");
+
+assert.doesNotMatch(source, /fetch\(|XMLHttpRequest|sendBeacon|localStorage|sessionStorage/, "what-if preview must stay local and ephemeral");
+assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "what-if preview must never add location tracking");
+assert.match(source, /does not change or share the real meetup plan/i);
+assert.match(source, /Simulation only/);
+assert.match(css, /min-height:44px/, "mobile simulator controls should meet touch-target guidance");
+assert.match(css, /prefers-reduced-motion/);
+assert.match(css, /forced-colors/);
+
+console.log("what-if: local-only +5/+10 delay simulation, immutable routes, convergence impact, mobile accessibility and no-GPS behavior passed");
