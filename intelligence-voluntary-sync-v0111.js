@@ -1,8 +1,9 @@
 (() => {
-  const SYNC_MS = 5_000;
+  const SYNC_MS = 30_000;
   const OVERRIDE_STATUSES = new Set(["missed", "arrived", "on-vehicle", "at-stop"]);
   let timer = null;
   let queued = false;
+  let observer = null;
 
   function asNow(value = Date.now()) {
     if (value instanceof Date) return value.getTime();
@@ -92,33 +93,53 @@
       .replaceAll("'", "&#039;");
   }
 
-  function sync(now = Date.now()) {
-    const assignment = focusedAssignment();
-    const entry = freshEntry(now);
-    if (!assignment?.route || !entry) return false;
-    const model = modelForEntry(assignment.route, entry, now);
-    if (!model) return false;
+  function stopObserving() {
+    observer?.disconnect?.();
+  }
 
+  function observeIntelligenceSurfaces() {
+    if (!("MutationObserver" in window)) return;
+    if (!observer) observer = new MutationObserver(() => schedule(0));
+    observer.disconnect();
     const current = document.getElementById("v011CurrentAction");
-    if (current) {
-      setHtml(current, `<span>NOW · VOLUNTARY</span><strong>${escapeHtml(model.title)}</strong><small>${escapeHtml(model.detail)}</small>`);
-    }
-
     const dialog = document.getElementById("v011TripDialog");
-    if (dialog) {
-      setText(dialog.querySelector?.("#v011TripPill"), model.pill || "CONFIRMED");
-      setText(dialog.querySelector?.("#v011TripAction"), model.title);
-      setText(dialog.querySelector?.("#v011TripDetail"), model.detail);
-      if (model.nextTitle) {
-        const next = dialog.querySelector?.("#v011TripNext");
-        setHtml(next, `<span>NEXT</span><strong>${escapeHtml(model.nextTitle)}</strong><small>${escapeHtml(model.nextDetail || "")}</small>`);
+    [current, dialog].filter(Boolean).forEach((node) => {
+      observer.observe(node, { childList: true, subtree: true, characterData: true });
+    });
+  }
+
+  function sync(now = Date.now()) {
+    stopObserving();
+    try {
+      const assignment = focusedAssignment();
+      const entry = freshEntry(now);
+      if (!assignment?.route || !entry) return false;
+      const model = modelForEntry(assignment.route, entry, now);
+      if (!model) return false;
+
+      const current = document.getElementById("v011CurrentAction");
+      if (current) {
+        setHtml(current, `<span>NOW · VOLUNTARY</span><strong>${escapeHtml(model.title)}</strong><small>${escapeHtml(model.detail)}</small>`);
       }
+
+      const dialog = document.getElementById("v011TripDialog");
+      if (dialog) {
+        setText(dialog.querySelector?.("#v011TripPill"), model.pill || "CONFIRMED");
+        setText(dialog.querySelector?.("#v011TripAction"), model.title);
+        setText(dialog.querySelector?.("#v011TripDetail"), model.detail);
+        if (model.nextTitle) {
+          const next = dialog.querySelector?.("#v011TripNext");
+          setHtml(next, `<span>NEXT</span><strong>${escapeHtml(model.nextTitle)}</strong><small>${escapeHtml(model.nextDetail || "")}</small>`);
+        }
+      }
+      return true;
+    } finally {
+      observeIntelligenceSurfaces();
     }
-    return true;
   }
 
   function schedule(delay = 0) {
-    if (queued) return;
+    if (queued || document.hidden) return;
     queued = true;
     setTimeout(() => {
       queued = false;
@@ -135,23 +156,22 @@
     }, SYNC_MS);
   }
 
-  ["nvs-shared-live-change", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "pageshow"].forEach((name) => {
+  ["nvs-shared-live-change", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "nvs-shared-view-resumed", "pageshow"].forEach((name) => {
     window.addEventListener(name, () => schedule());
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) clearTimeout(timer);
-    else {
+    if (document.hidden) {
+      clearTimeout(timer);
+      stopObserving();
+    } else {
+      observeIntelligenceSurfaces();
       schedule();
       arm();
     }
   });
 
-  const root = document.body;
-  if (root && "MutationObserver" in window) {
-    new MutationObserver(() => schedule(0)).observe(root, { childList: true, subtree: true, characterData: true });
-  }
-
-  window.NVSIntelligenceVoluntarySync0111 = Object.freeze({ modelForEntry, sync, freshEntry });
+  window.NVSIntelligenceVoluntarySync0111 = Object.freeze({ modelForEntry, sync, freshEntry, observeIntelligenceSurfaces });
+  observeIntelligenceSurfaces();
   schedule();
   arm();
 })();
