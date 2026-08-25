@@ -24,6 +24,10 @@ assert.match(runtime, /requestAnimationFrame/, "opened dialogs should move focus
 assert.match(runtime, /v010Sync/, "shared-live sync changes should be surfaced as a live region");
 assert.match(runtime, /v010Alert/, "shared-live disruption changes should be surfaced as a live region");
 assert.match(runtime, /aria-live/, "dynamic status regions should announce non-disruptively");
+assert.match(runtime, /v010StatusList/, "shared member statuses should receive semantic list enhancement");
+assert.match(runtime, /setAttribute\("role", "list"\)/, "shared member status container should identify as a list");
+assert.match(runtime, /setAttribute\("role", "listitem"\)/, "each shared member status should identify as a list item");
+assert.match(runtime, /Meetup member status/, "shared member status list should expose an accessible label");
 
 assert.match(styles, /min-width:44px;min-height:44px/, "important touch controls should meet a 44px minimum target");
 assert.match(styles, /:focus-visible/, "keyboard users should receive a visible focus indicator");
@@ -31,4 +35,4 @@ assert.match(styles, /prefers-reduced-motion:\s*reduce/, "the app should honor t
 assert.match(styles, /animation-duration:\.001ms/, "reduced-motion mode should suppress animated transitions globally");
 assert.match(styles, /forced-colors:\s*active/, "high-contrast/forced-colors environments should receive a compatible fallback");
 
-console.log("accessibility-smoke: dialog, live-region, motion and touch-target contracts passed");
+console.log("accessibility-smoke: dialog, live-region, semantic-list, motion and touch-target contracts passed");
