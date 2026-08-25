@@ -155,7 +155,7 @@
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = VERSION;
     const liveNote = document.querySelector(".live-note div");
-    if (liveNote) liveNote.innerHTML = `<strong>v0.11.1 hardens Meetup Intelligence.</strong> Realtime alerts distinguish early from late vehicles and impossible transfers, Trip Mode adds voluntary quick check-ins and optional screen wake lock, personal journeys add timetable-only stop awareness, shared links use a non-sliding backend expiry deadline, mobile PWA notifications are safer, and privacy-safe diagnostics make real-device bug reports easier.`;
+    if (liveNote) liveNote.innerHTML = `<strong>v0.11.1 hardens Meetup Intelligence.</strong> Realtime alerts distinguish early from late vehicles and impossible transfers, Trip Mode adds voluntary quick check-ins and optional screen wake lock, personal journeys add timetable-only stop awareness, shared links use a non-sliding backend expiry deadline, organizers can reset private personal check-in links without erasing visible check-in history, mobile PWA notifications are safer, and privacy-safe diagnostics make real-device bug reports easier.`;
     const hero = document.querySelector(".hero .subtitle");
     if (hero) hero.textContent = "Plan group journeys, share personal routes, coordinate voluntary live check-ins, and use one meetup-aware command center for what to do next when the timetable changes.";
     document.title = "Meet Schwerin · Meetup Intelligence";
