@@ -11,17 +11,21 @@ The normal GitHub Pages app can still load without the Worker, but the Worker pr
 3. **Voluntary shared-live status** — capability-protected personal check-ins such as left/on vehicle/at stop/missed/arrived. No background GPS is collected.
 4. **Organizer replans** — the organizer can update an existing shared plan while viewers stay on the same link.
 5. **Capability revocation** — the organizer can rotate one person's private check-in capability or all private capabilities without deleting visible check-in history.
-6. **Deployment diagnostics** — `/api/health` reports the Worker release and supported capabilities.
+6. **Authoritative session lifecycle** — new shared sessions use one absolute expiry deadline across the plan, owner capability, personal capabilities, live state and metadata. Replans/check-ins do not silently extend that deadline.
+7. **Deployment diagnostics** — `/api/health` reports the Worker release and supported capabilities, including whether authoritative expiry metadata is available.
 
 ## Required Cloudflare resources
 
 The repository contract is defined by `wrangler.toml`:
 
 - Worker name: `meet-schwerin`
-- Entry point: `src/entry.js`
+- Entry point: `src/lifecycle-entry.js`
+- Core request handler: `src/entry.js`
 - KV binding name: `PLANS`
 - `APP_URL`: `https://nexar69.github.io/NVS-meetup-planner/`
 - `PLAN_TTL_SECONDS`: `259200` (72 hours)
+
+`lifecycle-entry.js` is a thin gateway around the existing Worker core. It preserves the established routing/shared-live behavior while making new session expiry non-sliding and exposing an authoritative `expiresAt` timestamp to clients. Legacy sessions without stored expiry metadata remain compatible and are not assigned a fabricated exact deadline.
 
 The KV namespace ID in `wrangler.toml` is the namespace currently configured for this project. Do not replace it with a new namespace unless the deployment is intentionally being migrated.
 
@@ -47,19 +51,19 @@ After deployment, the browser backend target in root `config.js` should point at
 
 - `GET /api/health` — backend release/capability diagnostics
 - `GET /api/vmv/plan?...` — normalized VMV journeys
-- `POST /api/plans` — create a short shared plan; writes are origin-restricted
+- `POST /api/plans` — create a short shared plan; writes are origin-restricted; new sessions return `expiresAt`
 - `GET /api/plans/:id` — retrieve a stored plan
 - `GET /p/:id` — whole-group shared view
 - `GET /p/:id?me=3` — personal view for person 3
-- `GET|POST /api/live/:id` — shared-live state/read or capability-protected personal check-in
-- `POST /api/live/:id/plan` — organizer-authorized replan for an existing shared link
-- `POST /api/live/:id/capabilities` — organizer-authorized private capability rotation
+- `GET|POST /api/live/:id` — shared-live state/read or capability-protected personal check-in; authoritative sessions include `expiresAt`
+- `POST /api/live/:id/plan` — organizer-authorized replan for an existing shared link without extending its expiry
+- `POST /api/live/:id/capabilities` — organizer-authorized private capability rotation without extending its expiry
 
 ## Safety and privacy choices
 
 - Plans are limited to 2–6 members and validated before storage.
 - Request payload sizes are capped.
-- Stored entries expire automatically.
+- New stored sessions expire on one non-sliding absolute deadline; active check-ins or replans do not keep them alive indefinitely.
 - Shared plans contain the names and coordinates needed to rebuild the meetup; the share UI warns the organizer before creating a link.
 - Personal write capabilities are separate from public plan IDs and can be revoked.
 - Opened personal capability URLs are sanitized by the client and kept only in tab-scoped session storage.
