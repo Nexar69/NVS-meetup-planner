@@ -159,6 +159,23 @@
     }
   }
 
+  function loadWhatIf0111() {
+    if (!document.querySelector('link[data-what-if-v0111="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./what-if-v0111.css";
+      link.dataset.whatIfV0111 = "true";
+      document.head.appendChild(link);
+    }
+    if (!document.querySelector('script[data-what-if-v0111="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./what-if-v0111.js";
+      script.async = false;
+      script.dataset.whatIfV0111 = "true";
+      document.body.appendChild(script);
+    }
+  }
+
   function loadIntelligenceVoluntarySync0111() {
     if (document.querySelector('script[data-intelligence-voluntary-sync-v0111="true"]')) return;
     const script = document.createElement("script");
@@ -172,7 +189,7 @@
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = VERSION;
     const liveNote = document.querySelector(".live-note div");
-    if (liveNote) liveNote.innerHTML = `<strong>v0.11.1 hardens Meetup Intelligence.</strong> Realtime alerts distinguish early from late vehicles and impossible transfers, Trip Mode adds voluntary quick check-ins and optional screen wake lock, personal journeys add timetable-only stop awareness, Meetup Radar summarizes the next planned group convergence and recent voluntary status, shared links use a non-sliding backend expiry deadline, organizers can reset private personal check-in links without erasing visible check-in history, mobile PWA notifications are safer, and privacy-safe diagnostics make real-device bug reports easier.`;
+    if (liveNote) liveNote.innerHTML = `<strong>v0.11.1 hardens Meetup Intelligence.</strong> Realtime alerts distinguish early from late vehicles and impossible transfers, Trip Mode adds voluntary quick check-ins and optional screen wake lock, personal journeys add timetable-only stop awareness, Meetup Radar summarizes planned group convergence, the local What if? tool previews +5/+10 minute delays without changing the shared plan, shared links use a non-sliding backend expiry deadline, organizers can reset private personal check-in links without erasing visible check-in history, mobile PWA notifications are safer, and privacy-safe diagnostics make real-device bug reports easier.`;
     const hero = document.querySelector(".hero .subtitle");
     if (hero) hero.textContent = "Plan group journeys, share personal routes, coordinate voluntary live check-ins, and use one meetup-aware command center for what to do next when the timetable changes.";
     document.title = "Meet Schwerin · Meetup Intelligence";
@@ -189,6 +206,7 @@
   loadStopAwareness0111();
   loadDiagnostics0111();
   loadMeetupRadar0111();
+  loadWhatIf0111();
   loadIntelligenceVoluntarySync0111();
   applyReleaseCopy();
   setTimeout(applyReleaseCopy, 400);
@@ -204,6 +222,7 @@
     loadStopAwareness0111();
     loadDiagnostics0111();
     loadMeetupRadar0111();
+    loadWhatIf0111();
     loadIntelligenceVoluntarySync0111();
     applyReleaseCopy();
     setTimeout(applyReleaseCopy, 180);
