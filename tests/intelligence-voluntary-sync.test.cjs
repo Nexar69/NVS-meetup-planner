@@ -99,13 +99,13 @@ assert.match(nextBox.innerHTML, /Meetup confirmed by you/);
 
 liveEntry = { status: "on-vehicle", at: now - 10_000 };
 assert.equal(api.sync(now), true);
-assert.match(currentAction.innerHTML, /You're on Tram 2/);
+assert.match(currentAction.innerHTML, /You&#039;re on Tram 2/);
 assert.equal(tripPill.textContent, "CONFIRMED");
 assert.match(tripDetail.textContent, /Confirmed on board/);
 
 liveEntry = { status: "at-stop", at: now - 10_000 };
 assert.equal(api.sync(now), true);
-assert.match(currentAction.innerHTML, /You're at a stop/);
+assert.match(currentAction.innerHTML, /You&#039;re at a stop/);
 assert.doesNotMatch(currentAction.innerHTML, /Timetable says riding/, "fresh at-stop status must replace contradictory timetable current-action copy");
 
 liveEntry = { status: "missed", at: now - 16 * 60_000 };
