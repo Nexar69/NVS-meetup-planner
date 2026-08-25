@@ -46,7 +46,28 @@
     if (minutes <= 1) return { eyebrow: "Your stop is coming up", title: `${destination} in about 1 min`, detail: `${continuationDetail(current, next, destination)} You're currently on ${vehicle}.` };
     return { eyebrow: minutes <= 2 ? "Coming up soon" : "Next important stop", title: `${destination} in about ${minutes} min`, detail: `${continuationDetail(current, next, destination)} You're currently on ${vehicle}.` };
   }
-  function guidanceForRoute(route, now = Date.now()) {
+  function guidanceFromVoluntary(entry) {
+    if (entry?.status === "missed") {
+      return {
+        icon: "!",
+        eyebrow: "Your voluntary update",
+        title: "You reported a missed connection",
+        detail: "The timetable may no longer match your journey. Check the Recovery Desk or open the planner for a fresh route before relying on the next step.",
+      };
+    }
+    if (entry?.status === "arrived") {
+      return {
+        icon: "✓",
+        eyebrow: "Confirmed by you",
+        title: "You're at the meetup",
+        detail: "Your voluntary arrival check-in is being shown to the group. Clear it below if your situation changes.",
+      };
+    }
+    return null;
+  }
+  function guidanceForRoute(route, now = Date.now(), voluntaryEntry = null) {
+    const voluntaryGuidance = guidanceFromVoluntary(voluntaryEntry);
+    if (voluntaryGuidance) return voluntaryGuidance;
     const segments = Array.isArray(route?.segments) ? route.segments.filter(Boolean) : [];
     if (!segments.length) return null;
     const activeIndex = segments.findIndex((segment) => {
@@ -70,6 +91,19 @@
     }
     return { icon: "✓", eyebrow: "Planned journey complete", title: "You should have reached the meetup", detail: "This is based on the timetable, not your location. If your real journey differs, update your voluntary status below." };
   }
+  function freshVoluntaryEntry(now = Date.now()) {
+    const focus = focusIndex();
+    const state = window.NVSSharedLive?.getState?.();
+    const entry = focus >= 0 ? state?.members?.[String(focus)] : null;
+    if (!entry) return null;
+    const freshness = window.NVSIntelligenceCore?.checkinFreshness?.(entry, new Date(now));
+    if (freshness && !freshness.fresh) return null;
+    if (!freshness) {
+      const at = Number(entry.at);
+      if (!Number.isFinite(at) || Math.max(0, now - at) > 15 * 60_000) return null;
+    }
+    return entry;
+  }
   function positionSharedLivePanel() {
     if (!isPersonalSharedView()) return;
     const personalPlan = document.getElementById("personalSharedPlan"); const sharedPanel = document.getElementById("sharedLiveV010");
@@ -82,7 +116,8 @@
     positionSharedLivePanel();
     const personalPlan = document.getElementById("personalSharedPlan"); const current = assignment();
     if (!personalPlan || !current?.route) { removeGuidance(); return; }
-    const guidance = guidanceForRoute(current.route); if (!guidance) { removeGuidance(); return; }
+    const now = Date.now();
+    const guidance = guidanceForRoute(current.route, now, freshVoluntaryEntry(now)); if (!guidance) { removeGuidance(); return; }
     let card = document.getElementById("v0111TripGuidance");
     if (!card) {
       card = document.createElement("aside"); card.id = "v0111TripGuidance"; card.className = "v0111-trip-guidance"; card.setAttribute("role", "status"); card.setAttribute("aria-live", "polite"); card.setAttribute("aria-atomic", "true");
