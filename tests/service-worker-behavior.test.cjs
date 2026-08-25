@@ -27,12 +27,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
   };
 
   const context = {
-    URL,
-    Request,
-    Response,
-    Promise,
-    Error,
-    console,
+    URL, Request, Response, Promise, Error, console,
     fetch: (...args) => fetchImpl(...args),
     caches: {
       async open() { return cache; },
@@ -40,7 +35,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
         const normalized = typeof key === "string" ? key : key.url;
         return cacheEntries.get(normalized) || null;
       },
-      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r8"]; },
+      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r9"]; },
       async delete(key) { deleted.push(key); return true; },
     },
     self: {
@@ -71,14 +66,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
   }
 
   return {
-    handlers,
-    dispatch,
-    puts,
-    deleted,
-    addedShells,
-    cacheEntries,
-    focused,
-    opened,
+    handlers, dispatch, puts, deleted, addedShells, cacheEntries, focused, opened,
     get claimed() { return claimed; },
     get skipped() { return skipped; },
     setClients(next) {
@@ -97,76 +85,61 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     assert.equal(rt.addedShells.length, 1, "install should precache one app shell");
     assert.ok(rt.addedShells[0].includes("./index.html"));
     assert.ok(rt.addedShells[0].includes("./recovery-v0111.js"));
-    assert.ok(rt.addedShells[0].includes("./accessibility-v0111.js"), "accessibility runtime should be available offline");
-    assert.ok(rt.addedShells[0].includes("./accessibility-v0111.css"), "accessibility styles should be available offline");
-    assert.ok(rt.addedShells[0].includes("./routing-coalesce-v0111.js"), "routing request coalescing should be available offline");
-    assert.ok(rt.addedShells[0].includes("./provider-health-v0111.js"), "provider health diagnostics should be available offline");
-    assert.ok(rt.addedShells[0].includes("./provider-health-v0111.css"), "provider health styles should be available offline");
-    assert.ok(rt.addedShells[0].includes("./shared-expiry-v0111.js"), "authoritative shared-session expiry UX should be available offline");
-    assert.ok(rt.addedShells[0].includes("./shared-expiry-v0111.css"), "shared-session expiry styles should be available offline");
+    assert.ok(rt.addedShells[0].includes("./accessibility-v0111.js"));
+    assert.ok(rt.addedShells[0].includes("./accessibility-v0111.css"));
+    assert.ok(rt.addedShells[0].includes("./routing-coalesce-v0111.js"));
+    assert.ok(rt.addedShells[0].includes("./provider-health-v0111.js"));
+    assert.ok(rt.addedShells[0].includes("./provider-health-v0111.css"));
+    assert.ok(rt.addedShells[0].includes("./shared-expiry-v0111.js"));
+    assert.ok(rt.addedShells[0].includes("./shared-expiry-v0111.css"));
+    assert.ok(rt.addedShells[0].includes("./trip-guidance-v0111.js"), "personal journey guidance should be available offline");
+    assert.ok(rt.addedShells[0].includes("./trip-guidance-v0111.css"), "personal journey guidance styles should be available offline");
   }
-
   {
     const rt = runtime();
     await rt.dispatch("activate");
     assert.deepEqual(rt.deleted, ["old-cache"], "activate should delete stale cache versions only");
-    assert.equal(rt.claimed, 1, "activate should claim clients");
+    assert.equal(rt.claimed, 1);
   }
-
   {
     const rt = runtime();
     await rt.dispatch("message", { data: { type: "SKIP_WAITING" } });
-    assert.equal(rt.skipped, 1, "explicit update activation should call skipWaiting");
+    assert.equal(rt.skipped, 1);
   }
-
   {
     const rt = runtime();
-    const response = await rt.dispatch("fetch", {
-      request: new Request("https://app.example/api/live/abc123", { method: "GET" }),
-    });
-    assert.equal(response, null, "same-origin API requests must not be intercepted by the service worker");
-    assert.equal(rt.puts.length, 0, "API responses must never enter runtime cache");
+    const response = await rt.dispatch("fetch", { request: new Request("https://app.example/api/live/abc123", { method: "GET" }) });
+    assert.equal(response, null);
+    assert.equal(rt.puts.length, 0);
   }
-
   {
     const rt = runtime(async () => new Response("fresh-page", { status: 200 }));
     const request = new Request("https://app.example/p/example", { method: "GET" });
     Object.defineProperty(request, "mode", { value: "navigate" });
-    const responsePromise = await rt.dispatch("fetch", { request });
-    const response = await responsePromise;
+    const response = await (await rt.dispatch("fetch", { request }));
     assert.equal(await response.text(), "fresh-page");
-    assert.ok(rt.puts.includes("./index.html"), "navigation should refresh the cached app shell document");
+    assert.ok(rt.puts.includes("./index.html"));
   }
-
   {
     const rt = runtime(async () => { throw new Error("offline"); });
     rt.cacheEntries.set("https://app.example/app.js", new Response("cached-js", { status: 200 }));
-    const responsePromise = await rt.dispatch("fetch", {
-      request: new Request("https://app.example/app.js", { method: "GET" }),
-    });
-    const response = await responsePromise;
-    assert.equal(await response.text(), "cached-js", "offline script request should fall back to runtime cache");
+    const response = await (await rt.dispatch("fetch", { request: new Request("https://app.example/app.js", { method: "GET" }) }));
+    assert.equal(await response.text(), "cached-js");
   }
-
   {
     const rt = runtime();
     rt.setClients([{ url: "https://app.example/p/abc" }, { url: "https://other.example/" }]);
     let closed = 0;
     await rt.dispatch("notificationclick", { notification: { close() { closed += 1; } } });
     assert.equal(closed, 1);
-    assert.deepEqual(rt.focused, ["https://app.example/p/abc"], "notification click should focus an existing app window");
+    assert.deepEqual(rt.focused, ["https://app.example/p/abc"]);
     assert.equal(rt.opened.length, 0);
   }
-
   {
     const rt = runtime();
     rt.setClients([{ url: "https://other.example/" }]);
     await rt.dispatch("notificationclick", { notification: { close() {} } });
-    assert.deepEqual(rt.opened, ["./"], "notification click should reopen the PWA when no app window exists");
+    assert.deepEqual(rt.opened, ["./"]);
   }
-
-  console.log("service-worker-behavior: privacy, offline, update, notification, accessibility, routing, provider-health and expiry shell behavior passed");
-})().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+  console.log("service-worker-behavior: privacy, offline, update, notification and r9 app-shell behavior passed");
+})().catch((error) => { console.error(error); process.exit(1); });

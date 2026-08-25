@@ -1,4 +1,5 @@
 import core from "./entry.js";
+import { plansEquivalent } from "./plan-equivalence.js";
 
 const DEFAULT_TTL = 72 * 60 * 60;
 const PLAN_ID = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{6,12}$/;
@@ -19,8 +20,6 @@ function expiryOptions(expiresAt) {
   const expires = Number(expiresAt);
   const nowSeconds = Math.floor(Date.now() / 1000);
   const expirySeconds = Math.ceil(expires / 1000);
-  // KV requires expiration to be at least 60 seconds in the future. The
-  // gateway still enforces the exact logical expiresAt before serving data.
   return expirySeconds > nowSeconds + 60
     ? { expiration: expirySeconds }
     : { expirationTtl: 60 };
@@ -43,6 +42,13 @@ async function readMeta(id, env) {
   }
 }
 
+async function readPlan(id, env) {
+  if (!PLAN_ID.test(id)) return null;
+  const raw = await env.PLANS.get(`p:${id}`);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
 async function deleteSession(id, env) {
   await Promise.all(SESSION_PREFIXES.map((prefix) => env.PLANS.delete(`${prefix}${id}`)));
 }
@@ -53,9 +59,7 @@ async function normalizeSessionExpiry(id, env, meta) {
   const keys = SESSION_PREFIXES.map((prefix) => `${prefix}${id}`);
   const values = await Promise.all(keys.map((key) => env.PLANS.get(key)));
   await Promise.all(keys.map((key, index) => {
-    if (key.startsWith("meta:")) {
-      return env.PLANS.put(key, JSON.stringify(meta), options);
-    }
+    if (key.startsWith("meta:")) return env.PLANS.put(key, JSON.stringify(meta), options);
     const value = values[index];
     return value == null ? Promise.resolve() : env.PLANS.put(key, value, options);
   }));
@@ -89,6 +93,10 @@ async function parseJsonResponse(response) {
   try { return await response.clone().json(); } catch { return null; }
 }
 
+async function parseJsonRequest(request) {
+  try { return await request.clone().json(); } catch { return null; }
+}
+
 function replaceJson(response, data) {
   const headers = new Headers(response.headers);
   headers.set("content-type", "application/json; charset=utf-8");
@@ -117,11 +125,7 @@ async function handleCreatedPlan(response, env) {
   };
   await normalizeSessionExpiry(id, env, meta);
 
-  return replaceJson(response, {
-    ...data,
-    expiresIn: ttl,
-    expiresAt,
-  });
+  return replaceJson(response, { ...data, expiresIn: ttl, expiresAt });
 }
 
 async function handleHealth(response) {
@@ -130,10 +134,7 @@ async function handleHealth(response) {
   if (!data) return response;
   return replaceJson(response, {
     ...data,
-    capabilities: {
-      ...(data.capabilities || {}),
-      authoritativeExpiry: true,
-    },
+    capabilities: { ...(data.capabilities || {}), authoritativeExpiry: true },
   });
 }
 
@@ -143,6 +144,8 @@ export default {
     const match = liveMatch(url.pathname);
     const sessionId = sessionIdFromPath(url.pathname);
     let beforeMeta = null;
+    let beforePlan = null;
+    let submittedPlan = null;
 
     if (sessionId) {
       beforeMeta = await readMeta(sessionId, env);
@@ -151,16 +154,17 @@ export default {
       }
     }
 
+    if (match?.[2] === "plan" && request.method === "POST") {
+      [beforePlan, submittedPlan] = await Promise.all([
+        readPlan(match[1], env),
+        parseJsonRequest(request),
+      ]);
+    }
+
     const response = await core.fetch(request, env, ctx);
 
-    if (url.pathname === "/api/health" && request.method === "GET") {
-      return handleHealth(response);
-    }
-
-    if (url.pathname === "/api/plans" && request.method === "POST") {
-      return handleCreatedPlan(response, env);
-    }
-
+    if (url.pathname === "/api/health" && request.method === "GET") return handleHealth(response);
+    if (url.pathname === "/api/plans" && request.method === "POST") return handleCreatedPlan(response, env);
     if (!match || !response.ok || !beforeMeta?.expiresAt) return response;
 
     const id = match[1];
@@ -172,15 +176,22 @@ export default {
 
     if (request.method === "POST") {
       const data = await parseJsonResponse(response);
-      const meta = action === "plan"
-        ? {
-            revision: Math.max(1, Number(data?.revision) || beforeMeta.revision || 1),
-            updatedAt: Number(data?.updatedAt) || Date.now(),
-            expiresAt: beforeMeta.expiresAt,
-          }
-        : beforeMeta;
+      const unchangedPlan = action === "plan" && beforePlan && submittedPlan && plansEquivalent(beforePlan, submittedPlan);
+      const meta = unchangedPlan
+        ? beforeMeta
+        : action === "plan"
+          ? {
+              revision: Math.max(1, Number(data?.revision) || beforeMeta.revision || 1),
+              updatedAt: Number(data?.updatedAt) || Date.now(),
+              expiresAt: beforeMeta.expiresAt,
+            }
+          : beforeMeta;
       await normalizeSessionExpiry(id, env, meta);
-      return data ? replaceJson(response, { ...data, expiresAt: meta.expiresAt }) : response;
+      return data ? replaceJson(response, {
+        ...data,
+        ...(unchangedPlan ? { revision: meta.revision, updatedAt: meta.updatedAt, unchanged: true } : {}),
+        expiresAt: meta.expiresAt,
+      }) : response;
     }
 
     return response;
