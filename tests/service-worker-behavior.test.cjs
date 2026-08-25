@@ -141,6 +141,35 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     assert.equal(aborted, true, "stalled network-first fetch should be aborted instead of lingering indefinitely");
   }
   {
+    const rt = runtime(async () => new Response("server-down", { status: 503 }));
+    rt.cacheEntries.set("./index.html", new Response("cached-page", { status: 200 }));
+    const request = new Request("https://app.example/p/server-error", { method: "GET" });
+    Object.defineProperty(request, "mode", { value: "navigate" });
+    const response = await (await rt.dispatch("fetch", { request }));
+    assert.equal(await response.text(), "cached-page", "transient 5xx navigation responses should prefer the cached app shell");
+    assert.equal(rt.puts.length, 0, "transient server errors must not replace healthy cached app-shell responses");
+  }
+  {
+    const rt = runtime(async () => new Response("rate-limited", { status: 429 }));
+    rt.cacheEntries.set("https://app.example/app.js", new Response("cached-js", { status: 200 }));
+    const response = await (await rt.dispatch("fetch", { request: new Request("https://app.example/app.js", { method: "GET" }) }));
+    assert.equal(await response.text(), "cached-js", "rate-limited app-shell requests should use the existing cached asset when available");
+  }
+  {
+    const rt = runtime(async () => new Response("not-found", { status: 404 }));
+    rt.cacheEntries.set("https://app.example/missing.js", new Response("stale-missing", { status: 200 }));
+    const response = await (await rt.dispatch("fetch", { request: new Request("https://app.example/missing.js", { method: "GET" }) }));
+    assert.equal(response.status, 404, "definitive 4xx responses should not be masked by stale cache entries");
+    assert.equal(await response.text(), "not-found");
+  }
+  {
+    const rt = runtime(async () => new Response("server-down", { status: 503 }));
+    const request = new Request("https://app.example/p/no-cache", { method: "GET" });
+    Object.defineProperty(request, "mode", { value: "navigate" });
+    const response = await (await rt.dispatch("fetch", { request }));
+    assert.equal(response.status, 503, "a transient server response should still be returned when no safe cached fallback exists");
+  }
+  {
     const rt = runtime();
     rt.setClients([{ url: "https://app.example/p/abc" }, { url: "https://other.example/" }]);
     let closed = 0;
@@ -157,5 +186,6 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
   }
   assert.match(originalSource, /NETWORK_TIMEOUT_MS = 5_000/, "network-first routes should have a bounded slow-network wait");
   assert.match(originalSource, /AbortController/, "slow network-first requests should be cancellable");
-  console.log("service-worker-behavior: privacy, offline, slow-network fallback, update, notification and r12 app-shell behavior passed");
+  assert.match(originalSource, /response\.status === 408 \|\| response\.status === 429 \|\| response\.status >= 500/, "transient HTTP failures should prefer a healthy cached app-shell response");
+  console.log("service-worker-behavior: privacy, offline, slow-network/transient-server fallback, update, notification and r12 app-shell behavior passed");
 })().catch((error) => { console.error(error); process.exit(1); });
