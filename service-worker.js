@@ -116,12 +116,21 @@ async function timedFetch(request) {
     clearTimeout(timeout);
   }
 }
+function shouldPreferCachedResponse(response) {
+  if (!response) return true;
+  return response.status === 408 || response.status === 429 || response.status >= 500;
+}
 async function networkFirst(request, navigation = false) {
+  const cacheKey = navigation ? "./index.html" : request;
   try {
     const response = await timedFetch(request);
+    if (shouldPreferCachedResponse(response)) {
+      const cached = await caches.match(cacheKey);
+      if (cached) return cached;
+    }
     return await updateCache(request, response, navigation);
   } catch {
-    const cached = await caches.match(navigation ? "./index.html" : request);
+    const cached = await caches.match(cacheKey);
     if (cached) return cached;
     throw new Error("NETWORK_AND_CACHE_MISS");
   }
