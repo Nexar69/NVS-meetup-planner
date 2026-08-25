@@ -6,6 +6,8 @@ const vm = require("node:vm");
 const convergenceSource = fs.readFileSync(path.resolve(__dirname, "../convergence.js"), "utf8");
 const source = fs.readFileSync(path.resolve(__dirname, "../what-if-v0111.js"), "utf8");
 const css = fs.readFileSync(path.resolve(__dirname, "../what-if-v0111.css"), "utf8");
+const release = fs.readFileSync(path.resolve(__dirname, "../release-v011.js"), "utf8");
+const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf8");
 
 const listeners = {};
 const window = { addEventListener(name, fn) { listeners[name] = fn; } };
@@ -64,7 +66,7 @@ assert.equal(result5.localOnly, true);
 assert.equal(result5.memberName, "A");
 assert.equal(result5.delay, 5);
 assert.equal(result5.beforeSpread, 5);
-assert.ok(result5.afterSpread >= result5.beforeSpread);
+assert.equal(result5.afterSpread, 0, "a hypothetical delay can legitimately improve arrival alignment");
 assert.match(result5.detail, /join|converge|arrival spread|recovery/i);
 
 const result10 = api.simulate(group, 1, 10, at(1).getTime());
@@ -72,6 +74,7 @@ assert.equal(result10.memberName, "B");
 assert.equal(result10.delay, 10);
 assert.equal(result10.hypothetical.assignments[1].route.arrival.getTime(), at(40).getTime());
 assert.equal(result10.hypothetical.latestArrival.getTime(), at(40).getTime());
+assert.equal(result10.afterSpread, 15);
 
 const normalizedDelay = api.simulate(group, 0, 999, at(1).getTime());
 assert.equal(normalizedDelay.delay, 5, "unsupported delay choices should stay bounded to the safe UI presets");
@@ -83,5 +86,10 @@ assert.match(source, /Simulation only/);
 assert.match(css, /min-height:44px/, "mobile simulator controls should meet touch-target guidance");
 assert.match(css, /prefers-reduced-motion/);
 assert.match(css, /forced-colors/);
+assert.match(release, /loadWhatIf0111/, "v0.11.1 release owner should load the simulator");
+assert.match(release, /what-if-v0111\.js/);
+assert.match(release, /what-if-v0111\.css/);
+assert.match(sw, /what-if-v0111\.js/, "what-if runtime should be available to installed/offline PWA copies");
+assert.match(sw, /what-if-v0111\.css/);
 
-console.log("what-if: local-only +5/+10 delay simulation, immutable routes, convergence impact, mobile accessibility and no-GPS behavior passed");
+console.log("what-if: local-only +5/+10 delay simulation, immutable routes, convergence impact, mobile accessibility, offline wiring and no-GPS behavior passed");
