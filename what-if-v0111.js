@@ -72,6 +72,23 @@
     return Array.isArray(group?.assignments) ? group.assignments.filter((item) => item?.member && item?.route) : [];
   }
 
+  function isFresh(entry, now) {
+    if (!entry) return false;
+    const freshness = window.NVSIntelligenceCore?.checkinFreshness?.(entry, new Date(now));
+    if (freshness) return Boolean(freshness.fresh);
+    const at = Number(entry.at);
+    return Number.isFinite(at) && now >= at && now - at <= 15 * 60_000;
+  }
+
+  function recoveryActive(group, liveState, now = Date.now()) {
+    const list = assignments(group);
+    const members = liveState?.members && typeof liveState.members === "object" ? liveState.members : {};
+    return list.some((_, index) => {
+      const entry = members[String(index)];
+      return entry?.status === "missed" && isFresh(entry, now);
+    });
+  }
+
   function recomputeLatestArrival(list) {
     const times = list.map((item) => asDate(item.route?.arrival)).filter(Boolean);
     return times.length ? new Date(Math.max(...times.map((date) => date.getTime()))) : null;
@@ -135,7 +152,7 @@
     let detail = "This local preview does not change or share the real meetup plan.";
     if (before && !after) {
       tone = "warn";
-      detail = "The currently detected upcoming join disappears in this hypothetical. The group may need a different recovery point.";
+      detail = "The currently detected upcoming join disappears in this timing stress test. The group may need a different recovery point.";
     } else if (before && after && !sameNextJoin) {
       tone = "warn";
       detail = `The next detected convergence changes from ${String(before.label || before.name || "the planned join")} to ${String(after.label || after.name || "a later join")}${afterTime ? ` around ${formatTime(afterTime)}` : ""}.`;
@@ -186,15 +203,29 @@
       lastMarkup = "";
       return null;
     }
+    const liveState = window.NVSSharedLive?.getState?.() || null;
+    const card = ensureCard();
+    if (recoveryActive(group, liveState, now)) {
+      const markup = `<summary><span aria-hidden="true">◇</span><strong>What if?</strong><small>Paused for recovery</small></summary><div class="v0111-what-if-body"><div class="v0111-what-if-result" role="status"><strong>Recovery takes priority</strong><p>A fresh missed-connection report means the current plan may no longer be a useful baseline. Replan or resolve recovery before comparing hypothetical delays.</p><small>Simulation paused · voluntary report takes precedence · no GPS</small></div></div>`;
+      if (card) {
+        card.dataset.tone = "warn";
+        if (markup !== lastMarkup) {
+          const wasOpen = card.open;
+          card.innerHTML = markup;
+          card.open = wasOpen;
+          lastMarkup = markup;
+        }
+      }
+      return { paused: true, reason: "recovery" };
+    }
     if (selectedIndex >= list.length) selectedIndex = 0;
     const model = simulate(group, selectedIndex, selectedDelay, now);
     if (!model) return null;
-    const card = ensureCard();
     if (!card) return model;
     card.dataset.tone = model.tone;
     const memberOptions = list.map((item, index) => `<option value="${index}"${index === selectedIndex ? " selected" : ""}>${escapeHtml(item.member?.name || `Person ${index + 1}`)}</option>`).join("");
     const delayButtons = DELAYS.map((delay) => `<button type="button" data-what-if-delay="${delay}" aria-pressed="${delay === selectedDelay ? "true" : "false"}">+${delay} min</button>`).join("");
-    const markup = `<summary><span aria-hidden="true">◇</span><strong>What if?</strong><small>Local delay preview</small></summary><div class="v0111-what-if-body"><p class="v0111-what-if-note">Explore a delay without changing, saving, or sharing the real meetup plan.</p><div class="v0111-what-if-controls"><label>Person<select data-what-if-member>${memberOptions}</select></label><div class="v0111-what-if-delays" aria-label="Hypothetical delay">${delayButtons}</div></div><div class="v0111-what-if-result" role="status" aria-live="polite"><strong>${escapeHtml(model.title)}</strong><p>${escapeHtml(model.detail)}</p><small>Simulation only · timetable/convergence data · no GPS</small></div></div>`;
+    const markup = `<summary><span aria-hidden="true">◇</span><strong>What if?</strong><small>Local timing preview</small></summary><div class="v0111-what-if-body"><p class="v0111-what-if-note">Stress-test the existing timetable by shifting one person's planned timing. This does not fetch an alternative route and does not change, save, or share the real meetup plan.</p><div class="v0111-what-if-controls"><label>Person<select data-what-if-member>${memberOptions}</select></label><div class="v0111-what-if-delays" aria-label="Hypothetical delay">${delayButtons}</div></div><div class="v0111-what-if-result" role="status" aria-live="polite"><strong>${escapeHtml(model.title)}</strong><p>${escapeHtml(model.detail)}</p><small>Simulation only · existing timetable/convergence data · no GPS</small></div></div>`;
     if (markup !== lastMarkup) {
       const wasOpen = card.open;
       card.innerHTML = markup;
@@ -222,8 +253,8 @@
     render();
   });
 
-  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "nvs-group-change", "nvs-timing-change", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, () => render()));
+  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-group-change", "nvs-timing-change", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, () => render()));
 
-  window.NVSWhatIf0111 = Object.freeze({ simulate, delayedGroup, shiftRoute, render });
+  window.NVSWhatIf0111 = Object.freeze({ simulate, delayedGroup, shiftRoute, recoveryActive, render });
   render();
 })();
