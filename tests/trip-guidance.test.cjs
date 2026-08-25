@@ -89,6 +89,21 @@ assert.equal(urgentGuidance.eyebrow, "Coming up soon");
 assert.match(urgentGuidance.title, /Krebsförden in about 2 min/);
 assert.match(urgentGuidance.detail, /ready to get off at Krebsförden/);
 
+const oneMinuteGuidance = guidanceForRoute({
+  segments: [{
+    mode: "TRAM",
+    modeLabel: "Tram",
+    line: "3",
+    from: "Stauffenbergstraße",
+    to: "Krebsförden",
+    departure: at(0),
+    arrival: new Date(now + 30_000),
+  }],
+}, now);
+assert.equal(oneMinuteGuidance.eyebrow, "Your stop is coming up");
+assert.match(oneMinuteGuidance.title, /Krebsförden in about 1 min/);
+assert.match(oneMinuteGuidance.detail, /Stay aware of your stop/);
+
 const walkContinuation = guidanceForRoute({
   segments: [
     {
@@ -114,6 +129,8 @@ assert.match(walkContinuation.detail, /planned walking leg starts there/);
 assert.match(source, /personalSharedPlan/);
 assert.match(source, /sharedLiveV010/);
 assert.match(source, /insertAdjacentElement\("afterend", sharedPanel\)/, "voluntary shared-live controls should be moved directly below the personal plan");
+assert.match(source, /function removeGuidance\(\)/, "stale guidance should be removable when a personal route disappears");
+assert.match(source, /mutationRefreshQueued/, "DOM mutation refreshes should be coalesced instead of rerendering for every mutation");
 assert.match(source, /aria-live/);
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "guidance must remain timetable-only and never introduce location tracking");
 assert.match(css, /body\.shared-viewer \.v051-viewing-chip\{display:none!important\}/, "shared viewers should not show the planner-only Viewing badge over the detailed journey header");
@@ -123,4 +140,4 @@ assert.match(css, /forced-colors/);
 assert.match(release, /trip-guidance-v0111\.js/);
 assert.match(release, /trip-guidance-v0111\.css/);
 
-console.log("trip-guidance: executable approaching-stop, transfer, shared-view polish, placement, accessibility and no-GPS behavior passed");
+console.log("trip-guidance: executable approaching-stop, one-minute alert, transfer, shared-view polish, stale cleanup, placement, accessibility and no-GPS behavior passed");
