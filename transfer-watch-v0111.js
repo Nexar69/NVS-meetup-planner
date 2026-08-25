@@ -49,6 +49,21 @@
     return { planned, current };
   }
 
+  function cancelled(segment) {
+    return segment?.cancelled === true;
+  }
+
+  function disruptionSummary(segment) {
+    const remarks = Array.isArray(segment?.remarks) ? segment.remarks : [];
+    const first = remarks.find((item) => {
+      const text = typeof item === "string" ? item : item?.text || item?.summary || item?.title;
+      return String(text || "").trim();
+    });
+    if (!first) return "";
+    const text = typeof first === "string" ? first : first?.text || first?.summary || first?.title;
+    return String(text || "").replace(/\s+/g, " ").trim().slice(0, 180);
+  }
+
   function transferGapMinutes(current, next) {
     const arrival = asDate(current?.arrival)?.getTime();
     const departure = asDate(next?.departure)?.getTime();
@@ -79,6 +94,7 @@
     const transfer = transferCandidates(route, now)[0] || null;
     if (!transfer) return null;
     const stop = String(transfer.current?.to || transfer.next?.from || "your transfer stop");
+    const currentVehicle = vehicleLabel(transfer.current);
     const nextVehicle = vehicleLabel(transfer.next);
     const platform = cleanPlatform(transfer.next?.platformFrom);
     const platformDrift = platformChange(transfer.next);
@@ -89,6 +105,24 @@
       : platform
         ? ` Platform ${platform}.`
         : "";
+
+    if (cancelled(transfer.current) || cancelled(transfer.next)) {
+      const nextCancelled = cancelled(transfer.next);
+      const affected = nextCancelled ? nextVehicle : currentVehicle;
+      const remark = disruptionSummary(nextCancelled ? transfer.next : transfer.current);
+      return {
+        tone: "critical",
+        eyebrow: "Connection protection · cancelled",
+        title: `${affected} is cancelled`,
+        detail: `${nextCancelled ? `The planned onward service from ${stop}` : "The service feeding this transfer"} is marked cancelled in realtime data.${platformCopy}${remark ? ` Provider note: ${remark}.` : ""} Use Recovery Desk or replan instead of relying on this connection.`,
+        gap: transfer.gap,
+        stop,
+        segmentIndex: nextCancelled ? transfer.index + 1 : transfer.index,
+        platformChanged: Boolean(platformDrift),
+        cancelledSegment: nextCancelled ? "next" : "current",
+      };
+    }
+
     if (transfer.gap < 0) {
       return {
         tone: "critical",
@@ -218,6 +252,6 @@
     else refresh();
   });
 
-  window.NVSTransferWatch0111 = Object.freeze({ transferGapMinutes, transferCandidates, transferModel, platformChange, focusedFreshEntry, blockingVoluntaryState, freshMissed, render, refresh });
+  window.NVSTransferWatch0111 = Object.freeze({ transferGapMinutes, transferCandidates, transferModel, platformChange, disruptionSummary, focusedFreshEntry, blockingVoluntaryState, freshMissed, render, refresh });
   refresh();
 })();
