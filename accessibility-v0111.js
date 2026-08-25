@@ -62,6 +62,16 @@
     });
   }
 
+  function enhanceSharedStatusList() {
+    const list = document.getElementById("v010StatusList");
+    if (!list) return;
+    list.setAttribute("role", "list");
+    list.setAttribute("aria-label", "Meetup member status");
+    list.querySelectorAll(".v010-person").forEach((row) => {
+      row.setAttribute("role", "listitem");
+    });
+  }
+
   function enhanceLiveRegions() {
     const primary = document.getElementById("v011PrimaryAlert");
     if (primary) {
@@ -92,6 +102,7 @@
       planUpdate.setAttribute("role", "status");
       planUpdate.setAttribute("aria-live", "polite");
     }
+    enhanceSharedStatusList();
   }
 
   function enhance() {
