@@ -17,12 +17,13 @@ const document = {
   addEventListener() {},
   getElementById() { return null; },
 };
-vm.runInNewContext(source, { window, document, Date, Math, Number, String, Array, Object, Intl, setTimeout, clearTimeout });
+vm.runInNewContext(source, { window, document, Date, Math, Number, String, Array, Object, Intl, Set, setTimeout, clearTimeout });
 
 const api = window.NVSTransferWatch0111;
 assert.equal(typeof api?.transferModel, "function");
 assert.equal(typeof api?.transferCandidates, "function");
 assert.equal(typeof api?.freshMissed, "function");
+assert.equal(typeof api?.blockingVoluntaryState, "function");
 
 const at = (minute) => new Date(Date.UTC(2026, 7, 25, 8, minute, 0));
 const route = {
@@ -87,12 +88,19 @@ const past = api.transferModel(route, at(24).getTime());
 assert.equal(past, null, "already departed transfers should not remain on screen");
 
 window.NVSShare.getFocusIndex = () => 0;
-window.NVSSharedLive = { getState: () => ({ members: { "0": { status: "missed", at: at(5).getTime() } } }) };
+let liveEntry = { status: "missed", at: at(5).getTime() };
+window.NVSSharedLive = { getState: () => ({ members: { "0": liveEntry } }) };
 assert.equal(api.freshMissed(at(5).getTime()), true);
+assert.equal(api.blockingVoluntaryState(at(5).getTime()), "missed");
 assert.equal(api.freshMissed(at(21).getTime()), false, "stale missed reports should stop suppressing timetable transfer watch");
+liveEntry = { status: "arrived", at: at(5).getTime() };
+assert.equal(api.blockingVoluntaryState(at(5).getTime()), "arrived", "confirmed arrival must suppress obsolete future-transfer advice");
+liveEntry = { status: "on-vehicle", at: at(5).getTime() };
+assert.equal(api.blockingVoluntaryState(at(5).getTime()), null, "on-board confirmation can still benefit from upcoming transfer protection");
 
 assert.match(source, /MAX_WATCH_MIN = 6/);
 assert.match(source, /MAX_LEAD_MIN = 30/, "proactive warnings should be bounded so distant transfers do not create persistent noise");
+assert.match(source, /BLOCKING_VOLUNTARY/);
 assert.match(source, /nvs-shared-live-change/);
 assert.match(source, /document\.hidden/);
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "transfer protection must remain route-data-only");
@@ -104,4 +112,4 @@ assert.match(release, /transfer-watch-v0111\.css/);
 assert.match(sw, /transfer-watch-v0111\.js/, "installed/offline PWA should include transfer watch runtime");
 assert.match(sw, /transfer-watch-v0111\.css/);
 
-console.log("transfer-watch: proactive tight/impossible transfer protection, bounded-noise horizon, recovery precedence, PWA wiring and no-GPS behavior passed");
+console.log("transfer-watch: proactive tight/impossible transfer protection, bounded-noise horizon, missed/arrived precedence, PWA wiring and no-GPS behavior passed");
