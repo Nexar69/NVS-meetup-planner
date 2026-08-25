@@ -68,6 +68,7 @@ jobs:
           node tests/release-smoke.test.cjs
           node tests/recovery-ownership.test.cjs
           node tests/accessibility-smoke.test.cjs
+          node tests/dialog-accessibility-behavior.test.cjs
           node tests/shared-live-scheduler.test.cjs
           node tests/service-worker-behavior.test.cjs
           node tests/worker-live.test.cjs
