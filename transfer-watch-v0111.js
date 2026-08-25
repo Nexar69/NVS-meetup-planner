@@ -52,7 +52,7 @@
       if (isWalk(current) || isWalk(next)) continue;
       const arrival = asDate(current.arrival);
       const departure = asDate(next.departure);
-      if (!arrival || !departure || departure.getTime() < now - 60_000) continue;
+      if (!arrival || !departure || departure.getTime() <= now) continue;
       const gap = transferGapMinutes(current, next);
       if (gap == null || gap > MAX_WATCH_MIN) continue;
       candidates.push({ index, current, next, gap, arrival, departure });
