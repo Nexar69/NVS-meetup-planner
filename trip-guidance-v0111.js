@@ -3,6 +3,7 @@
   let timer = null;
   let lastAnnouncement = "";
   let mutationRefreshQueued = false;
+  let observer = null;
 
   function escapeHtml(value) {
     return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -196,13 +197,29 @@
     card.innerHTML = `<span class="v0111-trip-guidance-icon" aria-hidden="true">${escapeHtml(guidance.icon)}</span><div><small>${escapeHtml(guidance.eyebrow)}</small><strong>${escapeHtml(guidance.title)}</strong><p>${escapeHtml(guidance.detail)}</p></div>`;
   }
   function schedule(delay = UPDATE_MS) { clearTimeout(timer); if (document.hidden || !isPersonalSharedView()) return; timer = setTimeout(() => { renderGuidance(); schedule(); }, delay); }
-  function refresh() { renderGuidance(); schedule(); }
+  function refresh() { renderGuidance(); observeGuidanceSurfaces(); schedule(); }
   function queueMutationRefresh() {
     if (mutationRefreshQueued) return; mutationRefreshQueued = true;
-    setTimeout(() => { mutationRefreshQueued = false; if (document.getElementById("personalSharedPlan") || document.getElementById("sharedLiveV010") || document.getElementById("v0111TripGuidance")) renderGuidance(); }, 0);
+    setTimeout(() => { mutationRefreshQueued = false; if (document.getElementById("personalSharedPlan") || document.getElementById("sharedLiveV010") || document.getElementById("v0111TripGuidance")) renderGuidance(); observeGuidanceSurfaces(); }, 0);
   }
-  document.addEventListener("visibilitychange", () => { if (document.hidden) clearTimeout(timer); else refresh(); });
-  window.addEventListener("load", refresh); window.addEventListener("nvs-group-recommendations-rendered", refresh); window.addEventListener("nvs-shared-live-change", refresh); window.addEventListener("nvs-live-plan-synced", refresh);
-  new MutationObserver(queueMutationRefresh).observe(document.body, { childList: true, subtree: true });
-  window.NVSTripGuidance0111 = Object.freeze({ guidanceForRoute, refresh }); refresh();
+  function stopObserving() { observer?.disconnect?.(); }
+  function observeGuidanceSurfaces() {
+    if (document.hidden || !("MutationObserver" in window)) return;
+    if (!observer) observer = new MutationObserver(queueMutationRefresh);
+    observer.disconnect();
+    const resultsRoot = document.getElementById("results");
+    const personalPlan = document.getElementById("personalSharedPlan");
+    const sharedPanel = document.getElementById("sharedLiveV010");
+    [resultsRoot, personalPlan, sharedPanel].filter(Boolean).forEach((node) => {
+      observer.observe(node, { childList: true, subtree: true, characterData: true });
+    });
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { clearTimeout(timer); stopObserving(); }
+    else refresh();
+  });
+  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
+  window.NVSTripGuidance0111 = Object.freeze({ guidanceForRoute, refresh, observeGuidanceSurfaces });
+  observeGuidanceSurfaces();
+  refresh();
 })();
