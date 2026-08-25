@@ -65,11 +65,21 @@
   function beginPlannerConsumerBatch() {
     if (typeof AbortController !== "function") return;
     plannerConsumerController?.abort();
-    plannerConsumerController = new AbortController();
+    const controller = new AbortController();
+    plannerConsumerController = controller;
     // app.js requests exactly two top-level routes per ordinary planner search.
     // Scope cancellation to those two consumers so group/convergence planners
     // cannot accidentally inherit the ordinary planner's abort signal.
     armedPlannerCalls = 2;
+
+    // search() reaches its two fetchRoutes calls synchronously. If validation,
+    // offline mode or another early return prevents that, disarm immediately so
+    // unrelated routing later in the page cannot inherit this consumer signal.
+    const disarm = () => {
+      if (plannerConsumerController === controller) armedPlannerCalls = 0;
+    };
+    if (typeof queueMicrotask === "function") queueMicrotask(disarm);
+    else Promise.resolve().then(disarm);
   }
 
   function takePlannerConsumerSignal() {
