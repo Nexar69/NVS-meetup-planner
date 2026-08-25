@@ -22,6 +22,7 @@ vm.runInNewContext(source, { window, document, Date, Math, Number, String, Array
 const api = window.NVSTransferWatch0111;
 assert.equal(typeof api?.transferModel, "function");
 assert.equal(typeof api?.transferCandidates, "function");
+assert.equal(typeof api?.platformChange, "function");
 assert.equal(typeof api?.freshMissed, "function");
 assert.equal(typeof api?.blockingVoluntaryState, "function");
 
@@ -37,16 +38,31 @@ assert.equal(tight.tone, "warn");
 assert.equal(tight.gap, 3);
 assert.match(tight.title, /3 min transfer at Central/);
 assert.match(tight.detail, /Tram 3/);
-assert.match(tight.detail, /platform C/);
+assert.match(tight.detail, /Platform C/);
 
 const sixMinute = api.transferModel({
   segments: [
     { mode: "BUS", from: "A", to: "X", departure: at(0), arrival: at(20) },
     { mode: "TRAM", line: "1", from: "X", to: "B", departure: at(26), arrival: at(40) },
   ],
-}, at(5).getTime());
+}, at(20).getTime());
 assert.equal(sixMinute.tone, "info");
 assert.equal(sixMinute.gap, 6);
+assert.match(sixMinute.detail, /departs in about 6 min/, "nearby connections should expose a calm timetable countdown");
+
+const platformDrift = api.transferModel({
+  segments: [
+    { mode: "TRAM", line: "2", from: "A", to: "Central", departure: at(0), arrival: at(20) },
+    { mode: "TRAM", line: "4", from: "Central", to: "B", departure: at(26), arrival: at(40), plannedPlatformFrom: "A", platformFrom: "C" },
+  ],
+}, at(20).getTime());
+assert.equal(platformDrift.gap, 6);
+assert.equal(platformDrift.tone, "warn", "a changed boarding platform should elevate an otherwise watch-only transfer");
+assert.equal(platformDrift.platformChanged, true);
+assert.match(platformDrift.eyebrow, /platform changed/i);
+assert.match(platformDrift.detail, /changed from A to C/i);
+assert.match(platformDrift.detail, /live platform signs/i);
+assert.deepEqual(api.platformChange({ plannedPlatformFrom: "A", platformFrom: "A" }), null, "matching planned/realtime platforms should stay quiet");
 
 const comfortable = api.transferModel({
   segments: [
@@ -67,12 +83,14 @@ assert.equal(farFuture, null, "a tight transfer more than 30 minutes away should
 const impossible = api.transferModel({
   segments: [
     { mode: "TRAM", line: "2", from: "A", to: "X", departure: at(0), arrival: at(25) },
-    { mode: "TRAM", line: "3", from: "X", to: "B", departure: at(23), arrival: at(40) },
+    { mode: "TRAM", line: "3", from: "X", to: "B", departure: at(23), arrival: at(40), plannedPlatformFrom: "1", platformFrom: "2" },
   ],
 }, at(5).getTime());
 assert.equal(impossible.tone, "critical");
 assert.equal(impossible.gap, -2);
+assert.equal(impossible.platformChanged, true);
 assert.match(impossible.title, /no longer fits/);
+assert.match(impossible.detail, /changed from 1 to 2/);
 assert.match(impossible.detail, /Recovery Desk|replan/);
 
 const walkingTransfer = api.transferModel({
@@ -100,6 +118,8 @@ assert.equal(api.blockingVoluntaryState(at(5).getTime()), null, "on-board confir
 
 assert.match(source, /MAX_WATCH_MIN = 6/);
 assert.match(source, /MAX_LEAD_MIN = 30/, "proactive warnings should be bounded so distant transfers do not create persistent noise");
+assert.match(source, /plannedPlatformFrom/, "connection protection should compare planned and realtime boarding platforms");
+assert.match(source, /departs in about/, "nearby connection protection should include a timetable countdown without implying location awareness");
 assert.match(source, /BLOCKING_VOLUNTARY/);
 assert.match(source, /nvs-shared-live-change/);
 assert.match(source, /document\.hidden/);
@@ -112,4 +132,4 @@ assert.match(release, /transfer-watch-v0111\.css/);
 assert.match(sw, /transfer-watch-v0111\.js/, "installed/offline PWA should include transfer watch runtime");
 assert.match(sw, /transfer-watch-v0111\.css/);
 
-console.log("transfer-watch: proactive tight/impossible transfer protection, bounded-noise horizon, missed/arrived precedence, PWA wiring and no-GPS behavior passed");
+console.log("transfer-watch: tight/impossible transfer protection, realtime platform drift, countdown, bounded noise, voluntary precedence, PWA wiring and no-GPS behavior passed");
