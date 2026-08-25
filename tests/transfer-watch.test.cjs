@@ -55,6 +55,14 @@ const comfortable = api.transferModel({
 }, at(5).getTime());
 assert.equal(comfortable, null, "comfortable transfers should stay quiet");
 
+const farFuture = api.transferModel({
+  segments: [
+    { mode: "TRAM", from: "A", to: "Far", departure: at(0), arrival: at(40) },
+    { mode: "TRAM", line: "9", from: "Far", to: "B", departure: at(43), arrival: at(55) },
+  ],
+}, at(5).getTime());
+assert.equal(farFuture, null, "a tight transfer more than 30 minutes away should not occupy the live UI yet");
+
 const impossible = api.transferModel({
   segments: [
     { mode: "TRAM", line: "2", from: "A", to: "X", departure: at(0), arrival: at(25) },
@@ -84,6 +92,7 @@ assert.equal(api.freshMissed(at(5).getTime()), true);
 assert.equal(api.freshMissed(at(21).getTime()), false, "stale missed reports should stop suppressing timetable transfer watch");
 
 assert.match(source, /MAX_WATCH_MIN = 6/);
+assert.match(source, /MAX_LEAD_MIN = 30/, "proactive warnings should be bounded so distant transfers do not create persistent noise");
 assert.match(source, /nvs-shared-live-change/);
 assert.match(source, /document\.hidden/);
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "transfer protection must remain route-data-only");
@@ -95,4 +104,4 @@ assert.match(release, /transfer-watch-v0111\.css/);
 assert.match(sw, /transfer-watch-v0111\.js/, "installed/offline PWA should include transfer watch runtime");
 assert.match(sw, /transfer-watch-v0111\.css/);
 
-console.log("transfer-watch: proactive tight/impossible transfer protection, quiet comfortable gaps, recovery precedence, PWA wiring and no-GPS behavior passed");
+console.log("transfer-watch: proactive tight/impossible transfer protection, bounded-noise horizon, recovery precedence, PWA wiring and no-GPS behavior passed");
