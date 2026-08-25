@@ -39,6 +39,23 @@
     }
   }
 
+  function loadProviderHealth0111() {
+    if (!document.querySelector('link[data-provider-health-v0111="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./provider-health-v0111.css";
+      link.dataset.providerHealthV0111 = "true";
+      document.head.appendChild(link);
+    }
+    if (!document.querySelector('script[data-provider-health-v0111="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./provider-health-v0111.js";
+      script.async = false;
+      script.dataset.providerHealthV0111 = "true";
+      document.body.appendChild(script);
+    }
+  }
+
   function applyReleaseCopy() {
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = VERSION;
@@ -59,12 +76,14 @@
   loadFreshnessGuard();
   loadRoutingCoalescer0111();
   loadAccessibility0111();
+  loadProviderHealth0111();
   applyReleaseCopy();
   setTimeout(applyReleaseCopy, 400);
   window.addEventListener("load", () => {
     loadFreshnessGuard();
     loadRoutingCoalescer0111();
     loadAccessibility0111();
+    loadProviderHealth0111();
     applyReleaseCopy();
     setTimeout(applyReleaseCopy, 180);
   });
