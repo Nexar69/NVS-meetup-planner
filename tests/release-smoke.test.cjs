@@ -22,6 +22,7 @@ const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
   "shared-expiry-v0111.css",
   "trip-guidance-v0111.js",
   "trip-guidance-v0111.css",
+  "intelligence-voluntary-sync-v0111.js",
   "share-v010.js",
   "shared-live-v010.js",
   "release-v011.js",
@@ -59,9 +60,11 @@ assert.match(release, /shared-expiry-v0111\.css/, "shared expiry styles must be 
 assert.match(release, /loadTripGuidance0111/, "v0.11.1 release owner should load personal journey guidance");
 assert.match(release, /trip-guidance-v0111\.js/, "trip guidance runtime must be wired by the release owner");
 assert.match(release, /trip-guidance-v0111\.css/, "trip guidance styles must be wired by the release owner");
+assert.match(release, /loadIntelligenceVoluntarySync0111/, "v0.11.1 release owner should reconcile command intelligence with fresh voluntary state");
+assert.match(release, /intelligence-voluntary-sync-v0111\.js/, "voluntary intelligence sync must be wired by the release owner");
 
 const serviceWorker = read("service-worker.js");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r11/, "service worker cache must be the latest v0.11.1 revision");
+assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r12/, "service worker cache must be the latest v0.11.1 revision");
 for (const asset of [
   "intelligence-core.js",
   "intelligence-v011.js",
@@ -79,6 +82,7 @@ for (const asset of [
   "shared-expiry-v0111.css",
   "trip-guidance-v0111.js",
   "trip-guidance-v0111.css",
+  "intelligence-voluntary-sync-v0111.js",
   "share-v010.js",
   "shared-live-v010.js",
   "release-v011.js",
@@ -142,6 +146,13 @@ assert.match(tripGuidance, /checkinFreshness/, "trip guidance should obey the sh
 assert.match(tripGuidance, /function removeGuidance/, "guidance should clear stale cards when the personal route disappears");
 assert.doesNotMatch(tripGuidance, /geolocation|watchPosition|getCurrentPosition/, "personal guidance must stay timetable-only");
 
+const voluntarySync = read("intelligence-voluntary-sync-v0111.js");
+assert.match(voluntarySync, /NOW · VOLUNTARY/, "command center should visibly disclose when a fresh voluntary report outranks timetable state");
+assert.match(voluntarySync, /RECOVERY/, "missed-connection reports should put Trip Mode into recovery guidance");
+assert.match(voluntarySync, /checkinFreshness/, "command intelligence should share the same freshness boundary as other live surfaces");
+assert.match(voluntarySync, /document\.hidden/, "voluntary reconciliation should pause periodic work while hidden");
+assert.doesNotMatch(voluntarySync, /geolocation|watchPosition|getCurrentPosition/, "command intelligence precedence must remain no-GPS");
+
 const tripGuidanceCss = read("trip-guidance-v0111.css");
 assert.match(tripGuidanceCss, /body\.shared-viewer \.v051-viewing-chip\{display:none!important\}/, "shared route views should hide the planner-only Viewing badge");
 
@@ -183,4 +194,4 @@ assert.match(vmv, /plannedPlatformFrom/, "VMV adapter must preserve planned plat
 assert.match(vmv, /cancelled/, "VMV adapter must preserve cancellation state");
 assert.match(vmv, /remarks/, "VMV adapter must preserve disruption remarks");
 
-console.log("release-smoke: v0.11.1 wiring, r11 status-aware guidance/shared-view polish and no-op plan revision protection look consistent");
+console.log("release-smoke: v0.11.1 wiring, r12 voluntary-status-aware guidance/command sync and no-op plan revision protection look consistent");
