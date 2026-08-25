@@ -91,6 +91,26 @@
     return JSON.stringify((plan?.members || []).map((member) => String(member?.name || "")));
   }
 
+  function cacheExpiresAt() {
+    const value = Number(secureCache?.expiresAt);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  function cacheExpired(now = Date.now()) {
+    const expiry = cacheExpiresAt();
+    return expiry != null && now >= expiry;
+  }
+
+  function clearSecureCache(reason = "") {
+    if (!secureCache) return;
+    const id = secureCache.id;
+    secureCache = null;
+    renderManagement();
+    window.dispatchEvent(new CustomEvent("nvs-share-session-cleared", {
+      detail: { id, reason: String(reason || "cleared") },
+    }));
+  }
+
   function pendingResetTarget() {
     if (pendingShare?.type !== "person" || !Number.isInteger(pendingShare.index)) return { member: null, name: "" };
     const member = payload()?.members?.[pendingShare.index];
@@ -124,13 +144,17 @@
 
   async function syncExistingPlan(nextPlan) {
     if (!secureCache?.id || !secureCache?.ownerKey || !config.backendUrl) return false;
+    if (cacheExpired()) {
+      clearSecureCache("expired");
+      return false;
+    }
+
     const plan = nextPlan || payload();
     if (!plan) return false;
 
     const identity = identitySignature(plan);
     if (identity !== secureCache.identity) {
-      secureCache = null;
-      renderManagement();
+      clearSecureCache("identity-changed");
       return false;
     }
 
@@ -144,17 +168,18 @@
       headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
       body: JSON.stringify({ key: secureCache.ownerKey, plan }),
     });
-    if (response.status === 409) {
-      secureCache = null;
-      renderManagement();
+    if (response.status === 404 || response.status === 409) {
+      clearSecureCache(response.status === 404 ? "missing-or-expired" : "identity-changed");
       return false;
     }
     if (!response.ok) throw new Error(`LIVE_PLAN_SYNC_HTTP_${response.status}`);
     const data = await response.json();
     secureCache.signature = sig;
     secureCache.revision = Number(data?.revision) || secureCache.revision || 1;
+    const expiry = Number(data?.expiresAt);
+    if (Number.isFinite(expiry) && expiry > 0) secureCache.expiresAt = expiry;
     window.dispatchEvent(new CustomEvent("nvs-live-plan-synced", {
-      detail: { id: secureCache.id, revision: secureCache.revision },
+      detail: { id: secureCache.id, revision: secureCache.revision, expiresAt: cacheExpiresAt() },
     }));
     return true;
   }
@@ -162,6 +187,10 @@
   function scheduleSync() {
     clearTimeout(syncTimer);
     if (!secureCache) return;
+    if (cacheExpired()) {
+      clearSecureCache("expired");
+      return;
+    }
     syncTimer = setTimeout(() => {
       syncExistingPlan().catch((error) => console.warn("Shared live plan sync failed", error));
     }, 700);
@@ -173,13 +202,14 @@
     const sig = signature(plan);
     const identity = identitySignature(plan);
 
+    if (cacheExpired()) clearSecureCache("expired");
+
     if (secureCache) {
       if (secureCache.identity !== identity) {
-        secureCache = null;
-        renderManagement();
+        clearSecureCache("identity-changed");
       } else {
         if (secureCache.signature !== sig) await syncExistingPlan(plan);
-        if (secureCache?.signature === sig) return { ...secureCache, plan };
+        if (secureCache?.signature === sig && !cacheExpired()) return { ...secureCache, plan };
       }
     }
 
@@ -195,6 +225,7 @@
     if (!data?.id || !data?.url || !data?.ownerKey || !Array.isArray(data.memberKeys) || data.memberKeys.length < plan.members.length) {
       throw new Error("SECURE_SHARE_CAPABILITIES_MISSING");
     }
+    const expiry = Number(data?.expiresAt);
     secureCache = {
       id: data.id,
       identity,
@@ -204,6 +235,7 @@
       memberKeys: data.memberKeys,
       revision: Number(data.revision) || 1,
       expiresIn: data.expiresIn || 259200,
+      expiresAt: Number.isFinite(expiry) && expiry > 0 ? expiry : null,
     };
     renderManagement();
     return { ...secureCache, plan };
@@ -211,6 +243,10 @@
 
   async function rotateCapabilities(member = null) {
     if (!secureCache?.id || !secureCache?.ownerKey || !config.backendUrl || rotating) return false;
+    if (cacheExpired()) {
+      clearSecureCache("expired");
+      return false;
+    }
     rotating = true;
     renderManagement();
     try {
@@ -221,14 +257,20 @@
         headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
         body: JSON.stringify({ key: secureCache.ownerKey, ...(Number.isInteger(member) ? { member } : {}) }),
       });
+      if (response.status === 404) {
+        clearSecureCache("missing-or-expired");
+        return false;
+      }
       if (!response.ok) throw new Error(`CAPABILITY_ROTATE_HTTP_${response.status}`);
       const data = await response.json();
       if (!Array.isArray(data?.memberKeys) || data.memberKeys.length !== secureCache.memberKeys.length) {
         throw new Error("CAPABILITY_ROTATE_BAD_RESPONSE");
       }
       secureCache.memberKeys = data.memberKeys;
+      const expiry = Number(data?.expiresAt);
+      if (Number.isFinite(expiry) && expiry > 0) secureCache.expiresAt = expiry;
       window.dispatchEvent(new CustomEvent("nvs-share-capabilities-rotated", {
-        detail: { id: secureCache.id, member: Number.isInteger(member) ? member : null },
+        detail: { id: secureCache.id, member: Number.isInteger(member) ? member : null, expiresAt: cacheExpiresAt() },
       }));
       return true;
     } finally {
@@ -279,6 +321,8 @@
           window.alert(target.member == null
             ? "All private check-in links reset. Share fresh personal links with anyone who should still be able to check in."
             : `${target.name}'s old private check-in link is now read-only. Share a fresh personal link with them to restore check-ins.`);
+        } else if (!secureCache) {
+          window.alert("That shared session has expired. Use Share again to create a fresh meetup link.");
         }
       } catch (error) {
         console.warn("Private link reset failed", error);
@@ -296,13 +340,14 @@
       window.alert("Find a live group recommendation before sharing it.");
       return;
     }
+    if (cacheExpired()) clearSecureCache("expired");
     const element = dialog();
     const person = type === "person" ? plan.members[index] : null;
     pendingShare = { type, index };
     element.querySelector("#v010ShareTitle").textContent = person ? `Share ${person.name}'s live route` : "Share whole live meetup";
     element.querySelector("#v010ShareCopy").innerHTML = person
-      ? `<p>This creates a <strong>read-only personal route</strong> for ${escapeHtml(person.name)} with a private check-in capability for that person only.</p><p class="group-share-warning">The link contains a random write key. Anyone you forward this exact personal link to can update ${escapeHtml(person.name)}'s voluntary meetup status until the plan expires or you reset that person's private link.</p>`
-      : `<p>This creates the <strong>read-only whole-group view</strong>. It can see voluntary check-ins but cannot post as any person.</p><p class="group-share-warning">The shared plan contains group names, starting locations, meetup place/time and route preferences. It expires automatically after about 72 hours.</p>`;
+      ? `<p>This creates a <strong>read-only personal route</strong> for ${escapeHtml(person.name)} with a private check-in capability for that person only.</p><p class="group-share-warning">The link contains a random write key. Anyone you forward this exact personal link to can update ${escapeHtml(person.name)}'s voluntary meetup status until the backend-provided session deadline or you reset that person's private link.</p>`
+      : `<p>This creates the <strong>read-only whole-group view</strong>. It can see voluntary check-ins but cannot post as any person.</p><p class="group-share-warning">The shared plan contains group names, starting locations, meetup place/time and route preferences. Its exact automatic expiry is set by the Meet Schwerin backend and shown in the shared view.</p>`;
     renderManagement();
     element.showModal();
   }
@@ -418,5 +463,7 @@
     resetPrivateLinks: () => rotateCapabilities(),
     resetPersonLink: (index) => rotateCapabilities(Number(index)),
     getPlanId: () => secureCache?.id || null,
+    getExpiresAt: () => cacheExpiresAt(),
+    isSessionExpired: () => cacheExpired(),
   });
 })();
