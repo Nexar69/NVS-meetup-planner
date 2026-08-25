@@ -13,6 +13,15 @@
     document.body.appendChild(script);
   }
 
+  function loadSharedLiveFreshness0111() {
+    if (document.querySelector('script[data-shared-live-freshness-v0111="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "./shared-live-freshness-v0111.js";
+    script.async = false;
+    script.dataset.sharedLiveFreshnessV0111 = "true";
+    document.body.appendChild(script);
+  }
+
   function loadRoutingCoalescer0111() {
     if (document.querySelector('script[data-routing-coalesce-v0111="true"]')) return;
     const script = document.createElement("script");
@@ -101,6 +110,7 @@
   }
 
   loadFreshnessGuard();
+  loadSharedLiveFreshness0111();
   loadRoutingCoalescer0111();
   loadAccessibility0111();
   loadProviderHealth0111();
@@ -110,6 +120,7 @@
   setTimeout(applyReleaseCopy, 400);
   window.addEventListener("load", () => {
     loadFreshnessGuard();
+    loadSharedLiveFreshness0111();
     loadRoutingCoalescer0111();
     loadAccessibility0111();
     loadProviderHealth0111();
