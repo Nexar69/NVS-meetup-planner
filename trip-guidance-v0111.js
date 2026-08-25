@@ -55,19 +55,31 @@
     return String(segment?.mode || "").toUpperCase() === "WALK";
   }
 
+  function continuationDetail(next, destination) {
+    if (!next) return `Keep an eye on your surroundings so you're ready to get off at ${destination}.`;
+    if (isWalk(next)) {
+      return `Get ready to leave at ${destination}; your planned walking leg starts there.`;
+    }
+    const nextVehicle = vehicleLabel(next);
+    const nextTime = formatTime(next.departure);
+    return `Get ready to leave at ${destination}. Next: ${nextVehicle}${nextTime ? ` around ${nextTime}` : ""}.`;
+  }
+
   function guidanceForRoute(route, now = Date.now()) {
     const segments = Array.isArray(route?.segments) ? route.segments.filter(Boolean) : [];
     if (!segments.length) return null;
 
-    const active = segments.find((segment) => {
+    const activeIndex = segments.findIndex((segment) => {
       const departure = asDate(segment.departure)?.getTime();
       const arrival = asDate(segment.arrival)?.getTime();
       return Number.isFinite(departure) && Number.isFinite(arrival) && departure <= now && now < arrival;
     });
+    const active = activeIndex >= 0 ? segments[activeIndex] : null;
 
     if (active) {
       const destination = String(active.to || "your next stop");
       const minutes = minutesUntil(active.arrival, now);
+      const next = segments[activeIndex + 1] || null;
       if (isWalk(active)) {
         return {
           icon: "🚶",
@@ -81,9 +93,9 @@
       if (minutes != null && minutes <= 8) {
         return {
           icon: "◉",
-          eyebrow: "Next important stop",
+          eyebrow: minutes <= 2 ? "Coming up soon" : "Next important stop",
           title: `${destination} in about ${Math.max(1, minutes)} min`,
-          detail: `You're on ${vehicle}. Keep an eye on your surroundings so you're ready to get off at ${destination}.`,
+          detail: `${continuationDetail(next, destination)} You're currently on ${vehicle}.`,
         };
       }
       return {
