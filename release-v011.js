@@ -22,6 +22,15 @@
     document.body.appendChild(script);
   }
 
+  function loadSharedReload0111() {
+    if (document.querySelector('script[data-shared-reload-v0111="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "./shared-reload-v0111.js";
+    script.async = false;
+    script.dataset.sharedReloadV0111 = "true";
+    document.body.appendChild(script);
+  }
+
   function loadRoutingCoalescer0111() {
     if (document.querySelector('script[data-routing-coalesce-v0111="true"]')) return;
     const script = document.createElement("script");
@@ -120,6 +129,7 @@
 
   loadFreshnessGuard();
   loadSharedLiveFreshness0111();
+  loadSharedReload0111();
   loadRoutingCoalescer0111();
   loadAccessibility0111();
   loadProviderHealth0111();
@@ -131,6 +141,7 @@
   window.addEventListener("load", () => {
     loadFreshnessGuard();
     loadSharedLiveFreshness0111();
+    loadSharedReload0111();
     loadRoutingCoalescer0111();
     loadAccessibility0111();
     loadProviderHealth0111();
