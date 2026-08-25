@@ -27,6 +27,7 @@ const row = {
 const list = { querySelectorAll: () => [row] };
 const now = Date.now();
 const state = { members: { "0": { status: "missed", at: now - 20 * 60_000 } } };
+const handlers = {};
 const window = {
   __NVS_LAST_RECOMMENDATIONS__: { primary: { assignments: [{ route: { segments: [] } }] } },
   NVSSharedLive: { getState: () => state },
@@ -37,7 +38,7 @@ const window = {
       return { fresh: ageMs <= 15 * 60_000, stale: ageMs > 15 * 60_000, ageMs, ageMinutes: ageMs / 60_000 };
     },
   },
-  addEventListener() {},
+  addEventListener(type, handler) { handlers[type] = handler; },
 };
 const document = {
   hidden: true,
@@ -74,10 +75,15 @@ assert.match(detail.textContent, /last voluntary check-in about 20 min ago/);
 assert.equal(sourceBadge.textContent, "STALE · TIMETABLE");
 assert.match(sourceBadge.title, /older than 15 minutes/);
 
+assert.equal(typeof handlers["nvs-shared-live-change"], "function");
+assert.doesNotThrow(() => handlers["nvs-shared-live-change"]({ type: "nvs-shared-live-change" }), "DOM events must not be mistaken for timestamps");
+assert.equal(sourceBadge.textContent, "STALE · TIMETABLE");
+
 assert.match(release, /loadSharedLiveFreshness0111/, "release owner must load the stale-status consistency guard");
 assert.match(release, /shared-live-freshness-v0111\.js/);
 assert.match(serviceWorker, /shared-live-freshness-v0111\.js/, "stale-status consistency guard must be available in the offline shell");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "freshness handling must not introduce location tracking");
 assert.match(source, /document\.hidden/, "periodic freshness checks should pause while hidden");
+assert.match(source, /nvs-shared-live-change", \(\) => refresh\(\)/, "shared-live events should trigger a fresh timestamp instead of passing the Event object through");
 
 console.log("shared-live-freshness: stale manual confirmations downgrade to timetable guidance after 15 minutes");
