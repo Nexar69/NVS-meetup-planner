@@ -89,6 +89,16 @@
     });
   }
 
+  function meetupConfirmed(group, liveState, now = Date.now()) {
+    const list = assignments(group);
+    if (list.length < 2) return false;
+    const members = liveState?.members && typeof liveState.members === "object" ? liveState.members : {};
+    return list.every((_, index) => {
+      const entry = members[String(index)];
+      return entry?.status === "arrived" && isFresh(entry, now);
+    });
+  }
+
   function recomputeLatestArrival(list) {
     const times = list.map((item) => asDate(item.route?.arrival)).filter(Boolean);
     return times.length ? new Date(Math.max(...times.map((date) => date.getTime()))) : null;
@@ -195,6 +205,18 @@
     return card;
   }
 
+  function renderStateCard(card, tone, small, title, detail, footer) {
+    if (!card) return;
+    card.dataset.tone = tone;
+    const markup = `<summary><span aria-hidden="true">◇</span><strong>What if?</strong><small>${escapeHtml(small)}</small></summary><div class="v0111-what-if-body"><div class="v0111-what-if-result" role="status"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p><small>${escapeHtml(footer)}</small></div></div>`;
+    if (markup !== lastMarkup) {
+      const wasOpen = card.open;
+      card.innerHTML = markup;
+      card.open = wasOpen;
+      lastMarkup = markup;
+    }
+  }
+
   function render(now = Date.now()) {
     const group = window.__NVS_LAST_RECOMMENDATIONS__?.primary || null;
     const list = assignments(group);
@@ -206,17 +228,12 @@
     const liveState = window.NVSSharedLive?.getState?.() || null;
     const card = ensureCard();
     if (recoveryActive(group, liveState, now)) {
-      const markup = `<summary><span aria-hidden="true">◇</span><strong>What if?</strong><small>Paused for recovery</small></summary><div class="v0111-what-if-body"><div class="v0111-what-if-result" role="status"><strong>Recovery takes priority</strong><p>A fresh missed-connection report means the current plan may no longer be a useful baseline. Replan or resolve recovery before comparing hypothetical delays.</p><small>Simulation paused · voluntary report takes precedence · no GPS</small></div></div>`;
-      if (card) {
-        card.dataset.tone = "warn";
-        if (markup !== lastMarkup) {
-          const wasOpen = card.open;
-          card.innerHTML = markup;
-          card.open = wasOpen;
-          lastMarkup = markup;
-        }
-      }
+      renderStateCard(card, "warn", "Paused for recovery", "Recovery takes priority", "A fresh missed-connection report means the current plan may no longer be a useful baseline. Replan or resolve recovery before comparing hypothetical delays.", "Simulation paused · voluntary report takes precedence · no GPS");
       return { paused: true, reason: "recovery" };
+    }
+    if (meetupConfirmed(group, liveState, now)) {
+      renderStateCard(card, "good", "Meetup complete", "Everyone confirmed here", "The meetup is already complete, so delay simulations are paused until those voluntary arrival confirmations become stale or are cleared.", "Simulation paused · confirmed arrival takes precedence · no GPS");
+      return { paused: true, reason: "complete" };
     }
     if (selectedIndex >= list.length) selectedIndex = 0;
     const model = simulate(group, selectedIndex, selectedDelay, now);
@@ -255,6 +272,6 @@
 
   ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-group-change", "nvs-timing-change", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, () => render()));
 
-  window.NVSWhatIf0111 = Object.freeze({ simulate, delayedGroup, shiftRoute, recoveryActive, render });
+  window.NVSWhatIf0111 = Object.freeze({ simulate, delayedGroup, shiftRoute, recoveryActive, meetupConfirmed, render });
   render();
 })();
