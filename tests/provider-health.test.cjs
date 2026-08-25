@@ -23,7 +23,7 @@ assert.doesNotMatch(runtime, /geolocation|watchPosition|getCurrentPosition/, "he
 assert.match(release, /loadProviderHealth0111/, "release owner should load provider diagnostics");
 assert.match(release, /provider-health-v0111\.js/, "provider diagnostics runtime must be wired");
 assert.match(release, /provider-health-v0111\.css/, "provider diagnostics styles must be wired");
-assert.match(sw, /meet-schwerin-v0\.11\.1-r8/, "provider diagnostics should follow the current offline app shell revision");
+assert.match(sw, /meet-schwerin-v0\.11\.1-r9/, "provider diagnostics should follow the current offline app shell revision");
 assert.match(sw, /provider-health-v0111\.js/, "provider diagnostics runtime must be cached for the PWA");
 assert.match(sw, /provider-health-v0111\.css/, "provider diagnostics styles must be cached for the PWA");
 assert.match(styles, /min-height:44px/, "system status disclosure should preserve a mobile-sized touch target");
