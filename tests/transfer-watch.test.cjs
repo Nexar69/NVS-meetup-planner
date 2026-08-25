@@ -23,6 +23,7 @@ const api = window.NVSTransferWatch0111;
 assert.equal(typeof api?.transferModel, "function");
 assert.equal(typeof api?.transferCandidates, "function");
 assert.equal(typeof api?.platformChange, "function");
+assert.equal(typeof api?.disruptionSummary, "function");
 assert.equal(typeof api?.freshMissed, "function");
 assert.equal(typeof api?.blockingVoluntaryState, "function");
 
@@ -63,6 +64,39 @@ assert.match(platformDrift.eyebrow, /platform changed/i);
 assert.match(platformDrift.detail, /changed from A to C/i);
 assert.match(platformDrift.detail, /live platform signs/i);
 assert.deepEqual(api.platformChange({ plannedPlatformFrom: "A", platformFrom: "A" }), null, "matching planned/realtime platforms should stay quiet");
+
+const cancelledNext = api.transferModel({
+  segments: [
+    { mode: "TRAM", line: "2", from: "A", to: "Central", departure: at(0), arrival: at(20) },
+    { mode: "TRAM", line: "4", from: "Central", to: "B", departure: at(24), arrival: at(40), cancelled: true, plannedPlatformFrom: "A", platformFrom: "C", remarks: [{ text: "Service cancelled due to an operational disruption" }] },
+  ],
+}, at(18).getTime());
+assert.equal(cancelledNext.tone, "critical");
+assert.equal(cancelledNext.cancelledSegment, "next");
+assert.equal(cancelledNext.segmentIndex, 1);
+assert.equal(cancelledNext.platformChanged, true);
+assert.match(cancelledNext.eyebrow, /cancelled/i);
+assert.match(cancelledNext.title, /Tram 4 is cancelled/);
+assert.match(cancelledNext.detail, /planned onward service/i);
+assert.match(cancelledNext.detail, /changed from A to C/i);
+assert.match(cancelledNext.detail, /operational disruption/i);
+assert.match(cancelledNext.detail, /Recovery Desk|replan/);
+
+const cancelledIncoming = api.transferModel({
+  segments: [
+    { mode: "BUS", line: "7", from: "A", to: "Central", departure: at(0), arrival: at(20), cancelled: true },
+    { mode: "TRAM", line: "3", from: "Central", to: "B", departure: at(23), arrival: at(40) },
+  ],
+}, at(10).getTime());
+assert.equal(cancelledIncoming.tone, "critical");
+assert.equal(cancelledIncoming.cancelledSegment, "current");
+assert.equal(cancelledIncoming.segmentIndex, 0);
+assert.match(cancelledIncoming.title, /BUS 7 is cancelled/i);
+assert.match(cancelledIncoming.detail, /feeding this transfer/i);
+assert.match(cancelledIncoming.detail, /Recovery Desk|replan/);
+
+assert.equal(api.disruptionSummary({ remarks: [] }), "");
+assert.equal(api.disruptionSummary({ remarks: [{ summary: "  Platform staffing issue  " }] }), "Platform staffing issue");
 
 const comfortable = api.transferModel({
   segments: [
@@ -119,6 +153,9 @@ assert.equal(api.blockingVoluntaryState(at(5).getTime()), null, "on-board confir
 assert.match(source, /MAX_WATCH_MIN = 6/);
 assert.match(source, /MAX_LEAD_MIN = 30/, "proactive warnings should be bounded so distant transfers do not create persistent noise");
 assert.match(source, /plannedPlatformFrom/, "connection protection should compare planned and realtime boarding platforms");
+assert.match(source, /cancelled/, "connection protection should never present a cancelled leg as a viable transfer");
+assert.match(source, /Provider note:/, "useful disruption remarks should survive into recovery guidance without exposing unrelated data");
+assert.match(source, /slice\(0, 180\)/, "provider remarks should be bounded so the live card cannot become unreasonably large");
 assert.match(source, /departs in about/, "nearby connection protection should include a timetable countdown without implying location awareness");
 assert.match(source, /BLOCKING_VOLUNTARY/);
 assert.match(source, /nvs-shared-live-change/);
@@ -132,4 +169,4 @@ assert.match(release, /transfer-watch-v0111\.css/);
 assert.match(sw, /transfer-watch-v0111\.js/, "installed/offline PWA should include transfer watch runtime");
 assert.match(sw, /transfer-watch-v0111\.css/);
 
-console.log("transfer-watch: tight/impossible transfer protection, realtime platform drift, countdown, bounded noise, voluntary precedence, PWA wiring and no-GPS behavior passed");
+console.log("transfer-watch: tight/impossible/cancelled connection protection, realtime platform drift, countdown, bounded noise, voluntary precedence, PWA wiring and no-GPS behavior passed");
