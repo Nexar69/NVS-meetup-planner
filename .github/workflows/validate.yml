@@ -72,4 +72,5 @@ jobs:
           node tests/shared-live-scheduler.test.cjs
           node tests/routing-coalescer.test.cjs
           node tests/service-worker-behavior.test.cjs
+          node tests/worker-config.test.cjs
           node tests/worker-live.test.cjs
