@@ -40,7 +40,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
         const normalized = typeof key === "string" ? key : key.url;
         return cacheEntries.get(normalized) || null;
       },
-      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r5"]; },
+      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r6"]; },
       async delete(key) { deleted.push(key); return true; },
     },
     self: {
@@ -99,6 +99,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     assert.ok(rt.addedShells[0].includes("./recovery-v0111.js"));
     assert.ok(rt.addedShells[0].includes("./accessibility-v0111.js"), "accessibility runtime should be available offline");
     assert.ok(rt.addedShells[0].includes("./accessibility-v0111.css"), "accessibility styles should be available offline");
+    assert.ok(rt.addedShells[0].includes("./routing-coalesce-v0111.js"), "routing request coalescing should be available offline");
   }
 
   {
@@ -160,7 +161,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     assert.deepEqual(rt.opened, ["./"], "notification click should reopen the PWA when no app window exists");
   }
 
-  console.log("service-worker-behavior: privacy, offline, update, notification and accessibility-shell behavior passed");
+  console.log("service-worker-behavior: privacy, offline, update, notification, accessibility and routing-shell behavior passed");
 })().catch((error) => {
   console.error(error);
   process.exit(1);
