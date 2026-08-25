@@ -75,3 +75,4 @@ jobs:
           node tests/service-worker-behavior.test.cjs
           node tests/worker-config.test.cjs
           node tests/worker-live.test.cjs
+          node tests/worker-expiry.test.cjs
