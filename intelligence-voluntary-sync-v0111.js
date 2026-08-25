@@ -98,7 +98,7 @@
   }
 
   function observeIntelligenceSurfaces() {
-    if (!("MutationObserver" in window)) return;
+    if (document.hidden || !("MutationObserver" in window)) return;
     if (!observer) observer = new MutationObserver(() => schedule(0));
     observer.disconnect();
     const current = document.getElementById("v011CurrentAction");
