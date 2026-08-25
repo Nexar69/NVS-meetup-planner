@@ -5,6 +5,8 @@ const vm = require("node:vm");
 
 const source = fs.readFileSync(path.resolve(__dirname, "../transfer-watch-v0111.js"), "utf8");
 const css = fs.readFileSync(path.resolve(__dirname, "../transfer-watch-v0111.css"), "utf8");
+const release = fs.readFileSync(path.resolve(__dirname, "../release-v011.js"), "utf8");
+const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf8");
 
 const window = {
   addEventListener() {},
@@ -87,5 +89,10 @@ assert.match(source, /document\.hidden/);
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "transfer protection must remain route-data-only");
 assert.match(css, /prefers-reduced-motion/);
 assert.match(css, /forced-colors/);
+assert.match(release, /loadTransferWatch0111/, "release owner should load proactive transfer watch");
+assert.match(release, /transfer-watch-v0111\.js/);
+assert.match(release, /transfer-watch-v0111\.css/);
+assert.match(sw, /transfer-watch-v0111\.js/, "installed/offline PWA should include transfer watch runtime");
+assert.match(sw, /transfer-watch-v0111\.css/);
 
-console.log("transfer-watch: proactive tight/impossible transfer protection, quiet comfortable gaps, recovery precedence and no-GPS behavior passed");
+console.log("transfer-watch: proactive tight/impossible transfer protection, quiet comfortable gaps, recovery precedence, PWA wiring and no-GPS behavior passed");
