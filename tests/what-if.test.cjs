@@ -22,6 +22,7 @@ const api = window.NVSWhatIf0111;
 assert.equal(typeof api?.simulate, "function");
 assert.equal(typeof api?.delayedGroup, "function");
 assert.equal(typeof api?.shiftRoute, "function");
+assert.equal(typeof api?.recoveryActive, "function");
 
 const at = (minute) => new Date(Date.UTC(2026, 7, 25, 8, minute, 0));
 const group = {
@@ -79,9 +80,17 @@ assert.equal(result10.afterSpread, 15);
 const normalizedDelay = api.simulate(group, 0, 999, at(1).getTime());
 assert.equal(normalizedDelay.delay, 5, "unsupported delay choices should stay bounded to the safe UI presets");
 
+const liveNow = at(1).getTime();
+assert.equal(api.recoveryActive(group, { members: { "0": { status: "missed", at: liveNow } } }, liveNow), true, "fresh missed status should pause hypothetical advice");
+assert.equal(api.recoveryActive(group, { members: { "0": { status: "missed", at: liveNow - 16 * 60_000 } } }, liveNow), false, "stale missed status should no longer block timetable stress testing");
+assert.equal(api.recoveryActive(group, { members: { "0": { status: "on-vehicle", at: liveNow } } }, liveNow), false, "non-recovery voluntary states should not pause the simulator");
+
 assert.doesNotMatch(source, /fetch\(|XMLHttpRequest|sendBeacon|localStorage|sessionStorage/, "what-if preview must stay local and ephemeral");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "what-if preview must never add location tracking");
-assert.match(source, /does not change or share the real meetup plan/i);
+assert.match(source, /does not change, save, or share the real meetup plan/i);
+assert.match(source, /does not fetch an alternative route/i, "simulator must disclose that it is a timing stress test, not a reroute prediction");
+assert.match(source, /Recovery takes priority/);
+assert.match(source, /nvs-shared-live-change/, "fresh recovery status changes should immediately refresh the simulator");
 assert.match(source, /Simulation only/);
 assert.match(css, /min-height:44px/, "mobile simulator controls should meet touch-target guidance");
 assert.match(css, /prefers-reduced-motion/);
@@ -92,4 +101,4 @@ assert.match(release, /what-if-v0111\.css/);
 assert.match(sw, /what-if-v0111\.js/, "what-if runtime should be available to installed/offline PWA copies");
 assert.match(sw, /what-if-v0111\.css/);
 
-console.log("what-if: local-only +5/+10 delay simulation, immutable routes, convergence impact, mobile accessibility, offline wiring and no-GPS behavior passed");
+console.log("what-if: local-only +5/+10 timing stress test, recovery precedence, immutable routes, mobile accessibility, offline wiring and no-GPS behavior passed");
