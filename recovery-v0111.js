@@ -7,20 +7,64 @@
     return Array.isArray(values) ? values : [];
   }
 
-  function recoveryAlert() {
-    return alerts().find((item) => item?.replan || item?.kind === "recovery" || String(item?.id || "").startsWith("transfer-missed:")) || null;
-  }
-
-  function activeId() {
-    if (window.NVSSharedLive?.hasPendingPlanUpdate?.()) return "pending-plan-update";
-    return recoveryAlert()?.id || "";
-  }
-
   function routeAssignments() {
     const primary = window.__NVS_LAST_RECOMMENDATIONS__?.primary;
     return Array.isArray(primary?.assignments)
       ? primary.assignments.filter((item) => item?.member && item?.route)
       : [];
+  }
+
+  function viewContext() {
+    const viewer = Boolean(window.NVSShare?.isViewer?.());
+    const focus = Number(window.NVSShare?.getFocusIndex?.() ?? -1);
+    const list = routeAssignments();
+    if (!viewer) {
+      return {
+        kind: "organizer",
+        focus: -1,
+        memberId: "",
+        label: "RECOVERY · ORGANIZER",
+        note: "Replanning here can update the organizer's working meetup and, after sync, the existing shared plan.",
+      };
+    }
+    if (Number.isInteger(focus) && focus >= 0) {
+      const assignment = list[focus];
+      const name = String(assignment?.member?.name || `Person ${focus + 1}`);
+      return {
+        kind: "person",
+        focus,
+        memberId: String(assignment?.member?.id || ""),
+        label: `RECOVERY · ${name.toLocaleUpperCase()} VIEW`,
+        note: `Replanning here changes only ${name}'s local view; it does not edit the organizer's shared meetup.`,
+      };
+    }
+    return {
+      kind: "group",
+      focus: -1,
+      memberId: "",
+      label: "RECOVERY · GROUP VIEW",
+      note: "Replanning here changes only this local group view; it does not edit the organizer's shared meetup.",
+    };
+  }
+
+  function relevantForContext(item, context = viewContext()) {
+    if (!item || context.kind !== "person") return Boolean(item);
+    if (Number.isInteger(item.memberIndex)) return item.memberIndex === context.focus;
+    if (item.memberId) return String(item.memberId) === context.memberId;
+    // Alerts without a member owner describe a whole-plan condition and remain useful.
+    return true;
+  }
+
+  function recoveryAlert() {
+    const context = viewContext();
+    return alerts().find((item) => (
+      item?.replan || item?.kind === "recovery" || String(item?.id || "").startsWith("transfer-missed:")
+    ) && relevantForContext(item, context)) || null;
+  }
+
+  function activeId() {
+    if (window.NVSSharedLive?.hasPendingPlanUpdate?.()) return "pending-plan-update";
+    return recoveryAlert()?.id || "";
   }
 
   function assignmentFor(item) {
@@ -68,6 +112,12 @@
     return hint ? `${detail} ${hint}` : detail;
   }
 
+  function contextualAction(defaultAction, context = viewContext()) {
+    if (context.kind === "organizer") return defaultAction === "Find a recovery route" ? "Replan group" : "Refresh & replan group";
+    if (context.kind === "person") return "Replan my route";
+    return "Replan this view";
+  }
+
   function ensureDesk() {
     let desk = document.getElementById("v0111RecoveryDesk");
     if (desk) return desk;
@@ -80,7 +130,7 @@
     desk.innerHTML = `
       <div class="v0111-recovery-icon" aria-hidden="true">↻</div>
       <div class="v0111-recovery-copy">
-        <span>RECOVERY</span>
+        <span id="v0111RecoveryScope">RECOVERY</span>
         <strong id="v0111RecoveryTitle">Recovery suggested</strong>
         <small id="v0111RecoveryDetail"></small>
         <em id="v0111RecoveryPrivacy">Uses timetable data and voluntary check-ins only. No background location.</em>
@@ -112,12 +162,14 @@
   }
 
   function copyFor(item) {
+    const context = viewContext();
     if (window.NVSSharedLive?.hasPendingPlanUpdate?.()) {
       return {
         id: "pending-plan-update",
         title: "Use the organizer's updated plan",
         detail: "This shared meetup changed since your route loaded. Reload before posting another check-in or replanning.",
         action: "Reload updated plan",
+        context,
       };
     }
     if (!item) return null;
@@ -126,7 +178,8 @@
         id: item.id,
         title: item.title || "A missed connection was reported",
         detail: detailWithHint(item.detail || "Refresh the timetable and calculate a new way to the meetup.", item),
-        action: "Refresh & replan",
+        action: contextualAction("Refresh & replan", context),
+        context,
       };
     }
     if (String(item.id || "").startsWith("transfer-missed:")) {
@@ -134,14 +187,16 @@
         id: item.id,
         title: "This transfer no longer works",
         detail: detailWithHint(item.detail || "Realtime timing now puts the next departure before your arrival. Replan from the known timetable state.", item),
-        action: "Find a recovery route",
+        action: contextualAction("Find a recovery route", context),
+        context,
       };
     }
     return {
       id: item.id,
       title: item.title || "The current plan needs attention",
       detail: detailWithHint(item.detail || "A disruption may prevent the planned meetup. Refresh the timetable before continuing.", item),
-      action: "Refresh & replan",
+      action: contextualAction("Refresh & replan", context),
+      context,
     };
   }
 
@@ -157,14 +212,17 @@
 
     desk.hidden = false;
     desk.classList.toggle("offline", !navigator.onLine);
+    const scope = desk.querySelector("#v0111RecoveryScope");
     const title = desk.querySelector("#v0111RecoveryTitle");
     const detail = desk.querySelector("#v0111RecoveryDetail");
     const action = desk.querySelector("#v0111RecoveryAction");
     const privacy = desk.querySelector("#v0111RecoveryPrivacy");
+    if (scope) scope.textContent = model.context?.label || "RECOVERY";
     if (title) title.textContent = model.title;
+    const ownership = model.context?.note ? ` ${model.context.note}` : "";
     if (detail) detail.textContent = !navigator.onLine && !window.NVSSharedLive?.hasPendingPlanUpdate?.()
-      ? `${model.detail} You are offline, so the current route stays visible until connectivity returns.`
-      : model.detail;
+      ? `${model.detail}${ownership} You are offline, so the current route stays visible until connectivity returns.`
+      : `${model.detail}${ownership}`;
     if (action) {
       action.textContent = model.action;
       action.disabled = !navigator.onLine && !window.NVSSharedLive?.hasPendingPlanUpdate?.();
@@ -213,6 +271,8 @@
     refresh: render,
     getActiveAlert: recoveryAlert,
     getTimetableHint: timetableHint,
+    getViewContext: viewContext,
+    isRelevantForView: relevantForContext,
   });
 
   start();
