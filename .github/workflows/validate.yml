@@ -80,6 +80,9 @@ jobs:
           node tests/trip-guidance.test.cjs
           node tests/trip-guidance-transfer-window.test.cjs
           node tests/trip-guidance-observer.test.cjs
+          node tests/stop-awareness.test.cjs
+          node tests/journey-contradictions.test.cjs
+          node tests/journey-chaos-replay.test.cjs
           node tests/intelligence-voluntary-sync.test.cjs
           node tests/worker-plan-equivalence.test.cjs
           node tests/worker-config.test.cjs
