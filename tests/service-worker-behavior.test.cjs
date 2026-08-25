@@ -3,9 +3,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const source = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf8");
+const originalSource = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf8");
 
-function runtime(fetchImpl = async () => new Response("network", { status: 200 })) {
+function runtime(fetchImpl = async () => new Response("network", { status: 200 }), { fastTimeout = false } = {}) {
+  const source = fastTimeout ? originalSource.replace("const NETWORK_TIMEOUT_MS = 5_000;", "const NETWORK_TIMEOUT_MS = 5;") : originalSource;
   const handlers = {};
   const puts = [];
   const deleted = [];
@@ -27,7 +28,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
   };
 
   const context = {
-    URL, Request, Response, Promise, Error, console,
+    URL, Request, Response, Promise, Error, console, AbortController, setTimeout, clearTimeout,
     fetch: (...args) => fetchImpl(...args),
     caches: {
       async open() { return cache; },
@@ -92,14 +93,14 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     assert.ok(rt.addedShells[0].includes("./provider-health-v0111.css"));
     assert.ok(rt.addedShells[0].includes("./shared-expiry-v0111.js"));
     assert.ok(rt.addedShells[0].includes("./shared-expiry-v0111.css"));
-    assert.ok(rt.addedShells[0].includes("./trip-guidance-v0111.js"), "personal journey guidance should be available offline");
-    assert.ok(rt.addedShells[0].includes("./trip-guidance-v0111.css"), "personal journey guidance styles should be available offline");
-    assert.ok(rt.addedShells[0].includes("./intelligence-voluntary-sync-v0111.js"), "voluntary status precedence should be available offline");
+    assert.ok(rt.addedShells[0].includes("./trip-guidance-v0111.js"));
+    assert.ok(rt.addedShells[0].includes("./trip-guidance-v0111.css"));
+    assert.ok(rt.addedShells[0].includes("./intelligence-voluntary-sync-v0111.js"));
   }
   {
     const rt = runtime();
     await rt.dispatch("activate");
-    assert.deepEqual(rt.deleted, ["old-cache"], "activate should delete stale cache versions only");
+    assert.deepEqual(rt.deleted, ["old-cache"]);
     assert.equal(rt.claimed, 1);
   }
   {
@@ -128,6 +129,18 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     assert.equal(await response.text(), "cached-js");
   }
   {
+    let aborted = false;
+    const rt = runtime((request, options = {}) => new Promise((resolve, reject) => {
+      options.signal?.addEventListener("abort", () => { aborted = true; reject(new Error("aborted")); });
+    }), { fastTimeout: true });
+    rt.cacheEntries.set("./index.html", new Response("cached-page", { status: 200 }));
+    const request = new Request("https://app.example/p/slow", { method: "GET" });
+    Object.defineProperty(request, "mode", { value: "navigate" });
+    const response = await (await rt.dispatch("fetch", { request }));
+    assert.equal(await response.text(), "cached-page", "stalled navigation should fall back to cached app shell after the timeout");
+    assert.equal(aborted, true, "stalled network-first fetch should be aborted instead of lingering indefinitely");
+  }
+  {
     const rt = runtime();
     rt.setClients([{ url: "https://app.example/p/abc" }, { url: "https://other.example/" }]);
     let closed = 0;
@@ -142,5 +155,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     await rt.dispatch("notificationclick", { notification: { close() {} } });
     assert.deepEqual(rt.opened, ["./"]);
   }
-  console.log("service-worker-behavior: privacy, offline, update, notification and r12 app-shell behavior passed");
+  assert.match(originalSource, /NETWORK_TIMEOUT_MS = 5_000/, "network-first routes should have a bounded slow-network wait");
+  assert.match(originalSource, /AbortController/, "slow network-first requests should be cancellable");
+  console.log("service-worker-behavior: privacy, offline, slow-network fallback, update, notification and r12 app-shell behavior passed");
 })().catch((error) => { console.error(error); process.exit(1); });
