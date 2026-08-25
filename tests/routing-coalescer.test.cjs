@@ -45,6 +45,7 @@ function deferred() {
   const coalescer = context.window.NVSRoutingCoalescer0111;
   assert.equal(transit.v0111RequestCoalescing, true, "coalescer should mark the wrapped transit runtime");
   assert.equal(typeof coalescer?.pendingCount, "function");
+  assert.equal(typeof coalescer?.beginPlannerConsumerBatch, "function");
   assert.equal(typeof coalescer?.isConsumerAbort, "function");
 
   const target = new Date("2026-08-25T08:00:00.000Z");
@@ -98,28 +99,62 @@ function deferred() {
   assert.equal(activeRoutes[0].id, "still-needed", "another consumer must still receive the shared provider result");
   assert.equal(coalescer.pendingCount(), 0, "shared provider work should clear only after it actually settles");
 
-  const alreadyAborted = new AbortController();
-  alreadyAborted.abort();
-  const callsBeforePreAbort = calls.length;
-  const preAborted = await transit.fetchRoutes("P", "Q", target, { signal: alreadyAborted.signal }).then(
-    () => null,
-    (error) => error,
-  );
-  assert.ok(coalescer.isConsumerAbort(preAborted), "an already-aborted consumer should fail immediately");
+  const plannerA = deferred();
+  const plannerB = deferred();
+  implementation = (origin) => origin === "Planner A" ? plannerA.promise : plannerB.promise;
+  const callsBeforePlanner = calls.length;
+
+  coalescer.beginPlannerConsumerBatch();
+  const stalePlannerA = transit.fetchRoutes("Planner A", "Meet", target);
+  const stalePlannerB = transit.fetchRoutes("Planner B", "Meet", target);
+  coalescer.beginPlannerConsumerBatch();
+  const freshPlannerA = transit.fetchRoutes("Planner A", "Meet", target);
+  const freshPlannerB = transit.fetchRoutes("Planner B", "Meet", target);
+
+  const staleErrors = await Promise.all([
+    stalePlannerA.then(() => null, (error) => error),
+    stalePlannerB.then(() => null, (error) => error),
+  ]);
+  assert.ok(staleErrors.every((error) => coalescer.isConsumerAbort(error)), "a newer ordinary planner batch should stop both stale route consumers immediately");
   await Promise.resolve();
-  assert.equal(calls.length, callsBeforePreAbort + 1, "pre-aborted consumers may still seed shared provider work for concurrent callers");
+  assert.equal(calls.length, callsBeforePlanner + 2, "fresh planner consumers should reuse the stale batch's still-useful provider work");
+  assert.equal(coalescer.pendingCount(), 2, "superseding UI work must leave shared provider requests alive");
+
+  plannerA.resolve([{ id: "planner-a", departure: target, arrival: target, segments: [] }]);
+  plannerB.resolve([{ id: "planner-b", departure: target, arrival: target, segments: [] }]);
+  const [freshA, freshB] = await Promise.all([freshPlannerA, freshPlannerB]);
+  assert.equal(freshA[0].id, "planner-a");
+  assert.equal(freshB[0].id, "planner-b");
+  assert.equal(coalescer.pendingCount(), 0);
+
+  // An unused planner batch (for example validation/offline early-return) must
+  // disarm on the next microtask instead of leaking its signal to other planners.
+  coalescer.beginPlannerConsumerBatch();
+  await Promise.resolve();
+  const unrelated = deferred();
+  implementation = () => unrelated.promise;
+  const unrelatedRequest = transit.fetchRoutes("Group", "Meet", target);
+  coalescer.beginPlannerConsumerBatch();
+  const unrelatedOutcome = unrelatedRequest.then(() => "resolved", (error) => error);
+  unrelated.resolve([{ id: "group", departure: target, arrival: target, segments: [] }]);
+  assert.equal(await unrelatedOutcome, "resolved", "unused ordinary-planner cancellation must not leak into unrelated routing");
 
   let failures = 0;
   implementation = async () => {
     failures += 1;
     throw new Error("provider down");
   };
+  await Promise.resolve();
   await assert.rejects(() => transit.fetchRoutes("X", "Y", target), /provider down/);
   assert.equal(coalescer.pendingCount(), 0, "failed requests must not poison the pending registry");
   await assert.rejects(() => transit.fetchRoutes("X", "Y", target), /provider down/);
   assert.equal(failures, 2, "a later retry must be allowed after a failed request");
 
-  console.log("routing-coalescer: duplicate suppression, isolation, consumer cancellation and retry behavior passed");
+  assert.match(source, /plannerForm/, "ordinary planner submit should arm consumer cancellation");
+  assert.match(source, /mobileSearchButton/, "mobile planner searches should arm consumer cancellation");
+  assert.match(source, /data-time-offset/, "quick-time planner searches should arm consumer cancellation");
+
+  console.log("routing-coalescer: duplicate suppression, isolation, planner cancellation and retry behavior passed");
 })().catch((error) => {
   console.error(error);
   process.exit(1);
