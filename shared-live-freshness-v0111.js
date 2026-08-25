@@ -52,6 +52,7 @@
   }
 
   function refresh(now = Date.now()) {
+    const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
     const list = document.getElementById("v010StatusList");
     const state = window.NVSSharedLive?.getState?.();
     const members = state?.members && typeof state.members === "object" ? state.members : null;
@@ -61,7 +62,7 @@
     let staleCount = 0;
     rows.forEach((row, index) => {
       const entry = members[String(index)];
-      if (entry && markStaleRow(row, index, entry, now)) staleCount += 1;
+      if (entry && markStaleRow(row, index, entry, timestamp)) staleCount += 1;
     });
     return staleCount;
   }
@@ -80,8 +81,8 @@
     schedule();
   }
 
-  window.addEventListener("nvs-shared-live-change", refresh);
-  window.addEventListener("nvs-group-recommendations-rendered", refresh);
+  window.addEventListener("nvs-shared-live-change", () => refresh());
+  window.addEventListener("nvs-group-recommendations-rendered", () => refresh());
   window.addEventListener("pageshow", start);
   document.addEventListener("visibilitychange", () => {
     clearTimeout(timer);
