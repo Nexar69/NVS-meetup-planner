@@ -66,6 +66,7 @@ jobs:
         run: |
           node tests/intelligence-core.test.cjs
           node tests/release-smoke.test.cjs
+          node tests/recovery-ownership.test.cjs
           node tests/accessibility-smoke.test.cjs
           node tests/shared-live-scheduler.test.cjs
           node tests/service-worker-behavior.test.cjs
