@@ -1,6 +1,6 @@
 (() => {
   const EXPECTED_RELEASE = "v0.11.1";
-  const REQUIRED_CAPABILITIES = ["sharedCheckins", "organizerReplan", "capabilityRevocation", "realtimeDisruptions"];
+  const REQUIRED_CAPABILITIES = ["sharedCheckins", "organizerReplan", "capabilityRevocation", "realtimeDisruptions", "authoritativeExpiry"];
   const CHECK_INTERVAL = 5 * 60 * 1000;
   let state = { status: "unknown", checkedAt: 0, detail: "Not checked yet", health: null };
   let timer = null;
@@ -27,7 +27,7 @@
       if (missing.length) parts.push(`missing: ${missing.join(", ")}`);
       return { status: "warn", detail: `Backend capability mismatch (${parts.join("; ")}).` };
     }
-    return { status: "good", detail: "Backend and app capabilities match." };
+    return { status: "good", detail: "Backend and app capabilities match, including shared-session lifecycle support." };
   }
 
   function formatAge(timestamp) {
