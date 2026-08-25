@@ -35,7 +35,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
         const normalized = typeof key === "string" ? key : key.url;
         return cacheEntries.get(normalized) || null;
       },
-      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r11"]; },
+      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r12"]; },
       async delete(key) { deleted.push(key); return true; },
     },
     self: {
@@ -94,6 +94,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     assert.ok(rt.addedShells[0].includes("./shared-expiry-v0111.css"));
     assert.ok(rt.addedShells[0].includes("./trip-guidance-v0111.js"), "personal journey guidance should be available offline");
     assert.ok(rt.addedShells[0].includes("./trip-guidance-v0111.css"), "personal journey guidance styles should be available offline");
+    assert.ok(rt.addedShells[0].includes("./intelligence-voluntary-sync-v0111.js"), "voluntary status precedence should be available offline");
   }
   {
     const rt = runtime();
@@ -141,5 +142,5 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     await rt.dispatch("notificationclick", { notification: { close() {} } });
     assert.deepEqual(rt.opened, ["./"]);
   }
-  console.log("service-worker-behavior: privacy, offline, update, notification and r11 app-shell behavior passed");
+  console.log("service-worker-behavior: privacy, offline, update, notification and r12 app-shell behavior passed");
 })().catch((error) => { console.error(error); process.exit(1); });
