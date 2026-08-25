@@ -1,5 +1,5 @@
 name = "meet-schwerin"
-main = "src/entry.js"
+main = "src/lifecycle-entry.js"
 compatibility_date = "2026-08-23"
 workers_dev = true
 
