@@ -125,6 +125,23 @@
     }
   }
 
+  function loadDiagnostics0111() {
+    if (!document.querySelector('link[data-diagnostics-v0111="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./diagnostics-v0111.css";
+      link.dataset.diagnosticsV0111 = "true";
+      document.head.appendChild(link);
+    }
+    if (!document.querySelector('script[data-diagnostics-v0111="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./diagnostics-v0111.js";
+      script.async = false;
+      script.dataset.diagnosticsV0111 = "true";
+      document.body.appendChild(script);
+    }
+  }
+
   function loadIntelligenceVoluntarySync0111() {
     if (document.querySelector('script[data-intelligence-voluntary-sync-v0111="true"]')) return;
     const script = document.createElement("script");
@@ -138,7 +155,7 @@
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = VERSION;
     const liveNote = document.querySelector(".live-note div");
-    if (liveNote) liveNote.innerHTML = `<strong>v0.11.1 hardens Meetup Intelligence.</strong> Realtime alerts distinguish early from late vehicles and impossible transfers, Trip Mode adds voluntary quick check-ins and optional screen wake lock, personal journeys add timetable-only stop awareness, shared links use a non-sliding backend expiry deadline, mobile PWA notifications are safer, and organizers can reset private personal check-in links without erasing visible check-in history.`;
+    if (liveNote) liveNote.innerHTML = `<strong>v0.11.1 hardens Meetup Intelligence.</strong> Realtime alerts distinguish early from late vehicles and impossible transfers, Trip Mode adds voluntary quick check-ins and optional screen wake lock, personal journeys add timetable-only stop awareness, shared links use a non-sliding backend expiry deadline, mobile PWA notifications are safer, and privacy-safe diagnostics make real-device bug reports easier.`;
     const hero = document.querySelector(".hero .subtitle");
     if (hero) hero.textContent = "Plan group journeys, share personal routes, coordinate voluntary live check-ins, and use one meetup-aware command center for what to do next when the timetable changes.";
     document.title = "Meet Schwerin · Meetup Intelligence";
@@ -153,6 +170,7 @@
   loadSharedExpiry0111();
   loadTripGuidance0111();
   loadStopAwareness0111();
+  loadDiagnostics0111();
   loadIntelligenceVoluntarySync0111();
   applyReleaseCopy();
   setTimeout(applyReleaseCopy, 400);
@@ -166,6 +184,7 @@
     loadSharedExpiry0111();
     loadTripGuidance0111();
     loadStopAwareness0111();
+    loadDiagnostics0111();
     loadIntelligenceVoluntarySync0111();
     applyReleaseCopy();
     setTimeout(applyReleaseCopy, 180);
