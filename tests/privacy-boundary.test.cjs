@@ -15,11 +15,20 @@ if (fs.existsSync(workerDir)) {
 
 assert.ok(runtimeFiles.length >= 20, "privacy guard should scan the full app/Worker runtime, not a tiny hand-picked subset");
 
-const forbiddenLocationApis = /\b(?:navigator\s*\.\s*geolocation|geolocation\s*\.\s*(?:getCurrentPosition|watchPosition)|getCurrentPosition\s*\(|watchPosition\s*\()/i;
+const locationApiPattern = /\b(?:navigator\s*\.\s*geolocation|geolocation\s*\.\s*(?:getCurrentPosition|watchPosition)|getCurrentPosition\s*\(|watchPosition\s*\()/i;
+const allowedExplicitLocationFile = "places.js";
 for (const file of runtimeFiles) {
+  const relative = path.relative(root, file).replaceAll("\\", "/");
   const source = fs.readFileSync(file, "utf8");
-  assert.doesNotMatch(source, forbiddenLocationApis, `${path.relative(root, file)} must not add hidden/background location APIs`);
+  if (relative === allowedExplicitLocationFile) continue;
+  assert.doesNotMatch(source, locationApiPattern, `${relative} must not add location APIs; the only allowed location access is the explicit planner My location action`);
 }
+
+const places = fs.readFileSync(path.join(root, allowedExplicitLocationFile), "utf8");
+assert.match(places, /gpsButton\.addEventListener\("click"[\s\S]*useCurrentLocation\(gpsButton\)/, "location access must remain behind an explicit My location button click");
+assert.match(places, /function useCurrentLocation\(button\)[\s\S]*navigator\.geolocation\.getCurrentPosition\(/, "planner may use one-shot geolocation only inside the explicit action");
+assert.doesNotMatch(places, /watchPosition\s*\(/, "planner must never introduce continuous/background GPS watching");
+assert.match(places, /source:\s*"gps"[\s\S]*persist:\s*false/, "one-shot current position must not be persisted as a saved custom place");
 
 const sw = fs.readFileSync(path.join(root, "service-worker.js"), "utf8");
 assert.match(sw, /pathname\.startsWith\("\/api\/"\)\) return;/, "service worker must continue bypassing shared-live/API responses");
@@ -36,4 +45,4 @@ assert.match(diagnostics, /No names, coordinates, route geometry, capability key
 const whatIf = fs.readFileSync(path.join(root, "what-if-v0111.js"), "utf8");
 assert.doesNotMatch(whatIf, /fetch\(|XMLHttpRequest|sendBeacon|localStorage|sessionStorage/, "What if? must remain ephemeral and local-only");
 
-console.log(`privacy-boundary: scanned ${runtimeFiles.length} app/Worker scripts; no location APIs, API caching, persistent capability storage or What-if network/storage writes detected`);
+console.log(`privacy-boundary: scanned ${runtimeFiles.length} app/Worker scripts; only explicit one-shot My location access is allowed, with no background GPS, API caching, persistent capability storage or What-if network/storage writes`);
