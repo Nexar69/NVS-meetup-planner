@@ -56,13 +56,30 @@
     }
   }
 
+  function loadSharedExpiry0111() {
+    if (!document.querySelector('link[data-shared-expiry-v0111="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./shared-expiry-v0111.css";
+      link.dataset.sharedExpiryV0111 = "true";
+      document.head.appendChild(link);
+    }
+    if (!document.querySelector('script[data-shared-expiry-v0111="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./shared-expiry-v0111.js";
+      script.async = false;
+      script.dataset.sharedExpiryV0111 = "true";
+      document.body.appendChild(script);
+    }
+  }
+
   function applyReleaseCopy() {
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = VERSION;
 
     const liveNote = document.querySelector(".live-note div");
     if (liveNote) {
-      liveNote.innerHTML = `<strong>v0.11.1 hardens Meetup Intelligence.</strong> Realtime alerts distinguish early from late vehicles and impossible transfers, Trip Mode adds voluntary quick check-ins and optional screen wake lock, mobile PWA notifications are safer, and organizers can reset private personal check-in links without erasing visible check-in history.`;
+      liveNote.innerHTML = `<strong>v0.11.1 hardens Meetup Intelligence.</strong> Realtime alerts distinguish early from late vehicles and impossible transfers, Trip Mode adds voluntary quick check-ins and optional screen wake lock, shared links use a non-sliding backend expiry deadline, mobile PWA notifications are safer, and organizers can reset private personal check-in links without erasing visible check-in history.`;
     }
 
     const hero = document.querySelector(".hero .subtitle");
@@ -77,6 +94,7 @@
   loadRoutingCoalescer0111();
   loadAccessibility0111();
   loadProviderHealth0111();
+  loadSharedExpiry0111();
   applyReleaseCopy();
   setTimeout(applyReleaseCopy, 400);
   window.addEventListener("load", () => {
@@ -84,6 +102,7 @@
     loadRoutingCoalescer0111();
     loadAccessibility0111();
     loadProviderHealth0111();
+    loadSharedExpiry0111();
     applyReleaseCopy();
     setTimeout(applyReleaseCopy, 180);
   });
