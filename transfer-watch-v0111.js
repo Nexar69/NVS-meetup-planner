@@ -2,6 +2,7 @@
   const UPDATE_MS = 20_000;
   const MAX_WATCH_MIN = 6;
   const MAX_LEAD_MIN = 30;
+  const BLOCKING_VOLUNTARY = new Set(["missed", "arrived"]);
   let timer = null;
   let lastMarkup = "";
 
@@ -104,15 +105,24 @@
     return Array.isArray(list) && focus >= 0 ? list[focus] || null : null;
   }
 
-  function freshMissed(now = Date.now()) {
+  function focusedFreshEntry(now = Date.now()) {
     const focus = focusIndex();
-    if (focus < 0) return false;
+    if (focus < 0) return null;
     const entry = window.NVSSharedLive?.getState?.()?.members?.[String(focus)] || null;
-    if (entry?.status !== "missed") return false;
+    if (!entry) return null;
     const freshness = window.NVSIntelligenceCore?.checkinFreshness?.(entry, new Date(now));
-    if (freshness) return Boolean(freshness.fresh);
+    if (freshness) return freshness.fresh ? entry : null;
     const at = Number(entry.at);
-    return Number.isFinite(at) && now >= at && now - at <= 15 * 60_000;
+    return Number.isFinite(at) && now >= at && now - at <= 15 * 60_000 ? entry : null;
+  }
+
+  function blockingVoluntaryState(now = Date.now()) {
+    const entry = focusedFreshEntry(now);
+    return entry && BLOCKING_VOLUNTARY.has(entry.status) ? entry.status : null;
+  }
+
+  function freshMissed(now = Date.now()) {
+    return blockingVoluntaryState(now) === "missed";
   }
 
   function ensureCard() {
@@ -142,7 +152,7 @@
 
   function render(now = Date.now()) {
     const assignment = focusedAssignment();
-    if (!assignment?.route || freshMissed(now)) {
+    if (!assignment?.route || blockingVoluntaryState(now)) {
       removeCard();
       return null;
     }
@@ -182,6 +192,6 @@
     else refresh();
   });
 
-  window.NVSTransferWatch0111 = Object.freeze({ transferGapMinutes, transferCandidates, transferModel, freshMissed, render, refresh });
+  window.NVSTransferWatch0111 = Object.freeze({ transferGapMinutes, transferCandidates, transferModel, focusedFreshEntry, blockingVoluntaryState, freshMissed, render, refresh });
   refresh();
 })();
