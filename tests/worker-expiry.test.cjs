@@ -118,6 +118,15 @@ function samplePlan() {
   const legacyData = await legacy.json();
   assert.equal("expiresAt" in legacyData, false, "legacy sessions should stay readable without pretending to know an exact expiry");
 
+  // The logical deadline must be enforced even if KV retains a record briefly near its minimum TTL boundary.
+  await env.PLANS.put(`meta:${id}`, JSON.stringify({ revision: 2, updatedAt: Date.now(), expiresAt: Date.now() - 1 }));
+  const expiredPage = await worker.fetch(new Request(`${workerOrigin}/p/${id}`), env, {});
+  assert.equal(expiredPage.status, 404, "expired shared pages must stop resolving at the exact logical deadline");
+  assert.match(await expiredPage.text(), /expired/i);
+  for (const prefix of ["p:", "caps:", "owner:", "meta:", "live:"]) {
+    assert.equal(await env.PLANS.get(`${prefix}${id}`), null, `expired session key ${prefix}${id} should be cleaned up`);
+  }
+
   console.log("worker-expiry: shared sessions keep one authoritative non-sliding deadline");
 })().catch((error) => {
   console.error(error);
