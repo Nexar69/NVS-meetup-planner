@@ -16,12 +16,17 @@ const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
   "accessibility-v0111.js",
   "accessibility-v0111.css",
   "routing-coalesce-v0111.js",
+  "provider-health-v0111.js",
+  "provider-health-v0111.css",
+  "shared-expiry-v0111.js",
+  "shared-expiry-v0111.css",
   "share-v010.js",
   "shared-live-v010.js",
   "release-v011.js",
   "service-worker.js",
   "v05.js",
   "worker/src/entry.js",
+  "worker/src/lifecycle-entry.js",
   "worker/src/vmv-rest.js",
 ].forEach((file) => assert.equal(fs.existsSync(path.join(root, file)), true, `${file} should exist`));
 
@@ -39,14 +44,18 @@ const release = read("release-v011.js");
 assert.match(release, /v0\.11\.1 · Meetup Intelligence/, "release copy must identify v0.11.1");
 assert.match(release, /dataset\.nvsRelease = "011"/, "v0.11 must own the release marker");
 assert.match(release, /reset private personal check-in links/i, "release copy should mention organizer revocation control");
+assert.match(release, /non-sliding backend expiry deadline/i, "release copy should describe authoritative shared-session expiry");
 assert.match(release, /loadAccessibility0111/, "v0.11.1 release owner should load accessibility hardening");
 assert.match(release, /accessibility-v0111\.js/, "accessibility runtime must be wired by the release owner");
 assert.match(release, /accessibility-v0111\.css/, "accessibility styles must be wired by the release owner");
 assert.match(release, /loadRoutingCoalescer0111/, "v0.11.1 release owner should load routing request coalescing");
 assert.match(release, /routing-coalesce-v0111\.js/, "routing coalescer must be wired by the release owner");
+assert.match(release, /loadSharedExpiry0111/, "v0.11.1 release owner should load authoritative shared-session expiry UX");
+assert.match(release, /shared-expiry-v0111\.js/, "shared expiry runtime must be wired by the release owner");
+assert.match(release, /shared-expiry-v0111\.css/, "shared expiry styles must be wired by the release owner");
 
 const serviceWorker = read("service-worker.js");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r7/, "service worker cache must be the latest v0.11.1 revision");
+assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r8/, "service worker cache must be the latest v0.11.1 revision");
 for (const asset of [
   "intelligence-core.js",
   "intelligence-v011.js",
@@ -58,6 +67,10 @@ for (const asset of [
   "accessibility-v0111.js",
   "accessibility-v0111.css",
   "routing-coalesce-v0111.js",
+  "provider-health-v0111.js",
+  "provider-health-v0111.css",
+  "shared-expiry-v0111.js",
+  "shared-expiry-v0111.css",
   "share-v010.js",
   "shared-live-v010.js",
   "release-v011.js",
@@ -101,6 +114,15 @@ assert.match(routingCoalescer, /finally\(\(\) => pending\.delete\(key\)\)/, "set
 assert.match(routingCoalescer, /return cloneValue\(routes\)/, "coalesced route consumers should not share mutable route objects");
 assert.doesNotMatch(routingCoalescer, /geolocation|watchPosition|getCurrentPosition/, "routing request coalescing must not introduce location tracking");
 
+const expiry = read("shared-expiry-v0111.js");
+assert.match(expiry, /getState/, "shared expiry UX should use authoritative shared-live state");
+assert.match(expiry, /expiresAt/, "shared expiry UX must require a backend expiresAt timestamp");
+assert.match(expiry, /Automatic shared-session deadline/, "shared viewers should be told the expiry is automatic");
+assert.match(expiry, /document\.hidden/, "shared expiry countdown should suspend periodic work while hidden");
+assert.match(expiry, /nvs-shared-session-expired/, "expiry runtime should emit a deterministic session-expired event");
+assert.doesNotMatch(expiry, /259200|72\s*hours|3\s*days/i, "viewer expiry UX must not guess the configured TTL");
+assert.doesNotMatch(expiry, /geolocation|watchPosition|getCurrentPosition/, "expiry UX must not introduce location tracking");
+
 const secureShare = read("share-v010.js");
 assert.match(secureShare, /\/capabilities/, "organizer sharing should call the capability rotation endpoint");
 assert.match(secureShare, /Reset all private links/, "group sharing should expose all-member private-link revocation");
@@ -124,11 +146,17 @@ assert.doesNotMatch(sharedLive, /setInterval\(poll/, "shared-live must not keep 
 const workerEntry = read("worker/src/entry.js");
 assert.match(workerEntry, /rotateCapabilitiesApi/, "Worker must expose organizer-controlled capability rotation");
 assert.match(workerEntry, /capability_rotation_not_authorized/, "capability rotation must require the organizer key");
-assert.match(workerEntry, /capabilityRevocation:\s*true/, "health diagnostics should advertise revocation support");
+assert.match(workerEntry, /capabilityRevocation:\s*true/, "core health diagnostics should advertise revocation support");
+
+const lifecycleEntry = read("worker/src/lifecycle-entry.js");
+assert.match(lifecycleEntry, /authoritativeExpiry:\s*true/, "lifecycle health diagnostics should advertise authoritative expiry");
+assert.match(lifecycleEntry, /normalizeSessionExpiry/, "lifecycle gateway should normalize session records onto one deadline");
+assert.match(lifecycleEntry, /expiresAt/, "lifecycle gateway should expose exact expiry metadata");
+assert.match(lifecycleEntry, /deleteSession/, "expired sessions should be removed deterministically");
 
 const vmv = read("worker/src/vmv-rest.js");
 assert.match(vmv, /plannedPlatformFrom/, "VMV adapter must preserve planned platform");
 assert.match(vmv, /cancelled/, "VMV adapter must preserve cancellation state");
 assert.match(vmv, /remarks/, "VMV adapter must preserve disruption remarks");
 
-console.log("release-smoke: v0.11.1 wiring looks consistent");
+console.log("release-smoke: v0.11.1 wiring and authoritative expiry look consistent");
