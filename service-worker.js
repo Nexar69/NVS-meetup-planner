@@ -1,4 +1,5 @@
 const CACHE_NAME = "meet-schwerin-v0.11.1-r12";
+const NETWORK_TIMEOUT_MS = 5_000;
 
 const APP_SHELL = [
   "./",
@@ -106,9 +107,18 @@ async function updateCache(request, response, navigation = false) {
   await cache.put(key, response.clone());
   return response;
 }
+async function timedFetch(request) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS);
+  try {
+    return await fetch(request, { cache: "no-cache", signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 async function networkFirst(request, navigation = false) {
   try {
-    const response = await fetch(request, { cache: "no-cache" });
+    const response = await timedFetch(request);
     return await updateCache(request, response, navigation);
   } catch {
     const cached = await caches.match(navigation ? "./index.html" : request);
