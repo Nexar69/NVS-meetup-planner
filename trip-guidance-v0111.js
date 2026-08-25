@@ -2,6 +2,7 @@
   const UPDATE_MS = 15_000;
   let timer = null;
   let lastAnnouncement = "";
+  let mutationRefreshQueued = false;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -40,7 +41,7 @@
   function minutesUntil(value, now = Date.now()) {
     const date = asDate(value);
     if (!date) return null;
-    return Math.max(0, Math.round((date.getTime() - now) / 60_000));
+    return Math.max(0, Math.ceil((date.getTime() - now) / 60_000));
   }
 
   function vehicleLabel(segment) {
@@ -56,13 +57,28 @@
   }
 
   function continuationDetail(next, destination) {
-    if (!next) return `Keep an eye on your surroundings so you're ready to get off at ${destination}.`;
+    if (!next) return `Stay aware of your stop so you're ready to get off at ${destination}.`;
     if (isWalk(next)) {
       return `Get ready to leave at ${destination}; your planned walking leg starts there.`;
     }
     const nextVehicle = vehicleLabel(next);
     const nextTime = formatTime(next.departure);
     return `Get ready to leave at ${destination}. Next: ${nextVehicle}${nextTime ? ` around ${nextTime}` : ""}.`;
+  }
+
+  function approachCopy(destination, vehicle, next, minutes) {
+    if (minutes <= 1) {
+      return {
+        eyebrow: "Your stop is coming up",
+        title: `${destination} in about 1 min`,
+        detail: `${continuationDetail(next, destination)} You're currently on ${vehicle}.`,
+      };
+    }
+    return {
+      eyebrow: minutes <= 2 ? "Coming up soon" : "Next important stop",
+      title: `${destination} in about ${minutes} min`,
+      detail: `${continuationDetail(next, destination)} You're currently on ${vehicle}.`,
+    };
   }
 
   function guidanceForRoute(route, now = Date.now()) {
@@ -93,9 +109,7 @@
       if (minutes != null && minutes <= 8) {
         return {
           icon: "◉",
-          eyebrow: minutes <= 2 ? "Coming up soon" : "Next important stop",
-          title: `${destination} in about ${Math.max(1, minutes)} min`,
-          detail: `${continuationDetail(next, destination)} You're currently on ${vehicle}.`,
+          ...approachCopy(destination, vehicle, next, Math.max(1, minutes)),
         };
       }
       return {
@@ -118,7 +132,7 @@
           icon: "🚶",
           eyebrow: "Coming up",
           title: `Walk toward ${String(upcoming.to || "the next stop")}`,
-          detail: minutes != null && minutes <= 2 ? "Your walking leg starts now." : `Planned to start in about ${Math.max(1, minutes || 1)} min.`,
+          detail: minutes != null && minutes <= 2 ? "Your planned walking leg starts now." : `Planned to start in about ${Math.max(1, minutes || 1)} min.`,
         };
       }
       const vehicle = vehicleLabel(upcoming);
@@ -146,15 +160,30 @@
     if (personalPlan.nextElementSibling !== sharedPanel) personalPlan.insertAdjacentElement("afterend", sharedPanel);
   }
 
+  function removeGuidance() {
+    const card = document.getElementById("v0111TripGuidance");
+    if (card) card.remove();
+    lastAnnouncement = "";
+  }
+
   function renderGuidance() {
-    if (!isPersonalSharedView()) return;
+    if (!isPersonalSharedView()) {
+      removeGuidance();
+      return;
+    }
     positionSharedLivePanel();
     const personalPlan = document.getElementById("personalSharedPlan");
     const current = assignment();
-    if (!personalPlan || !current?.route) return;
+    if (!personalPlan || !current?.route) {
+      removeGuidance();
+      return;
+    }
 
     const guidance = guidanceForRoute(current.route);
-    if (!guidance) return;
+    if (!guidance) {
+      removeGuidance();
+      return;
+    }
     let card = document.getElementById("v0111TripGuidance");
     if (!card) {
       card = document.createElement("aside");
@@ -195,6 +224,17 @@
     schedule();
   }
 
+  function queueMutationRefresh() {
+    if (mutationRefreshQueued) return;
+    mutationRefreshQueued = true;
+    setTimeout(() => {
+      mutationRefreshQueued = false;
+      if (document.getElementById("personalSharedPlan") || document.getElementById("sharedLiveV010") || document.getElementById("v0111TripGuidance")) {
+        renderGuidance();
+      }
+    }, 0);
+  }
+
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) clearTimeout(timer);
     else refresh();
@@ -203,9 +243,7 @@
   window.addEventListener("nvs-group-recommendations-rendered", refresh);
   window.addEventListener("nvs-shared-live-change", refresh);
   window.addEventListener("nvs-live-plan-synced", refresh);
-  new MutationObserver(() => {
-    if (document.getElementById("personalSharedPlan") || document.getElementById("sharedLiveV010")) renderGuidance();
-  }).observe(document.body, { childList: true, subtree: true });
+  new MutationObserver(queueMutationRefresh).observe(document.body, { childList: true, subtree: true });
 
   window.NVSTripGuidance0111 = Object.freeze({ guidanceForRoute, refresh });
   refresh();
