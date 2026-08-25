@@ -113,7 +113,7 @@ assert.equal(intelligenceRefreshes, 1, "journey intelligence should refresh afte
 assert.equal(resumedEvents, 1, "other runtime layers should receive one resume signal");
 
 assert.match(release, /shared-reload-v0111\.js/, "release loader must include the reload guard");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r13/, "PWA shell should be refreshed for the Safari reliability fix");
+assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r12/, "Safari reload guard should ride the current validated PWA shell revision");
 assert.match(serviceWorker, /shared-reload-v0111\.js/, "reload guard must be available to installed\/offline copies");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "reload hardening must not introduce location access");
 
