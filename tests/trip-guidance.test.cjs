@@ -116,9 +116,11 @@ assert.match(source, /sharedLiveV010/);
 assert.match(source, /insertAdjacentElement\("afterend", sharedPanel\)/, "voluntary shared-live controls should be moved directly below the personal plan");
 assert.match(source, /aria-live/);
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "guidance must remain timetable-only and never introduce location tracking");
+assert.match(css, /body\.shared-viewer \.v051-viewing-chip\{display:none!important\}/, "shared viewers should not show the planner-only Viewing badge over the detailed journey header");
+assert.match(css, /body\.shared-viewer \.result\.map-selected \.result-header\{padding-top:0\}/, "shared viewer headers should not reserve empty space for the hidden Viewing badge");
 assert.match(css, /prefers-reduced-motion/);
 assert.match(css, /forced-colors/);
 assert.match(release, /trip-guidance-v0111\.js/);
 assert.match(release, /trip-guidance-v0111\.css/);
 
-console.log("trip-guidance: executable approaching-stop, transfer, placement, accessibility and no-GPS behavior passed");
+console.log("trip-guidance: executable approaching-stop, transfer, shared-view polish, placement, accessibility and no-GPS behavior passed");
