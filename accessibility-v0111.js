@@ -10,8 +10,8 @@
     v011SettingsDialog: {
       opener: "v011AlertSettingsButton",
       close: ".v011-settings-close",
-      label: null,
-      description: null,
+      label: "v011SettingsTitle",
+      description: "v011SettingsDescription",
     },
   };
 
