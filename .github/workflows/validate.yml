@@ -65,6 +65,7 @@ jobs:
       - name: Run meetup intelligence tests
         run: |
           node tests/intelligence-core.test.cjs
+          node tests/privacy-boundary.test.cjs
           node tests/release-smoke.test.cjs
           node tests/recovery-ownership.test.cjs
           node tests/accessibility-smoke.test.cjs
