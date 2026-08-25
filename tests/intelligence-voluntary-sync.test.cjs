@@ -80,6 +80,7 @@ assert.ok(api, "voluntary intelligence sync should expose a small testable API")
 assert.equal(typeof api.modelForEntry, "function");
 assert.equal(typeof api.sync, "function");
 assert.equal(typeof api.freshEntry, "function");
+assert.equal(typeof api.observeIntelligenceSurfaces, "function");
 
 assert.equal(api.freshEntry(now)?.status, "missed", "fresh voluntary status should be accepted");
 assert.equal(api.sync(now), true, "fresh override should update command and Trip Mode surfaces");
@@ -125,5 +126,10 @@ assert.match(serviceWorker, /intelligence-voluntary-sync-v0111\.js/, "new runtim
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "status precedence must not introduce location tracking");
 assert.match(source, /15 \* 60_000/, "fallback freshness must preserve the 15-minute policy");
 assert.match(source, /document\.hidden/, "periodic reconciliation should pause while hidden");
+assert.match(source, /const SYNC_MS = 30_000/, "periodic fallback should be relaxed now that DOM reconciliation is targeted");
+assert.match(source, /observeIntelligenceSurfaces/, "DOM reconciliation should be scoped to intelligence surfaces");
+assert.match(source, /observer\.observe\(node, \{ childList: true, subtree: true, characterData: true \}\)/, "only targeted intelligence nodes should be observed");
+assert.doesNotMatch(source, /MutationObserver\(\(\) => schedule\(0\)\)\.observe\(root/, "the entire document body must not be observed for intelligence reconciliation");
+assert.match(source, /nvs-shared-view-resumed/, "Safari shared-view resume should trigger targeted reconciliation");
 
-console.log("intelligence-voluntary-sync: command center and Trip Mode respect fresh voluntary status without GPS");
+console.log("intelligence-voluntary-sync: voluntary status wins without GPS or whole-page DOM churn");
