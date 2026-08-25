@@ -46,7 +46,20 @@
     if (minutes <= 1) return { eyebrow: "Your stop is coming up", title: `${destination} in about 1 min`, detail: `${continuationDetail(current, next, destination)} You're currently on ${vehicle}.` };
     return { eyebrow: minutes <= 2 ? "Coming up soon" : "Next important stop", title: `${destination} in about ${minutes} min`, detail: `${continuationDetail(current, next, destination)} You're currently on ${vehicle}.` };
   }
-  function guidanceFromVoluntary(entry) {
+  function activeSegmentIndex(segments, now) {
+    return segments.findIndex((segment) => {
+      const departure = asDate(segment.departure)?.getTime();
+      const arrival = asDate(segment.arrival)?.getTime();
+      return Number.isFinite(departure) && Number.isFinite(arrival) && departure <= now && now < arrival;
+    });
+  }
+  function nextSegment(segments, now) {
+    return segments.find((segment) => {
+      const departure = asDate(segment.departure)?.getTime();
+      return Number.isFinite(departure) && departure > now;
+    }) || null;
+  }
+  function guidanceFromVoluntary(entry, route, now) {
     if (entry?.status === "missed") {
       return {
         icon: "!",
@@ -63,17 +76,73 @@
         detail: "Your voluntary arrival check-in is being shown to the group. Clear it below if your situation changes.",
       };
     }
+    const segments = Array.isArray(route?.segments) ? route.segments.filter(Boolean) : [];
+    if (!segments.length) return null;
+    const activeIndex = activeSegmentIndex(segments, now);
+    const active = activeIndex >= 0 ? segments[activeIndex] : null;
+    const upcoming = nextSegment(segments, now);
+
+    if (entry?.status === "on-vehicle") {
+      if (active && !isWalk(active)) {
+        const destination = String(active.to || "your next stop");
+        const minutes = minutesUntil(active.arrival, now);
+        const vehicle = vehicleLabel(active);
+        if (minutes != null && minutes <= 8) {
+          const model = approachCopy(destination, vehicle, active, segments[activeIndex + 1] || null, Math.max(1, minutes));
+          return { icon: "●", ...model, eyebrow: "Confirmed on board", detail: `${model.detail} Your voluntary check-in confirms you're on board.` };
+        }
+        return {
+          icon: "●",
+          eyebrow: "Confirmed on board",
+          title: `You're on ${vehicle}`,
+          detail: `Your voluntary check-in confirms you're on board. The timetable expects ${destination}${active.arrival ? ` around ${formatTime(active.arrival)}` : ""}${minutes != null ? ` · about ${Math.max(1, minutes)} min` : ""}.`,
+        };
+      }
+      const plannedTransit = upcoming && !isWalk(upcoming) ? upcoming : segments.find((segment) => !isWalk(segment)) || null;
+      return {
+        icon: "●",
+        eyebrow: "Confirmed on board",
+        title: "You're on board",
+        detail: plannedTransit
+          ? `Your check-in is ahead of the timetable state. The next planned transit leg shown is ${vehicleLabel(plannedTransit)} toward ${String(plannedTransit.to || "the next stop")}${plannedTransit.arrival ? `, expected around ${formatTime(plannedTransit.arrival)}` : ""}.`
+          : "Your voluntary check-in confirms you're on board. The timetable does not currently have another transit leg to describe.",
+      };
+    }
+
+    if (entry?.status === "at-stop") {
+      if (active && !isWalk(active)) {
+        return {
+          icon: "⌖",
+          eyebrow: "Confirmed by you",
+          title: "You're at a stop",
+          detail: `Your check-in differs from the timetable, which currently expects ${vehicleLabel(active)} to be underway. If you missed or left that service, use “Missed it” or the Recovery Desk so the next advice does not rely on the old timing.`,
+        };
+      }
+      const plannedNext = upcoming || null;
+      if (plannedNext && !isWalk(plannedNext)) {
+        const departure = formatTime(plannedNext.departure);
+        return {
+          icon: "⌖",
+          eyebrow: "Confirmed by you",
+          title: "You're at a stop",
+          detail: `Next planned service: ${vehicleLabel(plannedNext)} from ${String(plannedNext.from || "your stop")}${departure ? ` around ${departure}` : ""}. Stay near the correct stop or platform and be ready to board.`,
+        };
+      }
+      return {
+        icon: "⌖",
+        eyebrow: "Confirmed by you",
+        title: "You're at a stop",
+        detail: "Your voluntary check-in is more current than the timetable state. Keep the route visible and use Recovery Desk if the planned next step no longer matches what you see.",
+      };
+    }
     return null;
   }
   function guidanceForRoute(route, now = Date.now(), voluntaryEntry = null) {
-    const voluntaryGuidance = guidanceFromVoluntary(voluntaryEntry);
+    const voluntaryGuidance = guidanceFromVoluntary(voluntaryEntry, route, now);
     if (voluntaryGuidance) return voluntaryGuidance;
     const segments = Array.isArray(route?.segments) ? route.segments.filter(Boolean) : [];
     if (!segments.length) return null;
-    const activeIndex = segments.findIndex((segment) => {
-      const departure = asDate(segment.departure)?.getTime(); const arrival = asDate(segment.arrival)?.getTime();
-      return Number.isFinite(departure) && Number.isFinite(arrival) && departure <= now && now < arrival;
-    });
+    const activeIndex = activeSegmentIndex(segments, now);
     const active = activeIndex >= 0 ? segments[activeIndex] : null;
     if (active) {
       const destination = String(active.to || "your next stop"); const minutes = minutesUntil(active.arrival, now); const next = segments[activeIndex + 1] || null;
@@ -82,7 +151,7 @@
       if (minutes != null && minutes <= 8) return { icon: "◉", ...approachCopy(destination, vehicle, active, next, Math.max(1, minutes)) };
       return { icon: "◉", eyebrow: "On the way", title: `You're on ${vehicle}`, detail: `Expected at ${destination}${active.arrival ? ` around ${formatTime(active.arrival)}` : ""}${minutes != null ? ` · about ${Math.max(1, minutes)} min` : ""}.` };
     }
-    const upcoming = segments.find((segment) => { const departure = asDate(segment.departure)?.getTime(); return Number.isFinite(departure) && departure > now; });
+    const upcoming = nextSegment(segments, now);
     if (upcoming) {
       const minutes = minutesUntil(upcoming.departure, now); const from = String(upcoming.from || "your next stop");
       if (isWalk(upcoming)) return { icon: "🚶", eyebrow: "Coming up", title: `Walk toward ${String(upcoming.to || "the next stop")}`, detail: minutes != null && minutes <= 2 ? "Your planned walking leg starts now." : `Planned to start in about ${Math.max(1, minutes || 1)} min.` };
