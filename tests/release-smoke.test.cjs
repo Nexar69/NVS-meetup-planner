@@ -46,7 +46,7 @@ assert.match(release, /loadRoutingCoalescer0111/, "v0.11.1 release owner should 
 assert.match(release, /routing-coalesce-v0111\.js/, "routing coalescer must be wired by the release owner");
 
 const serviceWorker = read("service-worker.js");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r6/, "service worker cache must be the latest v0.11.1 revision");
+assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r7/, "service worker cache must be the latest v0.11.1 revision");
 for (const asset of [
   "intelligence-core.js",
   "intelligence-v011.js",
