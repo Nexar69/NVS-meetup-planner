@@ -76,7 +76,7 @@ assert.equal(cancelledNext.cancelledSegment, "next");
 assert.equal(cancelledNext.segmentIndex, 1);
 assert.equal(cancelledNext.platformChanged, true);
 assert.match(cancelledNext.eyebrow, /cancelled/i);
-assert.match(cancelledNext.title, /Tram 4 is cancelled/);
+assert.match(cancelledNext.title, /tram 4 is cancelled/i);
 assert.match(cancelledNext.detail, /planned onward service/i);
 assert.match(cancelledNext.detail, /changed from A to C/i);
 assert.match(cancelledNext.detail, /operational disruption/i);
