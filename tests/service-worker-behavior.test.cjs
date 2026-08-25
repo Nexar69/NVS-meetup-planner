@@ -35,7 +35,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
         const normalized = typeof key === "string" ? key : key.url;
         return cacheEntries.get(normalized) || null;
       },
-      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r9"]; },
+      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r10"]; },
       async delete(key) { deleted.push(key); return true; },
     },
     self: {
@@ -141,5 +141,5 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     await rt.dispatch("notificationclick", { notification: { close() {} } });
     assert.deepEqual(rt.opened, ["./"]);
   }
-  console.log("service-worker-behavior: privacy, offline, update, notification and r9 app-shell behavior passed");
+  console.log("service-worker-behavior: privacy, offline, update, notification and r10 app-shell behavior passed");
 })().catch((error) => { console.error(error); process.exit(1); });
