@@ -13,6 +13,15 @@
     document.body.appendChild(script);
   }
 
+  function loadRoutingCoalescer0111() {
+    if (document.querySelector('script[data-routing-coalesce-v0111="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "./routing-coalesce-v0111.js";
+    script.async = false;
+    script.dataset.routingCoalesceV0111 = "true";
+    document.body.appendChild(script);
+  }
+
   function loadAccessibility0111() {
     if (!document.querySelector('link[data-accessibility-v0111="true"]')) {
       const link = document.createElement("link");
@@ -48,11 +57,13 @@
   }
 
   loadFreshnessGuard();
+  loadRoutingCoalescer0111();
   loadAccessibility0111();
   applyReleaseCopy();
   setTimeout(applyReleaseCopy, 400);
   window.addEventListener("load", () => {
     loadFreshnessGuard();
+    loadRoutingCoalescer0111();
     loadAccessibility0111();
     applyReleaseCopy();
     setTimeout(applyReleaseCopy, 180);
