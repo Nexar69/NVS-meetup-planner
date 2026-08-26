@@ -83,10 +83,29 @@ const APP_SHELL = [
   "./icons/icon-512.png",
 ];
 
+async function precacheAppShell() {
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.addAll(APP_SHELL);
+    return true;
+  } catch {
+    // A quota/private-mode/transient asset failure should not brick the service worker.
+    // Activation keeps older healthy caches until this revision has a usable shell.
+    return false;
+  }
+}
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+  event.waitUntil(precacheAppShell());
 });
 self.addEventListener("message", (event) => { if (event.data?.type === "SKIP_WAITING") self.skipWaiting(); });
+async function currentShellReady() {
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    return Boolean(await cache.match("./index.html"));
+  } catch {
+    return false;
+  }
+}
 async function cleanupOldCaches() {
   let keys = [];
   try {
@@ -99,7 +118,10 @@ async function cleanupOldCaches() {
   }));
 }
 self.addEventListener("activate", (event) => {
-  event.waitUntil(cleanupOldCaches().then(() => self.clients.claim()));
+  event.waitUntil((async () => {
+    if (await currentShellReady()) await cleanupOldCaches();
+    await self.clients.claim();
+  })());
 });
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
