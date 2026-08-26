@@ -33,14 +33,42 @@
     };
   }
 
+  function personalScopeSource() {
+    try {
+      const path = String(window.location?.pathname || "");
+      const query = new URLSearchParams(String(window.location?.search || ""));
+      const member = query.get("me");
+      return path.includes("/p/") && member != null ? `${path}?me=${member}` : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function scopeFingerprint() {
+    const source = personalScopeSource();
+    if (!source) return "";
+    let first = 0x811c9dc5;
+    let second = 0x9e3779b1;
+    for (let index = 0; index < source.length; index += 1) {
+      const code = source.charCodeAt(index);
+      first ^= code;
+      first = Math.imul(first, 0x01000193) >>> 0;
+      second ^= code + index;
+      second = Math.imul(second, 0x85ebca6b) >>> 0;
+    }
+    return `${first.toString(16).padStart(8, "0")}${second.toString(16).padStart(8, "0")}`;
+  }
+
   function buildSnapshot(assignment, now = new Date()) {
     const route = assignment?.route;
     const segments = Array.isArray(route?.segments)
       ? route.segments.slice(0, MAX_SEGMENTS).map(sanitizeSegment).filter(Boolean)
       : [];
-    if (!segments.length) return null;
+    const scope = scopeFingerprint();
+    if (!segments.length || !scope) return null;
     return {
       schema: "meet-schwerin-offline-journey-v1",
+      scope,
       capturedAt: now.toISOString(),
       arrival: safeIso(route.arrival),
       segments,
@@ -57,14 +85,7 @@
   }
 
   function personalViewerHint() {
-    if (isPersonalSharedView() || focusIndex() >= 0) return true;
-    try {
-      const path = String(window.location?.pathname || "");
-      const query = new URLSearchParams(String(window.location?.search || ""));
-      return path.includes("/p/") && query.has("me");
-    } catch {
-      return false;
-    }
+    return isPersonalSharedView() || focusIndex() >= 0 || Boolean(personalScopeSource());
   }
 
   function assignment() {
@@ -83,6 +104,11 @@
     }
   }
 
+  function clearSnapshot() {
+    try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
+    removeCard();
+  }
+
   function capture(now = new Date()) {
     if (!isPersonalSharedView()) return null;
     const snapshot = buildSnapshot(assignment(), now);
@@ -93,7 +119,11 @@
   function readSnapshot(now = Date.now()) {
     try {
       const parsed = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "null");
-      if (!parsed || parsed.schema !== "meet-schwerin-offline-journey-v1" || !Array.isArray(parsed.segments) || !parsed.segments.length) return null;
+      const expectedScope = scopeFingerprint();
+      if (!parsed || parsed.schema !== "meet-schwerin-offline-journey-v1" || !expectedScope || parsed.scope !== expectedScope || !Array.isArray(parsed.segments) || !parsed.segments.length) {
+        if (parsed) sessionStorage.removeItem(STORAGE_KEY);
+        return null;
+      }
       const captured = asDate(parsed.capturedAt)?.getTime();
       if (!Number.isFinite(captured) || now - captured > MAX_AGE_MS || captured - now > 5 * 60_000) {
         sessionStorage.removeItem(STORAGE_KEY);
@@ -199,13 +229,16 @@
   window.addEventListener("offline", render);
   window.addEventListener("pageshow", refresh);
   window.addEventListener("nvs-shared-view-resumed", refresh);
+  window.addEventListener("nvs-shared-session-expired", clearSnapshot);
   window.addEventListener("load", refresh);
 
   window.NVSOfflineJourney0111 = Object.freeze({
     buildSnapshot,
     capture,
     readSnapshot,
+    clearSnapshot,
     personalViewerHint,
+    scopeFingerprint,
     refresh,
   });
 
