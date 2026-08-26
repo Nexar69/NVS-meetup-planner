@@ -87,11 +87,12 @@
     if (checking || document.hidden || !navigator.onLine) return false;
     const refresh = window.NVSSharedLive?.refresh;
     if (typeof refresh !== "function") return false;
+    const before = lastSuccessAt;
     checking = true;
     render();
     try {
       await refresh();
-      return true;
+      return lastSuccessAt > before;
     } catch {
       return false;
     } finally {
