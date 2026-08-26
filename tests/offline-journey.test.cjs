@@ -31,6 +31,8 @@ const assignment = {
         departure: "2026-08-26T07:10:00.000Z",
         arrival: "2026-08-26T07:28:00.000Z",
         platformFrom: "A",
+        cancelled: true,
+        remarks: [{ text: "Service cancelled due to an operational issue near the depot." }],
         lat: 53.6,
         lon: 11.4,
         geometry: [[53.6, 11.4]],
@@ -92,7 +94,11 @@ assert.equal(snapshot.schema, "meet-schwerin-offline-journey-v1");
 assert.equal(snapshot.segments.length, 2);
 assert.equal(snapshot.segments[0].line, "2");
 assert.equal(snapshot.segments[0].platformFrom, "A");
+assert.equal(snapshot.segments[0].cancelled, true, "last-known cancellation state should survive loss of connectivity");
+assert.match(snapshot.segments[0].disruption, /operational issue/, "a bounded last-known provider disruption note should survive offline");
+assert.ok(snapshot.segments[0].disruption.length <= 180, "offline disruption text must remain bounded for mobile UI safety");
 assert.equal(snapshot.segments[1].mode, "WALK");
+assert.equal(snapshot.segments[1].cancelled, false);
 
 const serialized = JSON.stringify(snapshot);
 for (const forbidden of [
@@ -124,6 +130,9 @@ assert.equal(sessionStorage.getItem("meet-schwerin-offline-journey-v1"), null, "
 assert.match(source, /sessionStorage\.setItem/);
 assert.match(source, /sessionStorage\.removeItem/);
 assert.match(source, /URLSearchParams/);
+assert.match(source, /Cancelled when last online/, "offline UI should surface an already-known cancellation rather than showing the old leg as normal");
+assert.match(source, /At least one saved leg was already cancelled/, "offline cancellation fallback should instruct the rider not to rely on the cancelled leg");
+assert.match(source, /firstDisruptionText/, "offline snapshots should preserve a bounded last-known provider disruption note");
 assert.doesNotMatch(source, /localStorage|indexedDB/i, "offline journey data must remain tab-scoped, not durable");
 assert.doesNotMatch(source, /fetch\s*\(|XMLHttpRequest|sendBeacon/i, "offline fallback must not make its own network requests");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "offline fallback must never request location");
@@ -136,4 +145,4 @@ assert.match(release, /offline-journey-v0111\.css/);
 assert.match(sw, /offline-journey-v0111\.js/);
 assert.match(sw, /offline-journey-v0111\.css/);
 
-console.log("offline-journey: tab-scoped route fallback survives live-plan fetch loss while preserving expiry, privacy, accessibility and no-GPS contracts");
+console.log("offline-journey: tab-scoped route fallback preserves last-known cancellations/disruptions while surviving live-plan fetch loss and maintaining expiry, privacy, accessibility and no-GPS contracts");
