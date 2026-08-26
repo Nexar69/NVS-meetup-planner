@@ -2,7 +2,7 @@
   const UPDATE_MS = 20_000;
   const MAX_WATCH_MIN = 6;
   const MAX_LEAD_MIN = 30;
-  const BLOCKING_VOLUNTARY = new Set(["missed", "arrived"]);
+  const BLOCKING_VOLUNTARY = new Set(["missed", "arrived", "at-stop"]);
   let timer = null;
   let lastMarkup = "";
 
