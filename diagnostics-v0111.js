@@ -69,6 +69,31 @@
     };
   }
 
+  function offlineSummary(now = Date.now()) {
+    const api = window.NVSOfflineJourney0111;
+    if (!api?.readSnapshot) return { available: false, saved: false };
+    let snapshot = null;
+    try { snapshot = api.readSnapshot(now); } catch {}
+    if (!snapshot) return { available: true, saved: false };
+    let ageMs = null;
+    try {
+      const value = Number(api.snapshotAgeMs?.(snapshot, now));
+      if (Number.isFinite(value) && value >= 0) ageMs = value;
+    } catch {}
+    let realtimeFresh = null;
+    try {
+      if (typeof api.realtimeContextFresh === "function") realtimeFresh = Boolean(api.realtimeContextFresh(snapshot, now));
+    } catch {}
+    return {
+      available: true,
+      saved: true,
+      segmentCount: Array.isArray(snapshot.segments) ? snapshot.segments.length : 0,
+      ageMinutes: ageMs == null ? null : Math.floor(ageMs / 60_000),
+      realtimeContextFresh: realtimeFresh,
+      hasAuthoritativeExpiry: hasValidExpiry(snapshot.expiresAt),
+    };
+  }
+
   function buildSnapshot(now = new Date()) {
     const versionLabel = String(document.getElementById("versionLabel")?.textContent || "unknown").trim();
     return {
@@ -82,6 +107,7 @@
       shared: sharedSummary(),
       provider: providerSummary(),
       pwa: pwaSummary(),
+      offlineJourney: offlineSummary(now.getTime()),
       privacy: "No names, coordinates, route geometry, capability keys, plan IDs, or location readings are included.",
     };
   }
@@ -95,7 +121,7 @@
     panel = document.createElement("details");
     panel.id = "v0111DiagnosticsExport";
     panel.className = "v0111-diagnostics-export";
-    panel.innerHTML = `<summary><strong>Debug snapshot</strong><small>Privacy-safe diagnostics</small></summary><div><p>Copy release, routing, sync and PWA state for bug reports. Names, coordinates, capability keys and plan IDs are excluded.</p><button type="button" id="v0111CopyDiagnostics">Copy diagnostics</button><small id="v0111DiagnosticsStatus" role="status" aria-live="polite"></small></div>`;
+    panel.innerHTML = `<summary><strong>Debug snapshot</strong><small>Privacy-safe diagnostics</small></summary><div><p>Copy release, routing, sync, offline-fallback and PWA state for bug reports. Names, coordinates, capability keys and plan IDs are excluded.</p><button type="button" id="v0111CopyDiagnostics">Copy diagnostics</button><small id="v0111DiagnosticsStatus" role="status" aria-live="polite"></small></div>`;
     if (health) health.insertAdjacentElement("afterend", panel);
     else command.appendChild(panel);
     panel.querySelector("#v0111CopyDiagnostics")?.addEventListener("click", copyDiagnostics);
@@ -118,6 +144,6 @@
 
   function refresh() { ensurePanel(); }
   ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-routing-provider", "nvs-shared-live-change"].forEach((name) => window.addEventListener(name, refresh));
-  window.NVSDiagnostics0111 = Object.freeze({ buildSnapshot, copyDiagnostics, refresh });
+  window.NVSDiagnostics0111 = Object.freeze({ buildSnapshot, offlineSummary, copyDiagnostics, refresh });
   refresh();
 })();
