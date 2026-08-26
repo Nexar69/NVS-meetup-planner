@@ -87,8 +87,19 @@ self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
 });
 self.addEventListener("message", (event) => { if (event.data?.type === "SKIP_WAITING") self.skipWaiting(); });
+async function cleanupOldCaches() {
+  let keys = [];
+  try {
+    keys = await caches.keys();
+  } catch {
+    return;
+  }
+  await Promise.all(keys.filter((key) => key !== CACHE_NAME).map(async (key) => {
+    try { await caches.delete(key); } catch {}
+  }));
+}
 self.addEventListener("activate", (event) => {
-  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))).then(() => self.clients.claim()));
+  event.waitUntil(cleanupOldCaches().then(() => self.clients.claim()));
 });
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
