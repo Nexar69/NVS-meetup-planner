@@ -86,6 +86,7 @@ jobs:
           node tests/trip-guidance-observer.test.cjs
           node tests/transfer-watch.test.cjs
           node tests/stop-awareness.test.cjs
+          node tests/ancillary-voluntary-precedence.test.cjs
           node tests/journey-contradictions.test.cjs
           node tests/journey-chaos-replay.test.cjs
           node tests/diagnostics-privacy.test.cjs
