@@ -296,7 +296,24 @@
 
   function scheduleRefresh(delay = 100) {
     clearTimeout(refreshTimer);
+    if (document.hidden) return;
     refreshTimer = setTimeout(refreshJourneyData, delay);
+  }
+
+  function scheduleClock(delay = 15_000) {
+    clearTimeout(clockTimer);
+    if (document.hidden) return;
+    clockTimer = setTimeout(() => {
+      updateDepartureBoard();
+      scheduleClock();
+    }, delay);
+  }
+
+  function resumeJourney() {
+    if (document.hidden) return;
+    updateDepartureBoard();
+    scheduleClock();
+    if (dataBadge?.classList.contains("live")) scheduleRefresh(0);
   }
 
   if (dataBadge) new MutationObserver(() => scheduleRefresh(100)).observe(dataBadge, { attributes: true, attributeFilter: ["class"] });
@@ -320,10 +337,19 @@
     updateDepartureBoard();
     enrichResultCards();
   });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      clearTimeout(clockTimer);
+      clearTimeout(refreshTimer);
+      return;
+    }
+    resumeJourney();
+  });
+  window.addEventListener("pageshow", resumeJourney);
+  window.addEventListener("nvs-shared-view-resumed", resumeJourney);
 
   ensureDepartureBoard();
-  clearInterval(clockTimer);
-  clockTimer = setInterval(updateDepartureBoard, 15_000);
+  scheduleClock();
   scheduleRefresh(350);
 
   window.NVSJourney = Object.freeze({ refresh: scheduleRefresh, recalculate: () => plannerForm?.requestSubmit() });
