@@ -84,6 +84,7 @@ jobs:
           node tests/provider-health.test.cjs
           node tests/live-meetup-scheduler.test.cjs
           node tests/journey-scheduler.test.cjs
+          node tests/map-scheduler.test.cjs
           node tests/service-worker-behavior.test.cjs
           node tests/service-worker-cache-failure.test.cjs
           node tests/service-worker-static-timeout.test.cjs
