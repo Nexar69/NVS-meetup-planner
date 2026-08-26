@@ -4,6 +4,7 @@
   const REALTIME_CONTEXT_FRESH_MS = 15 * 60 * 1000;
   const MAX_SEGMENTS = 12;
   const COMPLETED_GRACE_MS = 2 * 60 * 1000;
+  let freshnessTimer = null;
 
   function asDate(value) {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -132,7 +133,13 @@
     }
   }
 
+  function clearFreshnessTimer() {
+    if (freshnessTimer) clearTimeout(freshnessTimer);
+    freshnessTimer = null;
+  }
+
   function clearSnapshot() {
+    clearFreshnessTimer();
     try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
     removeCard();
   }
@@ -173,6 +180,19 @@
   function realtimeContextFresh(snapshot, now = Date.now()) {
     const age = snapshotAgeMs(snapshot, now);
     return Number.isFinite(age) && age <= REALTIME_CONTEXT_FRESH_MS;
+  }
+
+  function scheduleFreshnessRefresh(snapshot, now = Date.now()) {
+    clearFreshnessTimer();
+    if (document.hidden || navigator.onLine || !realtimeContextFresh(snapshot, now)) return null;
+    const captured = asDate(snapshot?.capturedAt)?.getTime();
+    if (!Number.isFinite(captured)) return null;
+    const delay = Math.max(25, captured + REALTIME_CONTEXT_FRESH_MS - Number(now) + 25);
+    freshnessTimer = setTimeout(() => {
+      freshnessTimer = null;
+      render();
+    }, delay);
+    return delay;
   }
 
   function remainingSegments(snapshot, now = Date.now()) {
@@ -257,6 +277,7 @@
   }
 
   function renderUnavailable() {
+    clearFreshnessTimer();
     const card = ensureCard();
     card.innerHTML = `
       <div class="v0111-offline-journey-head">
@@ -269,12 +290,14 @@
 
   function render() {
     if (!personalViewerHint() || navigator.onLine) {
+      clearFreshnessTimer();
       removeCard();
       return;
     }
     const liveAssignment = assignment();
     const personalPlan = document.getElementById("personalSharedPlan");
     if (liveAssignment?.route?.segments?.length && personalPlan) {
+      clearFreshnessTimer();
       removeCard();
       return;
     }
@@ -285,6 +308,7 @@
     }
     const visibleSegments = remainingSegments(snapshot);
     const realtimeFresh = realtimeContextFresh(snapshot);
+    scheduleFreshnessRefresh(snapshot);
     const card = ensureCard();
     const steps = visibleSegments.map((segment) => {
       const time = formatTime(segment.departure);
@@ -324,6 +348,10 @@
   window.addEventListener("nvs-shared-view-resumed", refresh);
   window.addEventListener("nvs-shared-session-expired", clearSnapshot);
   window.addEventListener("load", refresh);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) clearFreshnessTimer();
+    else render();
+  });
 
   window.NVSOfflineJourney0111 = Object.freeze({
     buildSnapshot,
@@ -331,6 +359,7 @@
     readSnapshot,
     snapshotAgeMs,
     realtimeContextFresh,
+    scheduleFreshnessRefresh,
     remainingSegments,
     clearSnapshot,
     personalViewerHint,
