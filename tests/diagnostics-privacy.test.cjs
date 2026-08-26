@@ -61,18 +61,46 @@ const window = {
   matchMedia: () => ({ matches: true }),
 };
 
+let appendedNode = null;
+let removedNodes = 0;
+let execCopyCalls = 0;
 const document = {
   documentElement: { dataset: { nvsRelease: "011" } },
+  body: {
+    appendChild(node) { appendedNode = node; return node; },
+  },
   getElementById(id) {
     if (id === "versionLabel") return { textContent: "v0.11.1 · Meetup Intelligence" };
     return null;
   },
+  createElement(tag) {
+    return {
+      tagName: String(tag).toUpperCase(),
+      style: {},
+      value: "",
+      setAttribute() {},
+      select() { this.selected = true; },
+      setSelectionRange(start, end) { this.selection = [start, end]; },
+      remove() { removedNodes += 1; if (appendedNode === this) appendedNode = null; },
+    };
+  },
+  execCommand(command) {
+    execCopyCalls += 1;
+    return command === "copy";
+  },
 };
+let modernClipboardShouldFail = false;
+let modernClipboardWrites = 0;
 const navigator = {
   onLine: true,
   standalone: false,
   serviceWorker: { controller: {} },
-  clipboard: { async writeText() {} },
+  clipboard: {
+    async writeText() {
+      modernClipboardWrites += 1;
+      if (modernClipboardShouldFail) throw new Error("clipboard denied");
+    },
+  },
 };
 
 vm.runInNewContext(source, { window, document, navigator, Date, Number, String, Boolean, Object, Array, JSON, Math });
@@ -121,10 +149,24 @@ for (const forbiddenKey of ["geometry", "planId", "capabilityKey", "key", "name"
 
 assert.match(snapshot.privacy, /No names, coordinates, route geometry, capability keys, plan IDs, or location readings/);
 assert.match(source, /offlineSummary/, "debug snapshots should report sanitized offline-fallback health for real-device bug reports");
+assert.match(source, /fallbackClipboardCopy/, "diagnostics should retain an explicit user-triggered Safari clipboard fallback");
+assert.doesNotMatch(source, /localStorage|sessionStorage/, "diagnostic export must not persist its copied snapshot");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "diagnostics must never request location");
 assert.match(release, /diagnostics-v0111\.js/);
 assert.match(release, /diagnostics-v0111\.css/);
 assert.match(sw, /diagnostics-v0111\.js/);
 assert.match(sw, /diagnostics-v0111\.css/);
 
-console.log("diagnostics-privacy: sanitized bug snapshot excludes sensitive values, reports offline fallback health, and validates authoritative expiry formats");
+(async () => {
+  modernClipboardShouldFail = true;
+  const copied = await window.NVSDiagnostics0111.copyDiagnostics();
+  assert.equal(copied, true, "Safari-style modern clipboard rejection should fall back to a user-triggered legacy copy");
+  assert.equal(modernClipboardWrites, 1, "modern clipboard should be attempted first");
+  assert.equal(execCopyCalls, 1, "legacy copy should be attempted exactly once after modern clipboard rejection");
+  assert.equal(removedNodes, 1, "temporary clipboard textarea must be removed immediately");
+  assert.equal(appendedNode, null, "diagnostics text must not remain in the DOM after fallback copying");
+  console.log("diagnostics-privacy: sanitized snapshot, offline health, expiry formats and Safari clipboard fallback passed");
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
