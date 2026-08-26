@@ -5,7 +5,7 @@ const vm = require("node:vm");
 
 const originalSource = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf8");
 
-function runtime(fetchImpl = async () => new Response("network", { status: 200 }), { fastTimeout = false, currentShellReady = true } = {}) {
+function runtime(fetchImpl = async () => new Response("network", { status: 200 }), { fastTimeout = false, currentShellReady = true, clientListFails = false, focusFails = false, openWindowFails = false } = {}) {
   const source = fastTimeout ? originalSource.replace("const NETWORK_TIMEOUT_MS = 5_000;", "const NETWORK_TIMEOUT_MS = 5;") : originalSource;
   const handlers = {};
   const puts = [];
@@ -50,8 +50,15 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
       skipWaiting() { skipped += 1; },
       clients: {
         async claim() { claimed += 1; },
-        async matchAll() { return clients; },
-        async openWindow(url) { opened.push(url); return { url }; },
+        async matchAll() {
+          if (clientListFails) throw new Error("CLIENT_LIST_FAILED");
+          return clients;
+        },
+        async openWindow(url) {
+          if (openWindowFails) throw new Error("OPEN_WINDOW_FAILED");
+          opened.push(url);
+          return { url };
+        },
       },
     },
   };
@@ -78,7 +85,11 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     setClients(next) {
       clients = next.map((client) => ({
         ...client,
-        async focus() { focused.push(client.url); return this; },
+        async focus() {
+          if (focusFails) throw new Error("FOCUS_FAILED");
+          focused.push(client.url);
+          return this;
+        },
       }));
     },
   };
@@ -195,9 +206,27 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     await rt.dispatch("notificationclick", { notification: { close() {} } });
     assert.deepEqual(rt.opened, ["./"]);
   }
+  {
+    const rt = runtime(undefined, { clientListFails: true });
+    await rt.dispatch("notificationclick", { notification: { close() {} } });
+    assert.deepEqual(rt.opened, ["./"], "notification tap should reopen the app even if client enumeration fails");
+  }
+  {
+    const rt = runtime(undefined, { focusFails: true });
+    rt.setClients([{ url: "https://app.example/p/abc" }]);
+    await rt.dispatch("notificationclick", { notification: { close() {} } });
+    assert.deepEqual(rt.opened, ["./"], "notification tap should reopen the app if focusing an existing window fails");
+  }
+  {
+    const rt = runtime(undefined, { clientListFails: true, openWindowFails: true });
+    let closed = 0;
+    await rt.dispatch("notificationclick", { notification: { close() { closed += 1; } } });
+    assert.equal(closed, 1, "notification lifecycle should resolve safely even when browser window APIs fail");
+  }
   assert.match(originalSource, /NETWORK_TIMEOUT_MS = 5_000/, "network-first routes should have a bounded slow-network wait");
   assert.match(originalSource, /AbortController/, "slow network-first requests should be cancellable");
   assert.match(originalSource, /response\.status === 408 \|\| response\.status === 429 \|\| response\.status >= 500/, "transient HTTP failures should prefer a healthy cached app-shell response");
   assert.match(originalSource, /currentShellReady/, "activation should verify the new shell before deleting older offline caches");
-  console.log("service-worker-behavior: privacy, offline, guarded install/activation, slow-network/transient-server fallback, update, notification and r12 app-shell behavior passed");
+  assert.match(originalSource, /async function reopenFromNotification/, "notification taps should isolate browser client/window failures");
+  console.log("service-worker-behavior: privacy, offline, guarded install/activation, slow-network/transient-server fallback, resilient notification taps and r12 app-shell behavior passed");
 })().catch((error) => { console.error(error); process.exit(1); });
