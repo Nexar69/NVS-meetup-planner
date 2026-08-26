@@ -76,7 +76,7 @@ const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf
   assert.ok(queue, "queue API should be exported");
   assert.equal(queue.maxPendingMs, 5 * 60_000);
 
-  const base = Date.UTC(2026, 7, 26, 15, 0, 0);
+  const base = Date.now();
   let item = queue.queueStatus("on-vehicle", base);
   assert.equal(item.status, "on-vehicle");
   assert.equal(queue.getPending(base + 30_000).status, "on-vehicle");
