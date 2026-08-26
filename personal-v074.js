@@ -198,8 +198,9 @@
 
   function render() {
     clearTimeout(refreshTimer);
+    if (document.hidden) return;
     refreshTimer = setTimeout(() => {
-      if (!isPersonalView()) return;
+      if (document.hidden || !isPersonalView()) return;
       const focus = focusIndex();
       const recommendations = window.__NVS_LAST_RECOMMENDATIONS__;
       const group = recommendations?.primary;
@@ -236,13 +237,37 @@
     }, 50);
   }
 
+  function scheduleClock(delay = 15_000) {
+    clearTimeout(clockTimer);
+    if (document.hidden) return;
+    clockTimer = setTimeout(() => {
+      render();
+      scheduleClock();
+    }, delay);
+  }
+
+  function resumePersonalItinerary() {
+    if (document.hidden || !isPersonalView()) return;
+    render();
+    scheduleClock();
+  }
+
   if (!isPersonalView()) return;
 
   document.body.classList.add("personal-itinerary-view");
   window.addEventListener("nvs-group-recommendations-rendered", render);
-  window.addEventListener("load", render);
+  window.addEventListener("load", resumePersonalItinerary);
+  window.addEventListener("pageshow", resumePersonalItinerary);
+  window.addEventListener("nvs-shared-view-resumed", resumePersonalItinerary);
   if (results) new MutationObserver(() => render()).observe(results, { childList: true });
-  clearInterval(clockTimer);
-  clockTimer = setInterval(render, 15_000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      clearTimeout(clockTimer);
+      clearTimeout(refreshTimer);
+      return;
+    }
+    resumePersonalItinerary();
+  });
+  scheduleClock();
   render();
 })();
