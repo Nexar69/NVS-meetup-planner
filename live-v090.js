@@ -1,7 +1,8 @@
 (() => {
   const LIVE_KEY = "meet-schwerin-live-v1";
   const AUTO_REFRESH_MS = 120_000;
-  const TICK_MS = 1_000;
+  const TICK_MS = 5_000;
+  const AUTO_CHECK_MS = 30_000;
 
   const results = document.getElementById("results");
   const resultsSection = document.querySelector(".results-section");
@@ -429,7 +430,7 @@
   }
 
   function autoRefresh() {
-    if (!enabled || refreshing) return;
+    if (!enabled || refreshing || document.hidden) return;
     const group = recommendation();
     const groupAssignments = assignments(group);
     if (!groupAssignments.length) return;
@@ -437,14 +438,39 @@
     const earliest = Math.min(...groupAssignments.map((item) => asDate(item.route.departure)?.getTime() || Infinity));
     if (!Number.isFinite(earliest) || now >= earliest - 30_000) return;
     if (now - lastAutoRefresh < AUTO_REFRESH_MS - 5_000) return;
-    refreshPlan(true);
+    void refreshPlan(true);
+  }
+
+  function scheduleTick(delay = TICK_MS) {
+    clearTimeout(tickTimer);
+    if (document.hidden) return;
+    tickTimer = setTimeout(() => {
+      render();
+      scheduleTick();
+    }, delay);
+  }
+
+  function scheduleAutoRefresh(delay = AUTO_CHECK_MS) {
+    clearTimeout(autoRefreshTimer);
+    if (document.hidden || !enabled) return;
+    autoRefreshTimer = setTimeout(() => {
+      autoRefresh();
+      scheduleAutoRefresh();
+    }, delay);
+  }
+
+  function stopTimers() {
+    clearTimeout(tickTimer);
+    clearTimeout(autoRefreshTimer);
+    tickTimer = null;
+    autoRefreshTimer = null;
   }
 
   function scheduleTimers() {
-    clearInterval(tickTimer);
-    clearInterval(autoRefreshTimer);
-    tickTimer = setInterval(render, TICK_MS);
-    if (enabled) autoRefreshTimer = setInterval(autoRefresh, 30_000);
+    stopTimers();
+    if (document.hidden) return;
+    scheduleTick();
+    scheduleAutoRefresh();
   }
 
   function showToast(message) {
@@ -523,6 +549,7 @@
 
   function scheduleRender() {
     clearTimeout(renderTimer);
+    if (document.hidden) return;
     renderTimer = setTimeout(render, 45);
   }
 
@@ -537,9 +564,24 @@
   window.addEventListener("nvs-priority-change", scheduleRender);
   window.addEventListener("nvs-timing-change", scheduleRender);
   window.addEventListener("nvs-routing-provider", scheduleRender);
-  window.addEventListener("visibilitychange", () => { if (!document.hidden) render(); });
-  window.addEventListener("pageshow", render);
-  window.addEventListener("load", render);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      clearTimeout(renderTimer);
+      stopTimers();
+      return;
+    }
+    render();
+    autoRefresh();
+    scheduleTimers();
+  });
+  window.addEventListener("pageshow", () => {
+    render();
+    scheduleTimers();
+  });
+  window.addEventListener("load", () => {
+    render();
+    scheduleTimers();
+  });
   if (results) new MutationObserver(scheduleRender).observe(results, { childList: true, subtree: true });
 
   window.NVSLiveMeetup = Object.freeze({
