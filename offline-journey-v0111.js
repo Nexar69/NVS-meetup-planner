@@ -182,12 +182,24 @@
     return Number.isFinite(age) && age <= REALTIME_CONTEXT_FRESH_MS;
   }
 
+  function nextOfflineBoundary(snapshot, now = Date.now()) {
+    const current = Number(now);
+    const captured = asDate(snapshot?.capturedAt)?.getTime();
+    if (!Number.isFinite(current) || !Number.isFinite(captured)) return null;
+    const boundaries = [captured + MAX_AGE_MS + 1];
+    if (realtimeContextFresh(snapshot, current)) boundaries.push(captured + REALTIME_CONTEXT_FRESH_MS + 1);
+    const expiresAt = asDate(snapshot?.expiresAt)?.getTime();
+    if (Number.isFinite(expiresAt)) boundaries.push(expiresAt);
+    const future = boundaries.filter((value) => Number.isFinite(value) && value > current);
+    return future.length ? Math.min(...future) : null;
+  }
+
   function scheduleFreshnessRefresh(snapshot, now = Date.now()) {
     clearFreshnessTimer();
-    if (document.hidden || navigator.onLine || !realtimeContextFresh(snapshot, now) || typeof setTimeout !== "function") return null;
-    const captured = asDate(snapshot?.capturedAt)?.getTime();
-    if (!Number.isFinite(captured)) return null;
-    const delay = Math.max(25, captured + REALTIME_CONTEXT_FRESH_MS - Number(now) + 25);
+    if (document.hidden || navigator.onLine || typeof setTimeout !== "function") return null;
+    const boundary = nextOfflineBoundary(snapshot, now);
+    if (!Number.isFinite(boundary)) return null;
+    const delay = Math.max(25, boundary - Number(now) + 25);
     freshnessTimer = setTimeout(() => {
       freshnessTimer = null;
       render();
@@ -359,6 +371,7 @@
     readSnapshot,
     snapshotAgeMs,
     realtimeContextFresh,
+    nextOfflineBoundary,
     scheduleFreshnessRefresh,
     remainingSegments,
     clearSnapshot,
