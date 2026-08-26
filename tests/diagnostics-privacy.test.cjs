@@ -9,6 +9,7 @@ const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf
 
 let sharedExpiry = Date.now() + 60_000;
 const diagnosticNow = new Date("2026-08-25T18:00:00.000Z");
+const lastLiveResponseAt = diagnosticNow.getTime() - 12_400;
 const offlineSnapshot = {
   scope: "secret-scope",
   capturedAt: new Date(diagnosticNow.getTime() - 9 * 60_000).toISOString(),
@@ -29,6 +30,13 @@ const window = {
       revision: 7,
       expiresAt: sharedExpiry,
       members: { "0": { status: "on-vehicle", at: Date.now(), key: "secret-key" } },
+    }),
+  },
+  NVSSharedConnection0111: {
+    getLastSuccessAt: () => lastLiveResponseAt,
+    connectionModel: (now, online, successAt) => ({
+      status: !online ? "offline" : now - successAt <= 30_000 ? "current" : "delayed",
+      text: "sensitive copy is intentionally ignored by diagnostics",
     }),
   },
   NVSOfflineJourney0111: {
@@ -112,6 +120,11 @@ assert.equal(snapshot.route.assignmentCount, 1);
 assert.equal(snapshot.route.focusedSegmentCount, 1);
 assert.equal(snapshot.shared.revision, 7);
 assert.equal(snapshot.shared.hasAuthoritativeExpiry, true);
+assert.equal(snapshot.sharedConnection.available, true);
+assert.equal(snapshot.sharedConnection.status, "current");
+assert.equal(snapshot.sharedConnection.hasSuccessfulResponse, true);
+assert.equal(snapshot.sharedConnection.lastResponseAgeSeconds, 12, "diagnostics should expose only coarse response age, not the exact response timestamp");
+assert.equal(Object.hasOwn(snapshot.sharedConnection, "lastSuccessAt"), false, "exact shared-live response timestamps should stay out of exported diagnostics");
 assert.equal(snapshot.provider.backendRelease, "v0.11.1");
 assert.equal(snapshot.pwa.serviceWorkerControlled, true);
 assert.equal(snapshot.pwa.standalone, true);
@@ -130,7 +143,7 @@ sharedExpiry = "not-a-date";
 assert.equal(window.NVSDiagnostics0111.buildSnapshot().shared.hasAuthoritativeExpiry, false, "invalid expiry must not masquerade as authoritative");
 
 const serialized = JSON.stringify(snapshot);
-for (const forbiddenValue of ["Secret Person", "Secret Home", "Secret Stop", "Secret Destination", "secret-plan-id", "secret-key", "secret-capability", "secret-scope", "53.6", "11.4"]) {
+for (const forbiddenValue of ["Secret Person", "Secret Home", "Secret Stop", "Secret Destination", "secret-plan-id", "secret-key", "secret-capability", "secret-scope", "53.6", "11.4", "sensitive copy is intentionally ignored by diagnostics"]) {
   assert.equal(serialized.includes(forbiddenValue), false, `diagnostics must exclude sensitive value: ${forbiddenValue}`);
 }
 
@@ -143,11 +156,12 @@ function collectKeys(value, keys = []) {
   return keys;
 }
 const keys = collectKeys(snapshot);
-for (const forbiddenKey of ["geometry", "planId", "capabilityKey", "key", "name", "origin", "lat", "lon", "longitude", "latitude", "members", "scope", "segments", "from", "to"]) {
+for (const forbiddenKey of ["geometry", "planId", "capabilityKey", "key", "name", "origin", "lat", "lon", "longitude", "latitude", "members", "scope", "segments", "from", "to", "lastSuccessAt"]) {
   assert.equal(keys.includes(forbiddenKey), false, `diagnostics must exclude sensitive field: ${forbiddenKey}`);
 }
 
 assert.match(snapshot.privacy, /No names, coordinates, route geometry, capability keys, plan IDs, or location readings/);
+assert.match(source, /sharedConnectionSummary/, "debug snapshots should include coarse shared-live connection health for Safari bug reports");
 assert.match(source, /offlineSummary/, "debug snapshots should report sanitized offline-fallback health for real-device bug reports");
 assert.match(source, /fallbackClipboardCopy/, "diagnostics should retain an explicit user-triggered Safari clipboard fallback");
 assert.doesNotMatch(source, /localStorage|sessionStorage/, "diagnostic export must not persist its copied snapshot");
@@ -165,7 +179,7 @@ assert.match(sw, /diagnostics-v0111\.css/);
   assert.equal(execCopyCalls, 1, "legacy copy should be attempted exactly once after modern clipboard rejection");
   assert.equal(removedNodes, 1, "temporary clipboard textarea must be removed immediately");
   assert.equal(appendedNode, null, "diagnostics text must not remain in the DOM after fallback copying");
-  console.log("diagnostics-privacy: sanitized snapshot, offline health, expiry formats and Safari clipboard fallback passed");
+  console.log("diagnostics-privacy: sanitized snapshot, shared connection/offline health, expiry formats and Safari clipboard fallback passed");
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
