@@ -262,6 +262,15 @@
     }
   }
 
+  function loadUpdateSafety0111() {
+    if (document.querySelector('script[data-update-safety-v0111="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "./update-safety-v0111.js";
+    script.async = false;
+    script.dataset.updateSafetyV0111 = "true";
+    document.body.appendChild(script);
+  }
+
   installDepartureGuard();
   updateReleaseCopy();
   installHiddenSelectSync();
@@ -273,4 +282,5 @@
   loadMeetupIntelligence();
   loadTripTools0111();
   loadRecovery0111();
+  loadUpdateSafety0111();
 })();
