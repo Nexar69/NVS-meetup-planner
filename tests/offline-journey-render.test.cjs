@@ -38,7 +38,8 @@ const document = {
       id: "",
       className: "",
       innerHTML: "",
-      setAttribute() {},
+      attributes: new Map(),
+      setAttribute(name, value) { this.attributes.set(name, String(value)); },
       remove() { if (this.id) nodes.delete(this.id); },
     };
   },
@@ -127,6 +128,7 @@ api.refresh();
 
 let card = nodes.get("offlineJourney0111");
 assert.ok(card, "offline personal viewer should render its tab-scoped saved route when the live plan is unavailable");
+assert.equal(card.attributes.get("data-connection"), "offline");
 assert.doesNotMatch(card.innerHTML, /OLD|Old stop|Already passed/, "clearly completed route legs should not clutter the offline mobile card");
 assert.match(card.innerHTML, /Tram 4 to Krebsförden/);
 assert.match(card.innerHTML, /platform C/);
@@ -135,7 +137,7 @@ assert.match(card.innerHTML, /Cancelled when last online/);
 assert.match(card.innerHTML, /Replacement buses may operate/);
 assert.match(card.innerHTML, /At least one remaining saved leg was already cancelled/);
 assert.match(card.innerHTML, /Completed legs are hidden when possible/);
-assert.match(card.innerHTML, /Authoritative shared-session expiry is honored offline when known/);
+assert.match(card.innerHTML, /Authoritative shared-session expiry is honored/);
 assert.doesNotMatch(card.innerHTML, /secret|planId|capability/i);
 assert.equal(timers.size, 1, "a fresh offline snapshot should arm exactly one next-boundary rerender");
 const firstTimer = [...timers.values()][0];
@@ -173,10 +175,24 @@ assert.match(card.innerHTML, /Reconnect while this personal route is open/);
 assert.match(card.innerHTML, /does not persist personal route fallbacks beyond this tab/);
 assert.doesNotMatch(card.innerHTML, /Marienplatz|Krebsförden|Replacement buses/, "the no-snapshot state must not leak stale route details from the previous render");
 
+sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
 navigator.onLine = true;
 api.refresh();
-assert.equal(timers.size, 0, "normal online rendering should leave no offline boundary timer armed");
-assert.equal(nodes.has("offlineJourney0111"), false, "offline fallback should disappear immediately when normal online rendering resumes");
-assert.doesNotMatch(source, /setInterval\s*\(/, "offline lifecycle should use one-shot boundary timers, never background polling");
+card = nodes.get("offlineJourney0111");
+assert.ok(card, "navigator.onLine alone must not erase the saved journey before live route data is actually usable");
+assert.equal(card.attributes.get("data-connection"), "reconnecting");
+assert.match(card.innerHTML, /RECONNECTING · SAVED FALLBACK/);
+assert.match(card.innerHTML, /Keeping your saved journey until live data returns/);
+assert.match(card.innerHTML, /device reports a connection, but the current personal route has not loaded again yet/);
+assert.match(card.innerHTML, /Tram 4 to Krebsförden/);
+assert.equal(timers.size, 1, "a reconnecting fallback should keep its one-shot freshness\/expiry boundary timer active");
 
-console.log("offline-journey-render: executable mobile fallback hides completed legs, ages realtime facts, self-schedules expiry, and clearly explains when no tab-scoped route is saved");
+sharedPlan = { view: "person" };
+focus = 0;
+api.refresh();
+assert.equal(timers.size, 0, "restored live-route rendering should cancel the saved-fallback boundary timer");
+assert.equal(nodes.has("offlineJourney0111"), false, "saved fallback should disappear only after usable live personal route data has returned");
+assert.doesNotMatch(source, /setInterval\s*\(/, "offline lifecycle should use one-shot boundary timers, never background polling");
+assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "saved journey continuity must not add location tracking");
+
+console.log("offline-journey-render: saved route survives weak reconnects until live data returns, while preserving freshness, expiry, privacy and mobile cleanup");
