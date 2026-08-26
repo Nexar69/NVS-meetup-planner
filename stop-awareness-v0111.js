@@ -1,5 +1,6 @@
 (() => {
   const UPDATE_MS = 15_000;
+  const BLOCKING_VOLUNTARY = new Set(["missed", "arrived", "at-stop"]);
   let timer = null;
   let observer = null;
   let queued = false;
@@ -22,6 +23,22 @@
   function assignment() {
     const items = window.__NVS_LAST_RECOMMENDATIONS__?.primary?.assignments;
     return Array.isArray(items) ? items[focusIndex()] : null;
+  }
+
+  function focusedFreshEntry(now = Date.now()) {
+    const focus = focusIndex();
+    if (focus < 0) return null;
+    const entry = window.NVSSharedLive?.getState?.()?.members?.[String(focus)] || null;
+    if (!entry) return null;
+    const freshness = window.NVSIntelligenceCore?.checkinFreshness?.(entry, new Date(now));
+    if (freshness) return freshness.fresh ? entry : null;
+    const at = Number(entry.at);
+    return Number.isFinite(at) && now >= at && now - at <= 15 * 60_000 ? entry : null;
+  }
+
+  function blockingVoluntaryState(now = Date.now()) {
+    const entry = focusedFreshEntry(now);
+    return entry && BLOCKING_VOLUNTARY.has(entry.status) ? entry.status : null;
   }
 
   function isWalk(segment) {
@@ -89,13 +106,14 @@
       removeRow();
       return;
     }
+    const now = Date.now();
     const current = assignment();
     const guidance = document.getElementById("v0111TripGuidance");
-    if (!current?.route || !guidance) {
+    if (!current?.route || !guidance || blockingVoluntaryState(now)) {
       removeRow();
       return;
     }
-    const model = modelForRoute(current.route, Date.now());
+    const model = modelForRoute(current.route, now);
     if (!model) {
       removeRow();
       return;
@@ -167,6 +185,6 @@
 
   ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
 
-  window.NVSStopAwareness0111 = Object.freeze({ stopAwarenessForSegment, activeSegment, modelForRoute, refresh });
+  window.NVSStopAwareness0111 = Object.freeze({ stopAwarenessForSegment, activeSegment, modelForRoute, focusedFreshEntry, blockingVoluntaryState, refresh });
   refresh();
 })();
