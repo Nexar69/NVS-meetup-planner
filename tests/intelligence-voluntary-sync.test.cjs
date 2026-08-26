@@ -26,6 +26,8 @@ const tripDialog = {
   },
 };
 
+const listeners = new Map();
+const timers = [];
 const window = {
   NVSShare: { getFocusIndex: () => 0 },
   NVSSharedLive: { getState: () => ({ members: { "0": liveEntry } }) },
@@ -49,13 +51,13 @@ const window = {
       assignments: [{ member: { name: "You" }, route: { segments: [{ mode: "TRAM", line: "2" }] } }],
     },
   },
-  addEventListener() {},
+  addEventListener(name, handler) { listeners.set(name, handler); },
 };
 
 const document = {
   hidden: true,
   body: null,
-  addEventListener() {},
+  addEventListener(name, handler) { listeners.set(`document:${name}`, handler); },
   getElementById(id) {
     return { v011CurrentAction: currentAction, v011TripDialog: tripDialog }[id] || null;
   },
@@ -71,7 +73,7 @@ vm.runInNewContext(source, {
   Object,
   Set,
   Math,
-  setTimeout: () => 0,
+  setTimeout(callback, delay) { timers.push({ callback, delay }); return timers.length; },
   clearTimeout() {},
 });
 
@@ -80,7 +82,7 @@ assert.ok(api, "voluntary intelligence sync should expose a small testable API")
 assert.equal(typeof api.modelForEntry, "function");
 assert.equal(typeof api.sync, "function");
 assert.equal(typeof api.freshEntry, "function");
-assert.equal(typeof api.observeIntelligenceSurfaces, "function");
+assert.equal(typeof api.schedule, "function");
 
 assert.equal(api.freshEntry(now)?.status, "missed", "fresh voluntary status should be accepted");
 assert.equal(api.sync(now), true, "fresh override should update command and Trip Mode surfaces");
@@ -120,16 +122,22 @@ const fallback = api.modelForEntry({}, { status: "missed" }, now);
 assert.match(fallback.title, /missed connection/);
 assert.match(fallback.nextTitle, /Recover this journey/);
 
+assert.ok(listeners.has("nvs-shared-live-change"), "shared-live changes should schedule reconciliation");
+assert.ok(listeners.has("nvs-group-recommendations-rendered"), "fresh route renders should schedule reconciliation");
+assert.ok(listeners.has("nvs-live-plan-synced"), "live plan synchronization should schedule reconciliation");
+assert.ok(listeners.has("nvs-shared-view-resumed"), "Safari shared-view resume should schedule reconciliation");
+assert.ok(listeners.has("pageshow"), "bfcache restores should schedule reconciliation");
+
 assert.match(release, /intelligence-voluntary-sync-v0111\.js/, "release loader must include voluntary intelligence synchronization");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r12/, "PWA shell should be refreshed for the new runtime layer");
-assert.match(serviceWorker, /intelligence-voluntary-sync-v0111\.js/, "new runtime must be available to installed/offline PWA copies");
+assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r12/, "PWA shell should retain the current validated cache identity");
+assert.match(serviceWorker, /intelligence-voluntary-sync-v0111\.js/, "runtime must remain available to installed/offline PWA copies");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "status precedence must not introduce location tracking");
 assert.match(source, /15 \* 60_000/, "fallback freshness must preserve the 15-minute policy");
 assert.match(source, /document\.hidden/, "periodic reconciliation should pause while hidden");
-assert.match(source, /const SYNC_MS = 30_000/, "periodic fallback should be relaxed now that DOM reconciliation is targeted");
-assert.match(source, /observeIntelligenceSurfaces/, "DOM reconciliation should be scoped to intelligence surfaces");
-assert.match(source, /observer\.observe\(node, \{ childList: true, subtree: true, characterData: true \}\)/, "only targeted intelligence nodes should be observed");
-assert.doesNotMatch(source, /MutationObserver\(\(\) => schedule\(0\)\)\.observe\(root/, "the entire document body must not be observed for intelligence reconciliation");
-assert.match(source, /nvs-shared-view-resumed/, "Safari shared-view resume should trigger targeted reconciliation");
+assert.match(source, /const SYNC_MS = 30_000/, "periodic safety reconciliation should remain relaxed");
+assert.match(source, /const SETTLE_MS = 60/, "event-driven reconciliation should settle after the base intelligence renderer's short debounce");
+assert.match(source, /cancelScheduledSync/, "new events should replace obsolete pending reconciliations rather than stacking timers");
+assert.doesNotMatch(source, /MutationObserver/, "voluntary intelligence reconciliation should no longer observe DOM mutations");
+assert.doesNotMatch(source, /observer\.observe/, "the removed DOM observer must not quietly return");
 
-console.log("intelligence-voluntary-sync: voluntary status wins without GPS or whole-page DOM churn");
+console.log("intelligence-voluntary-sync: voluntary state wins via lifecycle events without GPS or DOM observation");
