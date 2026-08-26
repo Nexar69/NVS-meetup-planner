@@ -160,7 +160,7 @@ async function networkFirst(request, navigation = false) {
 }
 async function cacheFirstWithRefresh(request) {
   const cached = await safeCacheMatch(request);
-  const fresh = fetch(request).then((response) => updateCache(request, response, false));
+  const fresh = timedFetch(request).then((response) => updateCache(request, response, false));
   if (cached) {
     fresh.catch(() => {});
     return cached;
