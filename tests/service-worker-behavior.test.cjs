@@ -5,7 +5,7 @@ const vm = require("node:vm");
 
 const originalSource = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf8");
 
-function runtime(fetchImpl = async () => new Response("network", { status: 200 }), { fastTimeout = false } = {}) {
+function runtime(fetchImpl = async () => new Response("network", { status: 200 }), { fastTimeout = false, currentShellReady = true } = {}) {
   const source = fastTimeout ? originalSource.replace("const NETWORK_TIMEOUT_MS = 5_000;", "const NETWORK_TIMEOUT_MS = 5;") : originalSource;
   const handlers = {};
   const puts = [];
@@ -20,6 +20,11 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
 
   const cache = {
     async addAll(entries) { addedShells.push([...entries]); },
+    async match(key) {
+      const normalized = typeof key === "string" ? key : key.url;
+      if (normalized === "./index.html" && currentShellReady) return new Response("current-shell", { status: 200 });
+      return cacheEntries.get(normalized) || null;
+    },
     async put(key, response) {
       const normalized = typeof key === "string" ? key : key.url;
       puts.push(normalized);
@@ -100,8 +105,14 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
   {
     const rt = runtime();
     await rt.dispatch("activate");
-    assert.deepEqual(rt.deleted, ["old-cache"]);
+    assert.deepEqual(rt.deleted, ["old-cache"], "healthy current shell should permit stale-cache cleanup");
     assert.equal(rt.claimed, 1);
+  }
+  {
+    const rt = runtime(undefined, { currentShellReady: false });
+    await rt.dispatch("activate");
+    assert.deepEqual(rt.deleted, [], "activation must preserve older caches when the current shell is not usable");
+    assert.equal(rt.claimed, 1, "a cache-precache problem must not prevent the worker from claiming clients");
   }
   {
     const rt = runtime();
@@ -187,5 +198,6 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
   assert.match(originalSource, /NETWORK_TIMEOUT_MS = 5_000/, "network-first routes should have a bounded slow-network wait");
   assert.match(originalSource, /AbortController/, "slow network-first requests should be cancellable");
   assert.match(originalSource, /response\.status === 408 \|\| response\.status === 429 \|\| response\.status >= 500/, "transient HTTP failures should prefer a healthy cached app-shell response");
-  console.log("service-worker-behavior: privacy, offline, slow-network/transient-server fallback, update, notification and r12 app-shell behavior passed");
+  assert.match(originalSource, /currentShellReady/, "activation should verify the new shell before deleting older offline caches");
+  console.log("service-worker-behavior: privacy, offline, guarded install/activation, slow-network/transient-server fallback, update, notification and r12 app-shell behavior passed");
 })().catch((error) => { console.error(error); process.exit(1); });
