@@ -46,13 +46,16 @@ const assignment = {
     ],
   },
 };
+let sharedPlan = { view: "person", planId: "secret-plan-id" };
+let focus = 0;
 const listeners = {};
 const window = {
   NVSShare: {
-    getSharedPlan: () => ({ view: "person", planId: "secret-plan-id" }),
-    getFocusIndex: () => 0,
+    getSharedPlan: () => sharedPlan,
+    getFocusIndex: () => focus,
   },
   __NVS_LAST_RECOMMENDATIONS__: { primary: { assignments: [assignment] } },
+  location: { pathname: "/p/example", search: "?me=0" },
   addEventListener(name, fn) { listeners[name] = fn; },
 };
 const document = {
@@ -66,6 +69,7 @@ vm.runInNewContext(source, {
   document,
   navigator,
   sessionStorage,
+  URLSearchParams,
   Intl,
   Date,
   Math,
@@ -80,6 +84,7 @@ vm.runInNewContext(source, {
 const api = window.NVSOfflineJourney0111;
 assert.equal(typeof api?.buildSnapshot, "function");
 assert.equal(typeof api?.readSnapshot, "function");
+assert.equal(typeof api?.personalViewerHint, "function");
 
 const now = new Date("2026-08-26T07:00:00.000Z");
 const snapshot = api.buildSnapshot(assignment, now);
@@ -107,11 +112,18 @@ assert.equal(serialized.includes("Marienplatz"), true, "planned stop names are r
 
 sessionStorage.setItem("meet-schwerin-offline-journey-v1", JSON.stringify(snapshot));
 assert.equal(api.readSnapshot(now.getTime() + 60_000)?.segments?.length, 2);
+sharedPlan = null;
+focus = -1;
+assert.equal(api.personalViewerHint(), true, "personal shared URL must keep the offline fallback eligible if the live plan cannot be fetched");
+window.location.search = "";
+assert.equal(api.personalViewerHint(), false, "a generic shared URL must not expose a personal tab snapshot without a person hint");
+window.location.search = "?me=0";
 assert.equal(api.readSnapshot(now.getTime() + 13 * 60 * 60_000), null, "old tab snapshots must self-expire");
 assert.equal(sessionStorage.getItem("meet-schwerin-offline-journey-v1"), null, "expired snapshot should be removed from the tab");
 
 assert.match(source, /sessionStorage\.setItem/);
 assert.match(source, /sessionStorage\.removeItem/);
+assert.match(source, /URLSearchParams/);
 assert.doesNotMatch(source, /localStorage|indexedDB/i, "offline journey data must remain tab-scoped, not durable");
 assert.doesNotMatch(source, /fetch\s*\(|XMLHttpRequest|sendBeacon/i, "offline fallback must not make its own network requests");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "offline fallback must never request location");
@@ -124,4 +136,4 @@ assert.match(release, /offline-journey-v0111\.css/);
 assert.match(sw, /offline-journey-v0111\.js/);
 assert.match(sw, /offline-journey-v0111\.css/);
 
-console.log("offline-journey: tab-scoped route fallback, expiry, privacy, accessibility and no-GPS contracts passed");
+console.log("offline-journey: tab-scoped route fallback survives live-plan fetch loss while preserving expiry, privacy, accessibility and no-GPS contracts");
