@@ -73,6 +73,7 @@ jobs:
           node tests/dialog-accessibility-behavior.test.cjs
           node tests/shared-live-scheduler.test.cjs
           node tests/shared-live-freshness.test.cjs
+          node tests/shared-checkin-queue.test.cjs
           node tests/shared-plan-update.test.cjs
           node tests/shared-reload-safari.test.cjs
           node tests/routing-coalescer.test.cjs
