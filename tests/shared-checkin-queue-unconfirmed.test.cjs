@@ -78,8 +78,7 @@ vm.runInNewContext(source, {
   assert.equal(checkInCalls.length, 0, "queue promotion must not create another network send");
 
   currentState = { members: { "0": { status: "on-vehicle", at: 20_000 } } };
-  queue.rememberOnlineAttempt("on-vehicle", 19_000);
-  assert.equal(queue.settleConfirmedAttempt(), true, "a later fresh live state should settle a slow original request");
+  assert.equal(queue.settleUnconfirmedPending(), true, "a later fresh live state should settle a slow original request even after promotion");
   assert.equal(queue.getPending(now), null, "late confirmation should clear matching uncertain pending state");
   assert.match(fakeBanner.innerHTML, /confirmed this status after the slow response/);
   assert.equal(checkInCalls.length, 0, "late confirmation must not resend the status");
