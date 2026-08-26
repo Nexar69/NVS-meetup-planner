@@ -8,7 +8,12 @@
   function asTime(value) {
     if (value instanceof Date) return value.getTime();
     const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : NaN;
+    if (Number.isFinite(numeric)) return numeric;
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Date.parse(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return NaN;
   }
 
   function focusedAssignment() {
@@ -24,7 +29,10 @@
     const starts = segments.map((segment) => asTime(segment.departure)).filter(Number.isFinite);
     const ends = segments.map((segment) => asTime(segment.arrival)).filter(Number.isFinite);
     if (!starts.length || !ends.length) return null;
-    return { start: Math.min(...starts), end: Math.max(...ends) };
+    const start = Math.min(...starts);
+    const end = Math.max(...ends);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+    return { start, end };
   }
 
   function isJourneyActive(now = Date.now()) {
@@ -60,6 +68,18 @@
     banner.removeAttribute?.("data-update-deferred");
   }
 
+  function armRestoreTimer(now = Date.now()) {
+    clearTimeout(resetTimer);
+    resetTimer = null;
+    const remaining = forceUntil - Number(now);
+    if (!forceUntil || !Number.isFinite(remaining) || remaining <= 0) {
+      if (forceUntil) restoreBanner();
+      return;
+    }
+    if (document.hidden) return;
+    resetTimer = setTimeout(restoreBanner, remaining);
+  }
+
   function showDeferredWarning(button, now = Date.now()) {
     const banner = button?.closest?.("#v011UpdateBanner") || document.getElementById("v011UpdateBanner");
     if (!banner) return;
@@ -70,8 +90,7 @@
     if (strong) strong.textContent = "Trip active — update deferred";
     if (small) small.textContent = "Tap again within 8 seconds to reload now, or wait until your journey is finished.";
     if (button) button.textContent = "Update now anyway";
-    clearTimeout(resetTimer);
-    resetTimer = setTimeout(restoreBanner, FORCE_WINDOW_MS);
+    armRestoreTimer(now);
   }
 
   function handleUpdateClick(event, now = Date.now()) {
@@ -86,6 +105,7 @@
       restoreBanner();
       return false;
     }
+    if (forceUntil && stamp > forceUntil) restoreBanner();
     event.preventDefault?.();
     event.stopPropagation?.();
     event.stopImmediatePropagation?.();
@@ -99,8 +119,12 @@
     if (!isJourneyActive()) restoreBanner();
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) clearTimeout(resetTimer);
-    else if (forceUntil && Date.now() > forceUntil) restoreBanner();
+    if (document.hidden) {
+      clearTimeout(resetTimer);
+      resetTimer = null;
+      return;
+    }
+    armRestoreTimer();
   });
 
   window.NVSUpdateSafety0111 = Object.freeze({
