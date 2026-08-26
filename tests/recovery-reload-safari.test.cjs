@@ -57,11 +57,13 @@ let reliableCalls = 0;
 let reliableButton = null;
 let reloadCalls = 0;
 let assignCalls = 0;
+let pendingPlanUpdate = true;
+let currentAlerts = [];
 const window = {
   __NVS_LAST_RECOMMENDATIONS__: { primary: { assignments: [] } },
   NVSShare: { isViewer: () => false, getFocusIndex: () => -1 },
-  NVSSharedLive: { hasPendingPlanUpdate: () => true },
-  NVSIntelligence: { getAlerts: () => [] },
+  NVSSharedLive: { hasPendingPlanUpdate: () => pendingPlanUpdate },
+  NVSIntelligence: { getAlerts: () => currentAlerts },
   NVSSharedReload0111: {
     reloadUpdatedPlan(button) {
       reliableCalls += 1;
@@ -107,7 +109,27 @@ window.location.reload = () => { throw new Error("reload blocked"); };
 assert.equal(api.reloadPendingPlan(), true);
 assert.equal(assignCalls, 1, "if direct reload throws, Recovery Desk should fall back to same-URL navigation");
 
+pendingPlanUpdate = false;
+currentAlerts = [{
+  id: "transfer-missed:0:1",
+  kind: "recovery",
+  title: "Transfer at risk",
+  detail: "The connection no longer fits.",
+  segmentIndex: 1,
+  memberIndex: 0,
+  replan: true,
+}];
+const firstSignature = api.getActiveSignature();
+assert.ok(firstSignature.includes("transfer-missed:0:1"));
+
+currentAlerts = [{ ...currentAlerts[0], detail: "The onward service is now cancelled." }];
+const escalatedSignature = api.getActiveSignature();
+assert.notEqual(escalatedSignature, firstSignature, "a material detail change under the same alert ID must invalidate a snooze so Recovery Desk can resurface");
+
+currentAlerts = [{ ...currentAlerts[0] }];
+assert.equal(api.getActiveSignature(), escalatedSignature, "an unchanged recovery condition should keep a stable snooze signature");
+
 assert.match(source, /if \(document\.hidden\) return;/, "Recovery Desk must not arm periodic work while Safari is hidden");
 assert.doesNotMatch(source, /navigator\.geolocation|watchPosition|getCurrentPosition/, "Recovery reload hardening must not add location access");
 
-console.log("recovery-reload-safari: hardened shared-plan reload delegation, compatibility fallback and hidden-page scheduler passed");
+console.log("recovery-reload-safari: shared reload delegation, hidden-page scheduling and changed-condition snooze resurfacing passed");
