@@ -5,6 +5,24 @@
   let timer = null;
   let reconcileTimer = null;
 
+  function loadCheckinQueueAssets() {
+    if (typeof document.querySelector !== "function" || typeof document.createElement !== "function") return;
+    if (!document.querySelector('link[data-shared-checkin-queue-v0111="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./shared-checkin-queue-v0111.css";
+      link.dataset.sharedCheckinQueueV0111 = "true";
+      document.head?.appendChild?.(link);
+    }
+    if (!document.querySelector('script[data-shared-checkin-queue-v0111="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./shared-checkin-queue-v0111.js";
+      script.async = false;
+      script.dataset.sharedCheckinQueueV0111 = "true";
+      document.body?.appendChild?.(script);
+    }
+  }
+
   function asNow(value = Date.now()) {
     if (value instanceof Date) return value.getTime();
     const numeric = Number(value);
@@ -161,6 +179,7 @@
     }
   });
 
+  loadCheckinQueueAssets();
   window.NVSIntelligenceVoluntarySync0111 = Object.freeze({ modelForEntry, sync, freshEntry, schedule });
   schedule(0);
   arm();
