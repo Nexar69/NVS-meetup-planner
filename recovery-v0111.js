@@ -1,6 +1,6 @@
 (() => {
   let timer = null;
-  let snoozedId = "";
+  let snoozedSignature = "";
 
   function alerts() {
     const values = window.NVSIntelligence?.getAlerts?.();
@@ -62,9 +62,20 @@
     ) && relevantForContext(item, context)) || null;
   }
 
-  function activeId() {
+  function activeSignature() {
     if (window.NVSSharedLive?.hasPendingPlanUpdate?.()) return "pending-plan-update";
-    return recoveryAlert()?.id || "";
+    const item = recoveryAlert();
+    if (!item) return "";
+    return [
+      item.id,
+      item.kind,
+      item.title,
+      item.detail,
+      item.segmentIndex,
+      item.memberIndex,
+      item.memberId,
+      item.replan ? "replan" : "",
+    ].map((value) => String(value ?? "").trim()).join("|");
   }
 
   function assignmentFor(item) {
@@ -167,7 +178,7 @@
     else document.querySelector("main.app")?.appendChild(desk);
 
     desk.querySelector("#v0111RecoveryLater")?.addEventListener("click", () => {
-      snoozedId = activeId();
+      snoozedSignature = activeSignature();
       render();
     });
     desk.querySelector("#v0111RecoveryAction")?.addEventListener("click", () => {
@@ -225,11 +236,13 @@
     if (!desk) return;
     const item = recoveryAlert();
     const model = copyFor(item);
-    if (!model || model.id === snoozedId) {
+    const signature = activeSignature();
+    if (!model || (snoozedSignature && signature === snoozedSignature)) {
       desk.hidden = true;
       return;
     }
 
+    if (snoozedSignature && signature !== snoozedSignature) snoozedSignature = "";
     desk.hidden = false;
     desk.classList.toggle("offline", !navigator.onLine);
     const scope = desk.querySelector("#v0111RecoveryScope");
@@ -274,7 +287,7 @@
     "online",
     "offline",
   ].forEach((name) => window.addEventListener(name, () => {
-    if (snoozedId && activeId() !== snoozedId) snoozedId = "";
+    if (snoozedSignature && activeSignature() !== snoozedSignature) snoozedSignature = "";
     render();
   }));
 
@@ -294,6 +307,7 @@
     getTimetableHint: timetableHint,
     getViewContext: viewContext,
     isRelevantForView: relevantForContext,
+    getActiveSignature: activeSignature,
     reloadPendingPlan,
   });
 
