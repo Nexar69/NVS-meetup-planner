@@ -183,7 +183,7 @@ assert.ok(card, "navigator.onLine alone must not erase the saved journey before 
 assert.equal(card.attributes.get("data-connection"), "reconnecting");
 assert.match(card.innerHTML, /RECONNECTING · SAVED FALLBACK/);
 assert.match(card.innerHTML, /Keeping your saved journey until live data returns/);
-assert.match(card.innerHTML, /device reports a connection, but the current personal route has not loaded again yet/);
+assert.match(card.innerHTML, /At least one remaining saved leg was already cancelled/, "higher-priority saved disruption warnings should remain visible while reconnecting");
 assert.match(card.innerHTML, /Tram 4 to Krebsförden/);
 assert.equal(timers.size, 1, "a reconnecting fallback should keep its one-shot freshness\/expiry boundary timer active");
 
@@ -195,4 +195,4 @@ assert.equal(nodes.has("offlineJourney0111"), false, "saved fallback should disa
 assert.doesNotMatch(source, /setInterval\s*\(/, "offline lifecycle should use one-shot boundary timers, never background polling");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "saved journey continuity must not add location tracking");
 
-console.log("offline-journey-render: saved route survives weak reconnects until live data returns, while preserving freshness, expiry, privacy and mobile cleanup");
+console.log("offline-journey-render: saved route survives weak reconnects until live data returns, while preserving disruption priority, freshness, expiry, privacy and mobile cleanup");
