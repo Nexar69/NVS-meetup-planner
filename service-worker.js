@@ -74,6 +74,7 @@ const APP_SHELL = [
   "./what-if-v0111.js",
   "./offline-journey-v0111.js",
   "./intelligence-voluntary-sync-v0111.js",
+  "./update-safety-v0111.js",
   "./release-v074.js",
   "./release-v080.js",
   "./release-v090.js",
