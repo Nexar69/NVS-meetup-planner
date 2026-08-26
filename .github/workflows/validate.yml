@@ -72,6 +72,7 @@ jobs:
           node tests/accessibility-smoke.test.cjs
           node tests/dialog-accessibility-behavior.test.cjs
           node tests/shared-live-scheduler.test.cjs
+          node tests/shared-live-timeout.test.cjs
           node tests/shared-live-freshness.test.cjs
           node tests/shared-freshness-scheduler.test.cjs
           node tests/shared-checkin-queue.test.cjs
