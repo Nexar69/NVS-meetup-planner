@@ -13,6 +13,7 @@ const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf
   let currentState = { members: {} };
   let canCheckIn = true;
   let pendingPlanUpdate = false;
+  let checkInMode = "success";
   const checkInCalls = [];
   let timerId = 0;
   const timers = new Map();
@@ -56,6 +57,7 @@ const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf
       hasPendingPlanUpdate: () => pendingPlanUpdate,
       async checkIn(status) {
         checkInCalls.push(status);
+        if (checkInMode === "noop") return;
         if (status === "clear") currentState = { members: {} };
         else currentState = { members: { "0": { status, at: Date.now() } } };
       },
@@ -105,6 +107,15 @@ const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf
   assert.deepEqual(checkInCalls, ["arrived"]);
   assert.equal(queue.getPending(), null);
 
+  currentState = { members: { "0": { status: "on-vehicle", at: Date.now() - 30_000 } } };
+  queue.queueStatus("on-vehicle", Date.now());
+  checkInMode = "noop";
+  assert.equal(await queue.sendPending(), false, "an old matching status must not masquerade as confirmation of a failed retry");
+  assert.equal(queue.getPending()?.status, "on-vehicle", "unconfirmed intent should remain pending for another explicit retry");
+  checkInMode = "success";
+  assert.equal(await queue.sendPending(), true, "a fresh timestamp from live state should confirm the retry");
+  assert.equal(queue.getPending(), null);
+
   queue.queueStatus("clear", Date.now());
   assert.equal(await queue.sendPending(), true, "queued clear should be confirmable too");
   assert.equal(checkInCalls.at(-1), "clear");
@@ -119,6 +130,7 @@ const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf
   assert.match(source, /stopImmediatePropagation\(\)/, "definite-offline taps must not leak through to the base POST handler");
   assert.match(source, /Pending — not shared/, "UI must clearly disclose that queued state has not been shared");
   assert.match(source, /Connection is available again\. Confirm it is still true, then send it\./, "reconnect must require a fresh explicit send rather than silently auto-posting stale state");
+  assert.match(source, /afterAt > beforeAt/, "queued send confirmation must require a fresh live timestamp instead of accepting an old matching status");
   assert.doesNotMatch(source, /localStorage|sessionStorage/, "pending voluntary state must remain memory-only and disappear with the page");
   assert.doesNotMatch(source, /fetch\s*\(/, "queue layer must not create a second direct network path");
   assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "queue must not add location tracking");
@@ -130,5 +142,5 @@ const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf
   assert.match(sw, /shared-checkin-queue-v0111\.js/, "offline shell must contain queue runtime");
   assert.match(sw, /shared-checkin-queue-v0111\.css/, "offline shell must contain queue styles");
 
-  console.log("shared-checkin-queue: memory-only offline intent, explicit reconnect confirmation, plan-update/read-only guards and privacy boundaries passed");
+  console.log("shared-checkin-queue: memory-only offline intent, explicit reconnect confirmation, fresh-state verification, plan-update/read-only guards and privacy boundaries passed");
 })().catch((error) => { console.error(error); process.exit(1); });
