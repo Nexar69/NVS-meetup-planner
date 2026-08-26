@@ -2,6 +2,7 @@
   const STORAGE_KEY = "meet-schwerin-offline-journey-v1";
   const MAX_AGE_MS = 12 * 60 * 60 * 1000;
   const MAX_SEGMENTS = 12;
+  const COMPLETED_GRACE_MS = 2 * 60 * 1000;
 
   function asDate(value) {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -152,6 +153,16 @@
     }
   }
 
+  function remainingSegments(snapshot, now = Date.now()) {
+    const segments = Array.isArray(snapshot?.segments) ? snapshot.segments.filter(Boolean) : [];
+    if (!segments.length) return [];
+    const remaining = segments.filter((segment) => {
+      const arrival = asDate(segment.arrival)?.getTime();
+      return !Number.isFinite(arrival) || arrival >= now - COMPLETED_GRACE_MS;
+    });
+    return remaining.length ? remaining : segments.slice(-1);
+  }
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -230,8 +241,9 @@
       removeCard();
       return;
     }
+    const visibleSegments = remainingSegments(snapshot);
     const card = ensureCard();
-    const steps = snapshot.segments.map((segment) => {
+    const steps = visibleSegments.map((segment) => {
       const time = formatTime(segment.departure);
       const platform = segment.platformFrom ? ` · platform ${escapeHtml(segment.platformFrom)}` : "";
       const status = segmentStatus(segment);
@@ -239,10 +251,10 @@
       return `<li><span>${escapeHtml(time || "—")}</span><div><strong>${escapeHtml(segmentTitle(segment))}</strong><small>${escapeHtml(segment.from || "Planned route")}${platform}</small>${statusCopy}</div></li>`;
     }).join("");
     const arrival = formatTime(snapshot.arrival);
-    const hasCancelled = snapshot.segments.some((segment) => segment.cancelled);
+    const hasCancelled = visibleSegments.some((segment) => segment.cancelled);
     const safetyCopy = hasCancelled
-      ? "At least one saved leg was already cancelled when you were last online. Do not rely on that leg; use station/vehicle information or reconnect before continuing."
-      : "Realtime updates are unavailable. This is the last timetable plan saved in this tab; check vehicle displays and stop announcements because the route may have changed.";
+      ? "At least one remaining saved leg was already cancelled when you were last online. Do not rely on that leg; use station/vehicle information or reconnect before continuing."
+      : "Realtime updates are unavailable. This is the remaining part of the last timetable plan saved in this tab; check vehicle displays and stop announcements because the route may have changed.";
     card.innerHTML = `
       <div class="v0111-offline-journey-head">
         <div><small>OFFLINE FALLBACK</small><h2 id="offlineJourney0111Title">Your saved journey is still available</h2></div>
@@ -250,7 +262,7 @@
       </div>
       <p>${escapeHtml(safetyCopy)} (${escapeHtml(ageLabel(snapshot.capturedAt))})</p>
       <ol>${steps}</ol>
-      <p class="v0111-offline-journey-meta">${arrival ? `Planned arrival ${escapeHtml(arrival)} · ` : ""}No GPS, names, coordinates, plan IDs or private check-in keys are stored in this fallback.</p>`;
+      <p class="v0111-offline-journey-meta">${arrival ? `Planned arrival ${escapeHtml(arrival)} · ` : ""}Completed legs are hidden when possible. No GPS, names, coordinates, plan IDs or private check-in keys are stored in this fallback.</p>`;
   }
 
   function refresh() {
@@ -271,6 +283,7 @@
     buildSnapshot,
     capture,
     readSnapshot,
+    remainingSegments,
     clearSnapshot,
     personalViewerHint,
     scopeFingerprint,
