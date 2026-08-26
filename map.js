@@ -9,6 +9,8 @@
     context: null,
     selectedType: "primary",
     refreshTimer: null,
+    refreshPending: false,
+    refreshGeneration: 0,
   };
 
   const mapElement = document.getElementById("meetupMap");
@@ -406,6 +408,11 @@
   }
 
   async function refreshFromLiveRoutes() {
+    if (document.hidden) {
+      state.refreshPending = true;
+      return;
+    }
+    const refreshId = ++state.refreshGeneration;
     const context = getContext();
     if (!context.target || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommendGroup) { renderPreview(); return; }
 
@@ -427,6 +434,10 @@
       const routeSets = await Promise.all(
         context.members.map((member) => window.NVSTransit.fetchRoutes(member.originKey, context.destination, context.target)),
       );
+      if (document.hidden || refreshId !== state.refreshGeneration) {
+        state.refreshPending = true;
+        return;
+      }
       if (routeSets.some((routes) => !routes.length)) { renderPreview(); return; }
       const recommendations = window.NVSRecommend.recommendGroup(routeSets, context.members, context.target, {
         priorityIds: window.NVSGroup?.getPriorityIds?.() || [],
@@ -435,8 +446,13 @@
       state.recommendations = recommendations;
       state.context = context;
       if (!recommendations[state.selectedType]) state.selectedType = "primary";
+      state.refreshPending = false;
       drawSelectedPair();
     } catch (error) {
+      if (document.hidden || refreshId !== state.refreshGeneration) {
+        state.refreshPending = true;
+        return;
+      }
       console.warn("Group map refresh failed:", error);
       renderPreview();
     }
@@ -444,7 +460,28 @@
 
   function scheduleRefresh(delay = 80) {
     clearTimeout(state.refreshTimer);
-    state.refreshTimer = setTimeout(refreshFromLiveRoutes, delay);
+    state.refreshTimer = null;
+    if (document.hidden) {
+      state.refreshPending = true;
+      return;
+    }
+    state.refreshPending = false;
+    state.refreshTimer = setTimeout(() => {
+      state.refreshTimer = null;
+      void refreshFromLiveRoutes();
+    }, delay);
+  }
+
+  function suspendRefresh() {
+    clearTimeout(state.refreshTimer);
+    state.refreshTimer = null;
+    state.refreshPending = true;
+    state.refreshGeneration += 1;
+  }
+
+  function resumeRefresh() {
+    state.map?.invalidateSize({ pan: false });
+    if (state.refreshPending) scheduleRefresh(60);
   }
 
   document.querySelectorAll(".map-tabs [data-map-pair]").forEach((button) => button.addEventListener("click", () => selectPair(button.dataset.mapPair)));
@@ -474,6 +511,12 @@
   if (dataBadge) new MutationObserver(() => scheduleRefresh(120)).observe(dataBadge, { attributes: true, attributeFilter: ["class"] });
   if (results) new MutationObserver(() => { tagResultCards(); }).observe(results, { childList: true });
 
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) suspendRefresh();
+    else resumeRefresh();
+  });
+  window.addEventListener("pageshow", resumeRefresh);
+  window.addEventListener("nvs-shared-view-resumed", resumeRefresh);
   window.addEventListener("resize", () => state.map?.invalidateSize({ pan: false }));
   initMap();
   scheduleRefresh(400);
