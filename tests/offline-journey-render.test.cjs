@@ -122,6 +122,17 @@ assert.match(card.innerHTML, /Completed legs are hidden when possible/);
 assert.match(card.innerHTML, /Authoritative shared-session expiry is honored offline when known/);
 assert.doesNotMatch(card.innerHTML, /secret|planId|capability/i);
 
+const staleSnapshot = { ...snapshot, capturedAt: new Date(base - 16 * 60_000).toISOString() };
+sessionStorage.setItem(storageKey, JSON.stringify(staleSnapshot));
+api.refresh();
+card = nodes.get("offlineJourney0111");
+assert.match(card.innerHTML, /Saved realtime details are more than 15 minutes old/);
+assert.match(card.innerHTML, /Stale last-known cancellation/);
+assert.match(card.innerHTML, /platform changed A → C/);
+assert.match(card.innerHTML, /Replacement buses may operate/);
+assert.match(card.innerHTML, /Tram 4 to Krebsförden/, "stale realtime context must not discard the still-useful timetable fallback");
+assert.doesNotMatch(card.innerHTML, /Cancelled when last online/, "aged cancellation state must not retain fresh-looking wording");
+
 sessionStorage.removeItem(storageKey);
 api.refresh();
 card = nodes.get("offlineJourney0111");
@@ -135,4 +146,4 @@ navigator.onLine = true;
 api.refresh();
 assert.equal(nodes.has("offlineJourney0111"), false, "offline fallback should disappear immediately when normal online rendering resumes");
 
-console.log("offline-journey-render: executable mobile fallback hides completed legs, surfaces last-known disruptions, and clearly explains when no tab-scoped route is saved");
+console.log("offline-journey-render: executable mobile fallback hides completed legs, distinguishes fresh vs historical realtime facts, and clearly explains when no tab-scoped route is saved");
