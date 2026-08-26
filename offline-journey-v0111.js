@@ -77,6 +77,14 @@
     return `${first.toString(16).padStart(8, "0")}${second.toString(16).padStart(8, "0")}`;
   }
 
+  function authoritativeExpiry() {
+    try {
+      return safeIso(window.NVSSharedLive?.getState?.()?.expiresAt);
+    } catch {
+      return null;
+    }
+  }
+
   function buildSnapshot(assignment, now = new Date()) {
     const route = assignment?.route;
     const segments = Array.isArray(route?.segments)
@@ -88,6 +96,7 @@
       schema: "meet-schwerin-offline-journey-v1",
       scope,
       capturedAt: now.toISOString(),
+      expiresAt: authoritativeExpiry(),
       arrival: safeIso(route.arrival),
       segments,
     };
@@ -143,7 +152,8 @@
         return null;
       }
       const captured = asDate(parsed.capturedAt)?.getTime();
-      if (!Number.isFinite(captured) || now - captured > MAX_AGE_MS || captured - now > 5 * 60_000) {
+      const expiresAt = asDate(parsed.expiresAt)?.getTime();
+      if (!Number.isFinite(captured) || now - captured > MAX_AGE_MS || captured - now > 5 * 60_000 || (Number.isFinite(expiresAt) && now >= expiresAt)) {
         sessionStorage.removeItem(STORAGE_KEY);
         return null;
       }
@@ -262,7 +272,7 @@
       </div>
       <p>${escapeHtml(safetyCopy)} (${escapeHtml(ageLabel(snapshot.capturedAt))})</p>
       <ol>${steps}</ol>
-      <p class="v0111-offline-journey-meta">${arrival ? `Planned arrival ${escapeHtml(arrival)} · ` : ""}Completed legs are hidden when possible. No GPS, names, coordinates, plan IDs or private check-in keys are stored in this fallback.</p>`;
+      <p class="v0111-offline-journey-meta">${arrival ? `Planned arrival ${escapeHtml(arrival)} · ` : ""}Completed legs are hidden when possible. Authoritative shared-session expiry is honored offline when known. No GPS, names, coordinates, plan IDs or private check-in keys are stored in this fallback.</p>`;
   }
 
   function refresh() {
@@ -287,6 +297,7 @@
     clearSnapshot,
     personalViewerHint,
     scopeFingerprint,
+    authoritativeExpiry,
     refresh,
   });
 
