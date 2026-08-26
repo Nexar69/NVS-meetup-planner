@@ -53,15 +53,31 @@
     return true;
   }
 
+  function pendingMatchesMember(item = pending) {
+    if (!item) return true;
+    return Number(item.memberIndex) === focusIndex();
+  }
+
+  function invalidateMemberMismatch() {
+    if (!pending || pendingMatchesMember(pending)) return false;
+    pending = null;
+    sendingPending = false;
+    lastNotice = "Personal route changed, so the pending status was discarded. Nothing was shared.";
+    clearExpiryTimer();
+    return true;
+  }
+
   function currentPending(now = Date.now()) {
+    invalidateMemberMismatch();
     if (pending && isExpired(pending, now)) expirePending(now);
     return pending ? { ...pending } : null;
   }
 
   function queueStatus(status, now = Date.now()) {
     const value = String(status || "");
-    if (!ALLOWED.has(value)) return null;
-    pending = { status: value, at: Number(now) };
+    const memberIndex = focusIndex();
+    if (!ALLOWED.has(value) || memberIndex < 0) return null;
+    pending = { status: value, at: Number(now), memberIndex };
     sendingPending = false;
     lastNotice = "";
     scheduleExpiry(Number(now));
@@ -120,6 +136,12 @@
     render();
     try {
       await window.NVSSharedLive.checkIn(item.status);
+      if (!pendingMatchesMember(item)) {
+        pending = null;
+        lastNotice = "Personal route changed while the status was sending. Check the current shared status before reporting again.";
+        clearExpiryTimer();
+        return false;
+      }
       if (confirmedByFreshLiveState(item.status, before)) {
         pending = null;
         lastNotice = item.status === "clear" ? "No active check-in remains." : "Pending status sent successfully.";
@@ -204,7 +226,7 @@
     const button = event.target?.closest?.("[data-v010-status]");
     if (!button || navigator.onLine) return;
     const status = String(button.dataset.v010Status || "");
-    if (!ALLOWED.has(status) || button.disabled) return;
+    if (!ALLOWED.has(status) || button.disabled || focusIndex() < 0) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     queueStatus(status);
@@ -231,6 +253,9 @@
       scheduleExpiry();
       render();
     });
+  });
+  window.addEventListener("nvs-shared-session-expired", () => {
+    discardPending("The shared meetup session expired, so the pending status was discarded. Nothing was shared.");
   });
 
   window.NVSCheckinQueue0111 = Object.freeze({
