@@ -21,6 +21,13 @@
     };
   }
 
+  function hasValidExpiry(value) {
+    if (value == null || value === "") return false;
+    if (typeof value === "number") return Number.isFinite(value) && value > 0;
+    const parsed = Date.parse(String(value));
+    return Number.isFinite(parsed) && parsed > 0;
+  }
+
   function sharedSummary() {
     const state = window.NVSSharedLive?.getState?.() || null;
     if (!state) return { available: false };
@@ -28,7 +35,7 @@
     return {
       available: true,
       revision: Number(state.revision) || null,
-      hasAuthoritativeExpiry: Number.isFinite(Number(state.expiresAt)),
+      hasAuthoritativeExpiry: hasValidExpiry(state.expiresAt),
       hasLiveUpdates: members.length > 0,
       liveUpdateCount: members.length,
     };
