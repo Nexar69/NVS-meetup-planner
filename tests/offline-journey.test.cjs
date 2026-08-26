@@ -91,6 +91,8 @@ vm.runInNewContext(source, {
 const api = window.NVSOfflineJourney0111;
 assert.equal(typeof api?.buildSnapshot, "function");
 assert.equal(typeof api?.readSnapshot, "function");
+assert.equal(typeof api?.snapshotAgeMs, "function");
+assert.equal(typeof api?.realtimeContextFresh, "function");
 assert.equal(typeof api?.remainingSegments, "function");
 assert.equal(typeof api?.personalViewerHint, "function");
 assert.equal(typeof api?.clearSnapshot, "function");
@@ -111,6 +113,11 @@ assert.ok(snapshot.segments[0].disruption.length <= 180, "offline disruption tex
 assert.equal(snapshot.segments[1].mode, "WALK");
 assert.equal(snapshot.segments[1].cancelled, false);
 assert.equal(snapshot.segments[1].platformChanged, false);
+
+assert.equal(api.snapshotAgeMs(snapshot, now.getTime() + 14 * 60_000), 14 * 60_000);
+assert.equal(api.realtimeContextFresh(snapshot, now.getTime() + 15 * 60_000), true, "saved realtime context should remain current through the 15-minute boundary");
+assert.equal(api.realtimeContextFresh(snapshot, now.getTime() + 15 * 60_000 + 1), false, "platform/cancellation/disruption facts should become historical after 15 minutes without refresh");
+assert.equal(api.readSnapshot(now.getTime() + 16 * 60_000)?.segments?.length, 2, "the timetable fallback should remain available after realtime facts become stale");
 
 assert.equal(api.remainingSegments(snapshot, new Date("2026-08-26T07:20:00.000Z").getTime()).length, 2, "active and future legs should remain visible offline");
 const afterFirstLeg = api.remainingSegments(snapshot, new Date("2026-08-26T07:31:00.000Z").getTime());
@@ -173,7 +180,12 @@ assert.equal(api.authoritativeExpiry(), null, "offline snapshot capture must not
 assert.match(source, /sessionStorage\.setItem/);
 assert.match(source, /sessionStorage\.removeItem/);
 assert.match(source, /URLSearchParams/);
-assert.match(source, /Cancelled when last online/, "offline UI should surface an already-known cancellation rather than showing the old leg as normal");
+assert.match(source, /REALTIME_CONTEXT_FRESH_MS = 15 \* 60 \* 1000/, "saved realtime facts need an explicit freshness boundary separate from snapshot lifetime");
+assert.match(source, /Stale last-known cancellation/, "old cancellation state should remain visible only as historical context");
+assert.match(source, /Stale last-known disruption/, "old disruption notes should be clearly historical");
+assert.match(source, /Stale last-known platform change/, "old platform changes should be clearly historical");
+assert.match(source, /more than 15 minutes old/, "offline UI should warn when saved realtime facts have aged beyond their trust window");
+assert.match(source, /Cancelled when last online/, "fresh offline UI should surface an already-known cancellation rather than showing the old leg as normal");
 assert.match(source, /remaining saved leg/, "offline cancellation fallback should focus warnings on still-relevant legs");
 assert.match(source, /firstDisruptionText/, "offline snapshots should preserve a bounded last-known provider disruption note");
 assert.match(source, /Last-known platform change/, "offline UI should retain a known realtime platform change instead of silently reverting to the planned platform");
@@ -193,4 +205,4 @@ assert.match(release, /offline-journey-v0111\.css/);
 assert.match(sw, /offline-journey-v0111\.js/);
 assert.match(sw, /offline-journey-v0111\.css/);
 
-console.log("offline-journey: tab-scoped fallback keeps relevant legs and last-known disruption context while enforcing member scope, authoritative/legacy expiry, privacy, accessibility and no-GPS contracts");
+console.log("offline-journey: tab-scoped fallback keeps the timetable while aging realtime facts into explicit historical context and enforcing member scope, expiry, privacy, accessibility and no-GPS contracts");
