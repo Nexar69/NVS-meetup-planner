@@ -128,22 +128,56 @@
     return panel;
   }
 
+  function fallbackClipboardCopy(text) {
+    if (!document.createElement || !document.body?.appendChild || typeof document.execCommand !== "function") return false;
+    let textarea = null;
+    try {
+      textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute?.("readonly", "");
+      textarea.setAttribute?.("aria-hidden", "true");
+      if (textarea.style) {
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        textarea.style.top = "0";
+        textarea.style.opacity = "0";
+      }
+      document.body.appendChild(textarea);
+      textarea.select?.();
+      textarea.setSelectionRange?.(0, text.length);
+      return document.execCommand("copy") === true;
+    } catch {
+      return false;
+    } finally {
+      try { textarea?.remove?.(); } catch {}
+    }
+  }
+
   async function copyDiagnostics() {
     const panel = ensurePanel();
     const status = panel?.querySelector("#v0111DiagnosticsStatus");
     const text = JSON.stringify(buildSnapshot(new Date()), null, 2);
+    let copied = false;
     try {
-      await navigator.clipboard.writeText(text);
-      if (status) status.textContent = "Copied. Safe to paste into a bug report.";
-      return true;
+      if (typeof navigator.clipboard?.writeText === "function") {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      }
     } catch {
-      if (status) status.textContent = "Clipboard access was unavailable. Try again from an active tab.";
-      return false;
+      // iOS/Safari can reject the modern Clipboard API even after an explicit tap.
+      // Fall through to a short-lived textarea copy without persisting diagnostics.
     }
+    if (!copied) copied = fallbackClipboardCopy(text);
+    if (status) {
+      status.textContent = copied
+        ? "Copied. Safe to paste into a bug report."
+        : "Clipboard access was unavailable. Keep this tab active and try again.";
+    }
+    return copied;
   }
 
   function refresh() { ensurePanel(); }
   ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-routing-provider", "nvs-shared-live-change"].forEach((name) => window.addEventListener(name, refresh));
-  window.NVSDiagnostics0111 = Object.freeze({ buildSnapshot, offlineSummary, copyDiagnostics, refresh });
+  window.NVSDiagnostics0111 = Object.freeze({ buildSnapshot, offlineSummary, fallbackClipboardCopy, copyDiagnostics, refresh });
   refresh();
 })();
