@@ -175,6 +175,14 @@
       document.head.appendChild(link);
     }
 
+    if (!document.querySelector('script[data-shared-live-timeout-v0111="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./shared-live-timeout-v0111.js";
+      script.async = false;
+      script.dataset.sharedLiveTimeoutV0111 = "true";
+      document.body.appendChild(script);
+    }
+
     if (!document.querySelector('script[data-shared-live-v010="true"]')) {
       const script = document.createElement("script");
       script.src = "./shared-live-v010.js";
