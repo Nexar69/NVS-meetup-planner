@@ -100,15 +100,16 @@ vm.runInNewContext(source, {
 });
 
 const api = window.NVSOfflineJourney0111;
+const storageKey = "meet-schwerin-offline-journey-v1";
 const snapshot = api.buildSnapshot(routeAssignment, new Date(base));
-sessionStorage.setItem("meet-schwerin-offline-journey-v1", JSON.stringify(snapshot));
+sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
 
 navigator.onLine = false;
 sharedPlan = null;
 focus = -1;
 api.refresh();
 
-const card = nodes.get("offlineJourney0111");
+let card = nodes.get("offlineJourney0111");
 assert.ok(card, "offline personal viewer should render its tab-scoped saved route when the live plan is unavailable");
 assert.doesNotMatch(card.innerHTML, /OLD|Old stop|Already passed/, "clearly completed route legs should not clutter the offline mobile card");
 assert.match(card.innerHTML, /Tram 4 to Krebsförden/);
@@ -121,8 +122,17 @@ assert.match(card.innerHTML, /Completed legs are hidden when possible/);
 assert.match(card.innerHTML, /Authoritative shared-session expiry is honored offline when known/);
 assert.doesNotMatch(card.innerHTML, /secret|planId|capability/i);
 
+sessionStorage.removeItem(storageKey);
+api.refresh();
+card = nodes.get("offlineJourney0111");
+assert.ok(card, "an offline personal link without a saved route should explain the limitation instead of failing silently");
+assert.match(card.innerHTML, /No saved journey is available in this tab/);
+assert.match(card.innerHTML, /Reconnect while this personal route is open/);
+assert.match(card.innerHTML, /does not persist personal route fallbacks in localStorage or IndexedDB/);
+assert.doesNotMatch(card.innerHTML, /Marienplatz|Krebsförden|Replacement buses/, "the no-snapshot state must not leak stale route details from the previous render");
+
 navigator.onLine = true;
 api.refresh();
 assert.equal(nodes.has("offlineJourney0111"), false, "offline fallback should disappear immediately when normal online rendering resumes");
 
-console.log("offline-journey-render: executable mobile fallback hides completed legs and surfaces last-known cancellation, platform and disruption context");
+console.log("offline-journey-render: executable mobile fallback hides completed legs, surfaces last-known disruptions, and clearly explains when no tab-scoped route is saved");
