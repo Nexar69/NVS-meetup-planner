@@ -1,9 +1,9 @@
 (() => {
   const SYNC_MS = 30_000;
+  const SETTLE_MS = 60;
   const OVERRIDE_STATUSES = new Set(["missed", "arrived", "on-vehicle", "at-stop"]);
   let timer = null;
-  let queued = false;
-  let observer = null;
+  let reconcileTimer = null;
 
   function asNow(value = Date.now()) {
     if (value instanceof Date) return value.getTime();
@@ -93,58 +93,43 @@
       .replaceAll("'", "&#039;");
   }
 
-  function stopObserving() {
-    observer?.disconnect?.();
-  }
-
-  function observeIntelligenceSurfaces() {
-    if (document.hidden || !("MutationObserver" in window)) return;
-    if (!observer) observer = new MutationObserver(() => schedule(0));
-    observer.disconnect();
-    const current = document.getElementById("v011CurrentAction");
-    const dialog = document.getElementById("v011TripDialog");
-    [current, dialog].filter(Boolean).forEach((node) => {
-      observer.observe(node, { childList: true, subtree: true, characterData: true });
-    });
-  }
-
   function sync(now = Date.now()) {
-    stopObserving();
-    try {
-      const assignment = focusedAssignment();
-      const entry = freshEntry(now);
-      if (!assignment?.route || !entry) return false;
-      const model = modelForEntry(assignment.route, entry, now);
-      if (!model) return false;
+    const assignment = focusedAssignment();
+    const entry = freshEntry(now);
+    if (!assignment?.route || !entry) return false;
+    const model = modelForEntry(assignment.route, entry, now);
+    if (!model) return false;
 
-      const current = document.getElementById("v011CurrentAction");
-      if (current) {
-        setHtml(current, `<span>NOW · VOLUNTARY</span><strong>${escapeHtml(model.title)}</strong><small>${escapeHtml(model.detail)}</small>`);
-      }
-
-      const dialog = document.getElementById("v011TripDialog");
-      if (dialog) {
-        setText(dialog.querySelector?.("#v011TripPill"), model.pill || "CONFIRMED");
-        setText(dialog.querySelector?.("#v011TripAction"), model.title);
-        setText(dialog.querySelector?.("#v011TripDetail"), model.detail);
-        if (model.nextTitle) {
-          const next = dialog.querySelector?.("#v011TripNext");
-          setHtml(next, `<span>NEXT</span><strong>${escapeHtml(model.nextTitle)}</strong><small>${escapeHtml(model.nextDetail || "")}</small>`);
-        }
-      }
-      return true;
-    } finally {
-      observeIntelligenceSurfaces();
+    const current = document.getElementById("v011CurrentAction");
+    if (current) {
+      setHtml(current, `<span>NOW · VOLUNTARY</span><strong>${escapeHtml(model.title)}</strong><small>${escapeHtml(model.detail)}</small>`);
     }
+
+    const dialog = document.getElementById("v011TripDialog");
+    if (dialog) {
+      setText(dialog.querySelector?.("#v011TripPill"), model.pill || "CONFIRMED");
+      setText(dialog.querySelector?.("#v011TripAction"), model.title);
+      setText(dialog.querySelector?.("#v011TripDetail"), model.detail);
+      if (model.nextTitle) {
+        const next = dialog.querySelector?.("#v011TripNext");
+        setHtml(next, `<span>NEXT</span><strong>${escapeHtml(model.nextTitle)}</strong><small>${escapeHtml(model.nextDetail || "")}</small>`);
+      }
+    }
+    return true;
   }
 
-  function schedule(delay = 0) {
-    if (queued || document.hidden) return;
-    queued = true;
-    setTimeout(() => {
-      queued = false;
+  function cancelScheduledSync() {
+    if (reconcileTimer) clearTimeout(reconcileTimer);
+    reconcileTimer = null;
+  }
+
+  function schedule(delay = SETTLE_MS) {
+    if (document.hidden) return;
+    cancelScheduledSync();
+    reconcileTimer = setTimeout(() => {
+      reconcileTimer = null;
       sync();
-    }, delay);
+    }, Math.max(0, Number(delay) || 0));
   }
 
   function arm() {
@@ -156,22 +141,27 @@
     }, SYNC_MS);
   }
 
-  ["nvs-shared-live-change", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "nvs-shared-view-resumed", "pageshow"].forEach((name) => {
+  [
+    "nvs-shared-live-change",
+    "nvs-group-recommendations-rendered",
+    "nvs-live-plan-synced",
+    "nvs-shared-view-resumed",
+    "pageshow",
+  ].forEach((name) => {
     window.addEventListener(name, () => schedule());
   });
+
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       clearTimeout(timer);
-      stopObserving();
+      cancelScheduledSync();
     } else {
-      observeIntelligenceSurfaces();
       schedule();
       arm();
     }
   });
 
-  window.NVSIntelligenceVoluntarySync0111 = Object.freeze({ modelForEntry, sync, freshEntry, observeIntelligenceSurfaces });
-  observeIntelligenceSurfaces();
-  schedule();
+  window.NVSIntelligenceVoluntarySync0111 = Object.freeze({ modelForEntry, sync, freshEntry, schedule });
+  schedule(0);
   arm();
 })();
