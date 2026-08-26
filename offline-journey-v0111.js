@@ -235,6 +235,17 @@
     return card;
   }
 
+  function renderUnavailable() {
+    const card = ensureCard();
+    card.innerHTML = `
+      <div class="v0111-offline-journey-head">
+        <div><small>OFFLINE</small><h2 id="offlineJourney0111Title">No saved journey is available in this tab</h2></div>
+        <span>Tab only</span>
+      </div>
+      <p>Reconnect while this personal route is open to load the current plan and create a temporary offline fallback for this tab.</p>
+      <p class="v0111-offline-journey-meta">Meet Schwerin does not persist personal route fallbacks in localStorage or IndexedDB, and it never adds background GPS for offline mode.</p>`;
+  }
+
   function render() {
     if (!personalViewerHint() || navigator.onLine) {
       removeCard();
@@ -248,7 +259,7 @@
     }
     const snapshot = readSnapshot();
     if (!snapshot) {
-      removeCard();
+      renderUnavailable();
       return;
     }
     const visibleSegments = remainingSegments(snapshot);
