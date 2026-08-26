@@ -149,6 +149,17 @@
     clearConfirmationTimer();
   }
 
+  function settleUnconfirmedPending() {
+    const item = pending;
+    if (!item || item.source !== "unconfirmed" || !pendingMatchesMember(item) || !confirmedAgainstBaseline(item)) return false;
+    pending = null;
+    sendingPending = false;
+    clearExpiryTimer();
+    lastNotice = "The shared meetup confirmed this status after the slow response. Nothing needs to be sent again.";
+    render();
+    return true;
+  }
+
   function settleConfirmedAttempt() {
     if (!recentAttempt) return false;
     const item = recentAttempt;
@@ -158,13 +169,7 @@
     }
     if (!confirmedAgainstBaseline(item)) return false;
     clearRecentAttempt();
-    if (pending?.source === "unconfirmed" && pending.status === item.status && pending.memberIndex === item.memberIndex) {
-      pending = null;
-      sendingPending = false;
-      clearExpiryTimer();
-      lastNotice = "The shared meetup confirmed this status after the slow response. Nothing needs to be sent again.";
-      render();
-    }
+    settleUnconfirmedPending();
     return true;
   }
 
@@ -373,6 +378,7 @@
     clearConfirmationTimer();
     if (!document.hidden) {
       settleConfirmedAttempt();
+      settleUnconfirmedPending();
       promoteUnconfirmedAttempt(Date.now());
       expirePending(Date.now());
       scheduleExpiry();
@@ -382,7 +388,10 @@
   });
   ["online", "offline", "pageshow", "nvs-shared-live-change", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => {
     window.addEventListener(name, () => {
-      if (name === "nvs-shared-live-change") settleConfirmedAttempt();
+      if (name === "nvs-shared-live-change") {
+        settleConfirmedAttempt();
+        settleUnconfirmedPending();
+      }
       expirePending(Date.now());
       scheduleExpiry();
       scheduleConfirmation();
@@ -402,6 +411,7 @@
     render,
     rememberOnlineAttempt,
     settleConfirmedAttempt,
+    settleUnconfirmedPending,
     promoteUnconfirmedAttempt,
     maxPendingMs: MAX_PENDING_MS,
     confirmWaitMs: CONFIRM_WAIT_MS,
