@@ -28,6 +28,7 @@ const tripDialog = {
 
 const listeners = new Map();
 const timers = [];
+const clearedTimers = [];
 const window = {
   NVSShare: { getFocusIndex: () => 0 },
   NVSSharedLive: { getState: () => ({ members: { "0": liveEntry } }) },
@@ -74,7 +75,7 @@ vm.runInNewContext(source, {
   Set,
   Math,
   setTimeout(callback, delay) { timers.push({ callback, delay }); return timers.length; },
-  clearTimeout() {},
+  clearTimeout(id) { clearedTimers.push(id); },
 });
 
 const api = window.NVSIntelligenceVoluntarySync0111;
@@ -127,6 +128,20 @@ assert.ok(listeners.has("nvs-group-recommendations-rendered"), "fresh route rend
 assert.ok(listeners.has("nvs-live-plan-synced"), "live plan synchronization should schedule reconciliation");
 assert.ok(listeners.has("nvs-shared-view-resumed"), "Safari shared-view resume should schedule reconciliation");
 assert.ok(listeners.has("pageshow"), "bfcache restores should schedule reconciliation");
+
+const initialTimerCount = timers.length;
+document.hidden = false;
+listeners.get("nvs-shared-live-change")();
+assert.equal(timers.length, initialTimerCount + 1, "a visible shared-live event should schedule exactly one reconciliation");
+assert.equal(timers.at(-1).delay, 60, "reconciliation should settle after the base intelligence render debounce");
+const firstScheduledId = timers.length;
+listeners.get("nvs-group-recommendations-rendered")();
+assert.equal(timers.at(-1).delay, 60, "a newer route event should schedule a fresh settle window");
+assert.ok(clearedTimers.includes(firstScheduledId), "a newer event should cancel the obsolete pending reconciliation timer");
+const beforeHiddenEvent = timers.length;
+document.hidden = true;
+listeners.get("nvs-live-plan-synced")();
+assert.equal(timers.length, beforeHiddenEvent, "hidden pages should not arm reconciliation work");
 
 assert.match(release, /intelligence-voluntary-sync-v0111\.js/, "release loader must include voluntary intelligence synchronization");
 assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r12/, "PWA shell should retain the current validated cache identity");
