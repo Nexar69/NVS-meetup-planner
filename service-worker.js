@@ -123,15 +123,26 @@ self.addEventListener("activate", (event) => {
     await self.clients.claim();
   })());
 });
+async function reopenFromNotification() {
+  let windows = [];
+  try {
+    windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  } catch {}
+  const ownOrigin = self.location.origin;
+  const existing = windows.find((client) => {
+    try { return new URL(client.url).origin === ownOrigin; } catch { return false; }
+  });
+  if (existing) {
+    try {
+      await existing.focus();
+      return;
+    } catch {}
+  }
+  try { await self.clients.openWindow("./"); } catch {}
+}
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  event.waitUntil((async () => {
-    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    const ownOrigin = self.location.origin;
-    const existing = windows.find((client) => { try { return new URL(client.url).origin === ownOrigin; } catch { return false; } });
-    if (existing) { await existing.focus(); return; }
-    await self.clients.openWindow("./");
-  })());
+  event.waitUntil(reopenFromNotification());
 });
 async function safeCacheMatch(key) {
   try {
