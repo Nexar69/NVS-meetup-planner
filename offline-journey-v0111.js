@@ -30,6 +30,8 @@
 
   function sanitizeSegment(segment) {
     if (!segment || typeof segment !== "object") return null;
+    const plannedPlatformFrom = safeText(segment.plannedPlatformFrom, 40);
+    const platformFrom = safeText(segment.platformFrom || plannedPlatformFrom, 40);
     return {
       mode: safeText(segment.mode, 24),
       modeLabel: safeText(segment.modeLabel, 40),
@@ -39,7 +41,9 @@
       headsign: safeText(segment.headsign, 120),
       departure: safeIso(segment.departure),
       arrival: safeIso(segment.arrival),
-      platformFrom: safeText(segment.platformFrom || segment.plannedPlatformFrom, 40),
+      platformFrom,
+      plannedPlatformFrom,
+      platformChanged: Boolean(platformFrom && plannedPlatformFrom && platformFrom !== plannedPlatformFrom),
       platformTo: safeText(segment.platformTo || segment.plannedPlatformTo, 40),
       cancelled: Boolean(segment.cancelled),
       disruption: firstDisruptionText(segment),
@@ -180,11 +184,15 @@
   }
 
   function segmentStatus(segment) {
+    const platformChange = segment.platformChanged
+      ? ` · platform changed ${segment.plannedPlatformFrom} → ${segment.platformFrom}`
+      : "";
     if (segment.cancelled) {
       const note = segment.disruption ? ` · ${segment.disruption}` : "";
-      return `Cancelled when last online${note}`;
+      return `Cancelled when last online${platformChange}${note}`;
     }
-    return segment.disruption ? `Last-known disruption: ${segment.disruption}` : "";
+    if (segment.disruption) return `Last-known disruption: ${segment.disruption}${platformChange}`;
+    return segment.platformChanged ? `Last-known platform change: ${segment.plannedPlatformFrom} → ${segment.platformFrom}` : "";
   }
 
   function removeCard() {
