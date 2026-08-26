@@ -1,6 +1,7 @@
 (() => {
   const STORAGE_KEY = "meet-schwerin-offline-journey-v1";
   const MAX_AGE_MS = 12 * 60 * 60 * 1000;
+  const REALTIME_CONTEXT_FRESH_MS = 15 * 60 * 1000;
   const MAX_SEGMENTS = 12;
   const COMPLETED_GRACE_MS = 2 * 60 * 1000;
 
@@ -163,6 +164,17 @@
     }
   }
 
+  function snapshotAgeMs(snapshot, now = Date.now()) {
+    const captured = asDate(snapshot?.capturedAt)?.getTime();
+    if (!Number.isFinite(captured)) return Infinity;
+    return Math.max(0, Number(now) - captured);
+  }
+
+  function realtimeContextFresh(snapshot, now = Date.now()) {
+    const age = snapshotAgeMs(snapshot, now);
+    return Number.isFinite(age) && age <= REALTIME_CONTEXT_FRESH_MS;
+  }
+
   function remainingSegments(snapshot, now = Date.now()) {
     const segments = Array.isArray(snapshot?.segments) ? snapshot.segments.filter(Boolean) : [];
     if (!segments.length) return [];
@@ -204,16 +216,25 @@
     return `${vehicle} to ${segment.to || "the next stop"}`;
   }
 
-  function segmentStatus(segment) {
+  function segmentStatus(segment, realtimeFresh = true) {
     const platformChange = segment.platformChanged
       ? ` · platform changed ${segment.plannedPlatformFrom} → ${segment.platformFrom}`
       : "";
     if (segment.cancelled) {
       const note = segment.disruption ? ` · ${segment.disruption}` : "";
-      return `Cancelled when last online${platformChange}${note}`;
+      return realtimeFresh
+        ? `Cancelled when last online${platformChange}${note}`
+        : `Stale last-known cancellation${platformChange}${note}`;
     }
-    if (segment.disruption) return `Last-known disruption: ${segment.disruption}${platformChange}`;
-    return segment.platformChanged ? `Last-known platform change: ${segment.plannedPlatformFrom} → ${segment.platformFrom}` : "";
+    if (segment.disruption) {
+      return realtimeFresh
+        ? `Last-known disruption: ${segment.disruption}${platformChange}`
+        : `Stale last-known disruption: ${segment.disruption}${platformChange}`;
+    }
+    if (!segment.platformChanged) return "";
+    return realtimeFresh
+      ? `Last-known platform change: ${segment.plannedPlatformFrom} → ${segment.platformFrom}`
+      : `Stale last-known platform change: ${segment.plannedPlatformFrom} → ${segment.platformFrom}`;
   }
 
   function removeCard() {
@@ -263,19 +284,22 @@
       return;
     }
     const visibleSegments = remainingSegments(snapshot);
+    const realtimeFresh = realtimeContextFresh(snapshot);
     const card = ensureCard();
     const steps = visibleSegments.map((segment) => {
       const time = formatTime(segment.departure);
       const platform = segment.platformFrom ? ` · platform ${escapeHtml(segment.platformFrom)}` : "";
-      const status = segmentStatus(segment);
+      const status = segmentStatus(segment, realtimeFresh);
       const statusCopy = status ? `<small><strong>${escapeHtml(status)}</strong></small>` : "";
       return `<li><span>${escapeHtml(time || "—")}</span><div><strong>${escapeHtml(segmentTitle(segment))}</strong><small>${escapeHtml(segment.from || "Planned route")}${platform}</small>${statusCopy}</div></li>`;
     }).join("");
     const arrival = formatTime(snapshot.arrival);
     const hasCancelled = visibleSegments.some((segment) => segment.cancelled);
-    const safetyCopy = hasCancelled
-      ? "At least one remaining saved leg was already cancelled when you were last online. Do not rely on that leg; use station/vehicle information or reconnect before continuing."
-      : "Realtime updates are unavailable. This is the remaining part of the last timetable plan saved in this tab; check vehicle displays and stop announcements because the route may have changed.";
+    const safetyCopy = !realtimeFresh
+      ? "Saved realtime details are more than 15 minutes old. Treat platform changes, cancellations and disruption notes as historical only; verify them on station/vehicle displays or reconnect before relying on them."
+      : hasCancelled
+        ? "At least one remaining saved leg was already cancelled when you were last online. Do not rely on that leg; use station/vehicle information or reconnect before continuing."
+        : "Realtime updates are unavailable. This is the remaining part of the last timetable plan saved in this tab; check vehicle displays and stop announcements because the route may have changed.";
     card.innerHTML = `
       <div class="v0111-offline-journey-head">
         <div><small>OFFLINE FALLBACK</small><h2 id="offlineJourney0111Title">Your saved journey is still available</h2></div>
@@ -304,6 +328,8 @@
     buildSnapshot,
     capture,
     readSnapshot,
+    snapshotAgeMs,
+    realtimeContextFresh,
     remainingSegments,
     clearSnapshot,
     personalViewerHint,
