@@ -7,7 +7,19 @@ const source = fs.readFileSync(path.resolve(__dirname, "../offline-journey-v0111
 const saved = new Map();
 const nodes = new Map();
 const listeners = {};
+const documentListeners = {};
+const timers = new Map();
+let nextTimer = 1;
 const base = Date.now();
+
+function setTimeoutMock(fn, delay) {
+  const id = nextTimer++;
+  timers.set(id, { fn, delay: Number(delay) });
+  return id;
+}
+function clearTimeoutMock(id) {
+  timers.delete(id);
+}
 
 const sessionStorage = {
   setItem(key, value) { saved.set(key, String(value)); },
@@ -20,6 +32,7 @@ const personalPlan = {
 };
 
 const document = {
+  hidden: false,
   createElement() {
     return {
       id: "",
@@ -34,6 +47,7 @@ const document = {
     return nodes.get(id) || null;
   },
   querySelector() { return null; },
+  addEventListener(name, fn) { documentListeners[name] = fn; },
 };
 
 let sharedPlan = { view: "person" };
@@ -97,6 +111,8 @@ vm.runInNewContext(source, {
   Array,
   Object,
   JSON,
+  setTimeout: setTimeoutMock,
+  clearTimeout: clearTimeoutMock,
 });
 
 const api = window.NVSOfflineJourney0111;
@@ -121,13 +137,25 @@ assert.match(card.innerHTML, /At least one remaining saved leg was already cance
 assert.match(card.innerHTML, /Completed legs are hidden when possible/);
 assert.match(card.innerHTML, /Authoritative shared-session expiry is honored offline when known/);
 assert.doesNotMatch(card.innerHTML, /secret|planId|capability/i);
+assert.equal(timers.size, 1, "a fresh offline snapshot should arm exactly one freshness-boundary rerender");
+const firstTimer = [...timers.values()][0];
+assert.ok(firstTimer.delay > 0 && firstTimer.delay <= 15 * 60_000 + 100, "freshness rerender should target the 15-minute trust boundary, not poll repeatedly");
+
+document.hidden = true;
+documentListeners.visibilitychange?.();
+assert.equal(timers.size, 0, "hidden pages should cancel the offline freshness timer");
+document.hidden = false;
+documentListeners.visibilitychange?.();
+assert.equal(timers.size, 1, "returning to a visible offline card should re-arm only the needed one-shot freshness transition");
 
 const staleSnapshot = { ...snapshot, capturedAt: new Date(base - 16 * 60_000).toISOString() };
 sessionStorage.setItem(storageKey, JSON.stringify(staleSnapshot));
 api.refresh();
 card = nodes.get("offlineJourney0111");
+assert.equal(timers.size, 0, "already-stale snapshots should not keep a periodic freshness timer alive");
 assert.match(card.innerHTML, /Saved realtime details are more than 15 minutes old/);
 assert.match(card.innerHTML, /Stale last-known cancellation/);
+assert.match(card.innerHTML, /last-known platform C/);
 assert.match(card.innerHTML, /platform changed A → C/);
 assert.match(card.innerHTML, /Replacement buses may operate/);
 assert.match(card.innerHTML, /Tram 4 to Krebsförden/, "stale realtime context must not discard the still-useful timetable fallback");
@@ -137,6 +165,7 @@ sessionStorage.removeItem(storageKey);
 api.refresh();
 card = nodes.get("offlineJourney0111");
 assert.ok(card, "an offline personal link without a saved route should explain the limitation instead of failing silently");
+assert.equal(timers.size, 0, "the no-snapshot state should leave no freshness timer armed");
 assert.match(card.innerHTML, /No saved journey is available in this tab/);
 assert.match(card.innerHTML, /Reconnect while this personal route is open/);
 assert.match(card.innerHTML, /does not persist personal route fallbacks beyond this tab/);
@@ -144,6 +173,8 @@ assert.doesNotMatch(card.innerHTML, /Marienplatz|Krebsförden|Replacement buses/
 
 navigator.onLine = true;
 api.refresh();
+assert.equal(timers.size, 0, "normal online rendering should leave no offline freshness timer armed");
 assert.equal(nodes.has("offlineJourney0111"), false, "offline fallback should disappear immediately when normal online rendering resumes");
+assert.doesNotMatch(source, /setInterval\s*\(/, "offline freshness should use a one-shot boundary timer, never background polling");
 
-console.log("offline-journey-render: executable mobile fallback hides completed legs, distinguishes fresh vs historical realtime facts, and clearly explains when no tab-scoped route is saved");
+console.log("offline-journey-render: executable mobile fallback hides completed legs, ages realtime facts at a one-shot visible-page boundary, and clearly explains when no tab-scoped route is saved");
