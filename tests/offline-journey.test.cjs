@@ -100,7 +100,7 @@ assert.equal(typeof api?.clearSnapshot, "function");
 assert.equal(typeof api?.authoritativeExpiry, "function");
 
 const now = new Date("2026-08-26T07:00:00.000Z");
-const snapshot = api.buildSnapshot(assignment, now);
+const snapshot = api.capture(now);
 assert.equal(snapshot.schema, "meet-schwerin-offline-journey-v1");
 assert.equal(snapshot.expiresAt, "2026-08-26T08:00:00.000Z", "offline fallback should inherit the backend-authoritative shared-session deadline when available");
 assert.equal(snapshot.segments.length, 2);
