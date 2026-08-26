@@ -1,0 +1,131 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+const source = fs.readFileSync(path.resolve(__dirname, "../update-safety-v0111.js"), "utf8");
+const loader = fs.readFileSync(path.resolve(__dirname, "../v05.js"), "utf8");
+const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf8");
+
+const listeners = {};
+const windowListeners = {};
+let tripOpen = false;
+
+const strong = { textContent: "Meet Schwerin update ready" };
+const small = { textContent: "A newer app shell has finished downloading." };
+const button = {
+  textContent: "Reload update",
+  matches(selector) { return selector === "#v011UpdateBanner button"; },
+  closest(selector) { return selector === "#v011UpdateBanner" ? banner : null; },
+};
+const banner = {
+  hidden: false,
+  attrs: {},
+  querySelector(selector) {
+    if (selector === "strong") return strong;
+    if (selector === "small") return small;
+    if (selector === "button") return button;
+    return null;
+  },
+  setAttribute(name, value) { this.attrs[name] = value; },
+  removeAttribute(name) { delete this.attrs[name]; },
+};
+
+const document = {
+  hidden: false,
+  getElementById(id) {
+    if (id === "v011TripDialog") return { open: tripOpen };
+    if (id === "v011UpdateBanner") return banner;
+    return null;
+  },
+  addEventListener(name, handler, options) { listeners[name] = { handler, options }; },
+};
+const window = {
+  __NVS_LAST_RECOMMENDATIONS__: null,
+  NVSShare: { getFocusIndex: () => 0 },
+  addEventListener(name, handler) { windowListeners[name] = handler; },
+};
+
+vm.runInNewContext(source, {
+  window,
+  document,
+  Date,
+  Number,
+  Array,
+  Math,
+  Object,
+  setTimeout,
+  clearTimeout,
+});
+
+const api = window.NVSUpdateSafety0111;
+assert.ok(api, "update safety API should be exposed for deterministic testing");
+assert.equal(listeners.click?.options, true, "update guard should intercept the click in capture phase before the base reload handler");
+
+const now = Date.UTC(2026, 7, 26, 12, 0, 0);
+const at = (minutes) => new Date(now + minutes * 60_000);
+window.__NVS_LAST_RECOMMENDATIONS__ = {
+  primary: {
+    assignments: [{
+      route: {
+        segments: [
+          { departure: at(-5), arrival: at(10) },
+          { departure: at(12), arrival: at(25) },
+        ],
+      },
+    }],
+  },
+};
+
+assert.equal(api.isJourneyActive(now), true, "a journey between its first departure and final arrival should be protected");
+assert.equal(api.isJourneyActive(now - 14 * 60_000), true, "the update guard should protect the pre-departure preparation window");
+assert.equal(api.isJourneyActive(now + 31 * 60_000), false, "the guard should release after the final-arrival grace window");
+
+let prevented = 0;
+let stopped = 0;
+let immediate = 0;
+const firstEvent = {
+  target: button,
+  preventDefault() { prevented += 1; },
+  stopPropagation() { stopped += 1; },
+  stopImmediatePropagation() { immediate += 1; },
+};
+assert.equal(api.handleUpdateClick(firstEvent, now), true, "the first active-trip update tap should be deferred");
+assert.equal(prevented, 1);
+assert.equal(stopped, 1);
+assert.equal(immediate, 1);
+assert.equal(strong.textContent, "Trip active — update deferred");
+assert.match(small.textContent, /Tap again within 8 seconds/);
+assert.equal(button.textContent, "Update now anyway");
+assert.equal(banner.attrs["data-update-deferred"], "true");
+
+const secondEvent = {
+  target: button,
+  preventDefault() { throw new Error("second explicit tap must not be prevented"); },
+  stopPropagation() { throw new Error("second explicit tap must be allowed to reach the base handler"); },
+  stopImmediatePropagation() { throw new Error("second explicit tap must be allowed to reach the base handler"); },
+};
+assert.equal(api.handleUpdateClick(secondEvent, now + 1_000), false, "a second explicit tap in the confirmation window should allow the update");
+assert.equal(strong.textContent, "Meet Schwerin update ready");
+assert.equal(button.textContent, "Reload update");
+
+window.__NVS_LAST_RECOMMENDATIONS__ = {
+  primary: { assignments: [{ route: { segments: [{ departure: at(40), arrival: at(60) }] } }] },
+};
+const ordinaryEvent = {
+  target: button,
+  preventDefault() { throw new Error("ordinary update tap must not be blocked"); },
+};
+assert.equal(api.handleUpdateClick(ordinaryEvent, now), false, "updates outside the protected journey window should behave normally");
+
+tripOpen = true;
+window.__NVS_LAST_RECOMMENDATIONS__ = null;
+assert.equal(api.isJourneyActive(now), true, "an explicitly open Trip Mode should always protect against accidental reload");
+tripOpen = false;
+
+assert.match(loader, /update-safety-v0111\.js/, "the normal app loader must load update safety");
+assert.match(sw, /update-safety-v0111\.js/, "the PWA app shell must include update safety for offline/home-screen use");
+assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "update safety must not add location tracking");
+assert.doesNotMatch(source, /localStorage|sessionStorage|fetch\(|XMLHttpRequest/i, "update safety must not persist data or add network traffic");
+
+console.log("update-safety: active-trip deferral, explicit second-tap override, normal updates, PWA wiring and privacy boundaries passed");
