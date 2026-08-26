@@ -134,7 +134,7 @@
   }
 
   function clearFreshnessTimer() {
-    if (freshnessTimer) clearTimeout(freshnessTimer);
+    if (freshnessTimer && typeof clearTimeout === "function") clearTimeout(freshnessTimer);
     freshnessTimer = null;
   }
 
@@ -184,7 +184,7 @@
 
   function scheduleFreshnessRefresh(snapshot, now = Date.now()) {
     clearFreshnessTimer();
-    if (document.hidden || navigator.onLine || !realtimeContextFresh(snapshot, now)) return null;
+    if (document.hidden || navigator.onLine || !realtimeContextFresh(snapshot, now) || typeof setTimeout !== "function") return null;
     const captured = asDate(snapshot?.capturedAt)?.getTime();
     if (!Number.isFinite(captured)) return null;
     const delay = Math.max(25, captured + REALTIME_CONTEXT_FRESH_MS - Number(now) + 25);
@@ -348,7 +348,7 @@
   window.addEventListener("nvs-shared-view-resumed", refresh);
   window.addEventListener("nvs-shared-session-expired", clearSnapshot);
   window.addEventListener("load", refresh);
-  document.addEventListener("visibilitychange", () => {
+  document.addEventListener?.("visibilitychange", () => {
     if (document.hidden) clearFreshnessTimer();
     else render();
   });
