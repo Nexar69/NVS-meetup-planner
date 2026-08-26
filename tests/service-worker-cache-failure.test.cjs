@@ -5,12 +5,21 @@ const vm = require("node:vm");
 
 const source = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf8");
 
-function runtime({ fetchImpl, openFails = false, putFails = false, matchFails = false, keysFail = false, deleteFails = false } = {}) {
+function runtime({ fetchImpl, openFails = false, addAllFails = false, putFails = false, matchFails = false, keysFail = false, deleteFails = false, currentShellReady = true } = {}) {
   const handlers = {};
   const cacheEntries = new Map();
+  const deleted = [];
   let claimed = 0;
   const cache = {
-    async addAll() {},
+    async addAll() {
+      if (addAllFails) throw new Error("CACHE_ADD_ALL_FAILED");
+    },
+    async match(key) {
+      if (matchFails) throw new Error("CACHE_MATCH_FAILED");
+      const normalized = typeof key === "string" ? key : key.url;
+      if (normalized === "./index.html" && currentShellReady) return new Response("current-shell", { status: 200 });
+      return cacheEntries.get(normalized) || null;
+    },
     async put(key, response) {
       if (putFails) throw new Error("CACHE_PUT_FAILED");
       const normalized = typeof key === "string" ? key : key.url;
@@ -34,8 +43,9 @@ function runtime({ fetchImpl, openFails = false, putFails = false, matchFails = 
         if (keysFail) throw new Error("CACHE_KEYS_FAILED");
         return ["stale-cache", "meet-schwerin-v0.11.1-r12"];
       },
-      async delete() {
+      async delete(key) {
         if (deleteFails) throw new Error("CACHE_DELETE_FAILED");
+        deleted.push(key);
         return true;
       },
     },
@@ -54,15 +64,34 @@ function runtime({ fetchImpl, openFails = false, putFails = false, matchFails = 
     handlers.fetch({ request, respondWith(value) { responsePromise = Promise.resolve(value); } });
     return responsePromise ? responsePromise : null;
   }
-  async function activate() {
+  async function dispatchLifecycle(type) {
     const waits = [];
-    handlers.activate({ waitUntil(value) { waits.push(Promise.resolve(value)); } });
+    handlers[type]({ waitUntil(value) { waits.push(Promise.resolve(value)); } });
     await Promise.all(waits);
   }
-  return { fetchEvent, activate, cacheEntries, get claimed() { return claimed; } };
+  return {
+    fetchEvent,
+    install: () => dispatchLifecycle("install"),
+    activate: () => dispatchLifecycle("activate"),
+    cacheEntries,
+    deleted,
+    get claimed() { return claimed; },
+  };
 }
 
 (async () => {
+  {
+    const rt = runtime({ openFails: true });
+    await rt.install();
+    assert.equal(rt.claimed, 0, "install should resolve safely even when CacheStorage cannot be opened");
+  }
+  {
+    const rt = runtime({ addAllFails: true, currentShellReady: false });
+    await rt.install();
+    await rt.activate();
+    assert.deepEqual(rt.deleted, [], "failed app-shell precache must preserve older healthy caches during activation");
+    assert.equal(rt.claimed, 1, "failed precache must not brick activation or online use");
+  }
   {
     const rt = runtime({ openFails: true, fetchImpl: async () => new Response("fresh-page", { status: 200 }) });
     const response = await rt.fetchEvent("https://app.example/p/cache-open-failure", "navigate");
@@ -95,11 +124,14 @@ function runtime({ fetchImpl, openFails = false, putFails = false, matchFails = 
     assert.equal(rt.claimed, 1, "failure enumerating caches must not prevent service-worker activation");
   }
 
+  assert.match(source, /async function precacheAppShell/, "install should isolate app-shell precache failures");
+  assert.match(source, /async function currentShellReady/, "activation should verify the current shell before stale-cache cleanup");
+  assert.match(source, /if \(await currentShellReady\(\)\) await cleanupOldCaches\(\)/, "older caches should survive until the new shell is known usable");
   assert.match(source, /async function cleanupOldCaches/, "activation should isolate stale-cache cleanup failures");
   assert.match(source, /async function safeCacheMatch/, "service worker should isolate CacheStorage read failures");
   assert.match(source, /CacheStorage can fail because of quota\/private-mode\/browser issues/, "cache write failures should be intentionally documented and tolerated");
   assert.match(source, /async function cacheFirstWithRefresh/, "non-app-shell static requests should share the safe cache-read path");
   assert.match(source, /pathname\.startsWith\("\/api\/"\)/, "API traffic must remain outside service-worker caching");
 
-  console.log("service-worker-cache-failure: online loads and activation survive CacheStorage failures without weakening API privacy");
+  console.log("service-worker-cache-failure: install, online loads and activation survive CacheStorage failures without sacrificing older offline fallback or API privacy");
 })().catch((error) => { console.error(error); process.exit(1); });
