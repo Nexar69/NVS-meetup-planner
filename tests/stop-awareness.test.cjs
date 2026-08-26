@@ -33,6 +33,7 @@ vm.runInNewContext(source, {
   Boolean,
   Array,
   Object,
+  Set,
   setTimeout,
   clearTimeout,
 });
@@ -40,6 +41,7 @@ vm.runInNewContext(source, {
 const api = window.NVSStopAwareness0111;
 assert.equal(typeof api?.stopAwarenessForSegment, "function");
 assert.equal(typeof api?.modelForRoute, "function");
+assert.equal(typeof api?.blockingVoluntaryState, "function");
 
 const at = (minute) => new Date(Date.UTC(2026, 7, 25, 8, minute, 0));
 const segment = {
@@ -78,6 +80,22 @@ assert.equal(walk, null, "stop awareness should not invent vehicle stops for wal
 const routeModel = api.modelForRoute({ segments: [segment] }, at(10).getTime());
 assert.equal(routeModel.nextStop, "Platz der Jugend");
 
+window.NVSShare.getFocusIndex = () => 0;
+let liveEntry = { status: "at-stop", at: at(10).getTime() };
+window.NVSSharedLive = { getState: () => ({ members: { "0": liveEntry } }) };
+assert.equal(api.blockingVoluntaryState(at(10).getTime()), "at-stop", "an explicit at-stop report must suppress onboard-only stop progression");
+liveEntry = { status: "missed", at: at(10).getTime() };
+assert.equal(api.blockingVoluntaryState(at(10).getTime()), "missed", "a missed-service report must suppress obsolete onboard stop progression");
+liveEntry = { status: "arrived", at: at(10).getTime() };
+assert.equal(api.blockingVoluntaryState(at(10).getTime()), "arrived", "confirmed arrival must suppress obsolete stop progression");
+liveEntry = { status: "on-vehicle", at: at(10).getTime() };
+assert.equal(api.blockingVoluntaryState(at(10).getTime()), null, "an on-board confirmation should keep useful intermediate-stop awareness");
+liveEntry = { status: "at-stop", at: at(10).getTime() };
+assert.equal(api.blockingVoluntaryState(at(26).getTime()), null, "stale at-stop reports should stop suppressing timetable stop awareness");
+
+assert.match(source, /BLOCKING_VOLUNTARY/);
+assert.match(source, /at-stop/, "stop awareness should explicitly respect at-stop voluntary state");
+assert.match(source, /15 \* 60_000/, "stop awareness should share the 15-minute voluntary freshness fallback");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "stop awareness must stay timetable-only");
 assert.match(css, /v0111-stop-awareness/);
 assert.match(release, /stop-awareness-v0111\.js/);
@@ -85,4 +103,4 @@ assert.match(release, /stop-awareness-v0111\.css/);
 assert.match(sw, /stop-awareness-v0111\.js/);
 assert.match(sw, /stop-awareness-v0111\.css/);
 
-console.log("stop-awareness: timetable-only next-stop and stops-remaining guidance passed");
+console.log("stop-awareness: timetable-only next-stop guidance and voluntary-state precedence passed");
