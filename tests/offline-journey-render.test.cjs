@@ -128,7 +128,7 @@ card = nodes.get("offlineJourney0111");
 assert.ok(card, "an offline personal link without a saved route should explain the limitation instead of failing silently");
 assert.match(card.innerHTML, /No saved journey is available in this tab/);
 assert.match(card.innerHTML, /Reconnect while this personal route is open/);
-assert.match(card.innerHTML, /does not persist personal route fallbacks in localStorage or IndexedDB/);
+assert.match(card.innerHTML, /does not persist personal route fallbacks beyond this tab/);
 assert.doesNotMatch(card.innerHTML, /Marienplatz|Krebsförden|Replacement buses/, "the no-snapshot state must not leak stale route details from the previous render");
 
 navigator.onLine = true;
