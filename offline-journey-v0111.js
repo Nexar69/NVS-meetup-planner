@@ -196,7 +196,7 @@
 
   function scheduleFreshnessRefresh(snapshot, now = Date.now()) {
     clearFreshnessTimer();
-    if (document.hidden || navigator.onLine || typeof setTimeout !== "function") return null;
+    if (document.hidden || typeof setTimeout !== "function") return null;
     const boundary = nextOfflineBoundary(snapshot, now);
     if (!Number.isFinite(boundary)) return null;
     const delay = Math.max(25, boundary - Number(now) + 25);
@@ -291,6 +291,7 @@
   function renderUnavailable() {
     clearFreshnessTimer();
     const card = ensureCard();
+    card.setAttribute("data-connection", "offline");
     card.innerHTML = `
       <div class="v0111-offline-journey-head">
         <div><small>OFFLINE</small><h2 id="offlineJourney0111Title">No saved journey is available in this tab</h2></div>
@@ -300,28 +301,39 @@
       <p class="v0111-offline-journey-meta">Meet Schwerin does not persist personal route fallbacks beyond this tab, and it never adds background GPS for offline mode.</p>`;
   }
 
+  function hasUsableLiveRoute() {
+    const liveAssignment = assignment();
+    const personalPlan = document.getElementById("personalSharedPlan");
+    return Boolean(liveAssignment?.route?.segments?.length && personalPlan);
+  }
+
   function render() {
-    if (!personalViewerHint() || navigator.onLine) {
+    if (!personalViewerHint()) {
       clearFreshnessTimer();
       removeCard();
       return;
     }
-    const liveAssignment = assignment();
-    const personalPlan = document.getElementById("personalSharedPlan");
-    if (liveAssignment?.route?.segments?.length && personalPlan) {
+    if (hasUsableLiveRoute()) {
       clearFreshnessTimer();
       removeCard();
       return;
     }
     const snapshot = readSnapshot();
     if (!snapshot) {
-      renderUnavailable();
+      if (navigator.onLine) {
+        clearFreshnessTimer();
+        removeCard();
+      } else {
+        renderUnavailable();
+      }
       return;
     }
+    const reconnecting = Boolean(navigator.onLine);
     const visibleSegments = remainingSegments(snapshot);
     const realtimeFresh = realtimeContextFresh(snapshot);
     scheduleFreshnessRefresh(snapshot);
     const card = ensureCard();
+    card.setAttribute("data-connection", reconnecting ? "reconnecting" : "offline");
     const steps = visibleSegments.map((segment) => {
       const time = formatTime(segment.departure);
       const platformLabel = realtimeFresh ? "platform" : "last-known platform";
@@ -336,15 +348,17 @@
       ? "Saved realtime details are more than 15 minutes old. Treat platform changes, cancellations and disruption notes as historical only; verify them on station/vehicle displays or reconnect before relying on them."
       : hasCancelled
         ? "At least one remaining saved leg was already cancelled when you were last online. Do not rely on that leg; use station/vehicle information or reconnect before continuing."
-        : "Realtime updates are unavailable. This is the remaining part of the last timetable plan saved in this tab; check vehicle displays and stop announcements because the route may have changed.";
+        : reconnecting
+          ? "Your device reports a connection, but the current personal route has not loaded again yet. Keep using this saved journey as a fallback until live route data returns."
+          : "Realtime updates are unavailable. This is the remaining part of the last timetable plan saved in this tab; check vehicle displays and stop announcements because the route may have changed.";
     card.innerHTML = `
       <div class="v0111-offline-journey-head">
-        <div><small>OFFLINE FALLBACK</small><h2 id="offlineJourney0111Title">Your saved journey is still available</h2></div>
+        <div><small>${reconnecting ? "RECONNECTING · SAVED FALLBACK" : "OFFLINE FALLBACK"}</small><h2 id="offlineJourney0111Title">${reconnecting ? "Keeping your saved journey until live data returns" : "Your saved journey is still available"}</h2></div>
         <span>Tab only</span>
       </div>
       <p>${escapeHtml(safetyCopy)} (${escapeHtml(ageLabel(snapshot.capturedAt))})</p>
       <ol>${steps}</ol>
-      <p class="v0111-offline-journey-meta">${arrival ? `Planned arrival ${escapeHtml(arrival)} · ` : ""}Completed legs are hidden when possible. Authoritative shared-session expiry is honored offline when known. No GPS, names, coordinates, plan IDs or private check-in keys are stored in this fallback.</p>`;
+      <p class="v0111-offline-journey-meta">${arrival ? `Planned arrival ${escapeHtml(arrival)} · ` : ""}Completed legs are hidden when possible. Authoritative shared-session expiry is honored even while reconnecting. No GPS, names, coordinates, plan IDs or private check-in keys are stored in this fallback.</p>`;
   }
 
   function refresh() {
@@ -378,6 +392,7 @@
     personalViewerHint,
     scopeFingerprint,
     authoritativeExpiry,
+    hasUsableLiveRoute,
     refresh,
   });
 
