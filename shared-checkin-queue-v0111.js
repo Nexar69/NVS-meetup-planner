@@ -1,5 +1,6 @@
 (() => {
   const MAX_PENDING_MS = 5 * 60_000;
+  const CONFIRM_WAIT_MS = 8_000;
   const ALLOWED = new Set(["left", "on-vehicle", "at-stop", "missed", "arrived", "clear"]);
   const LABELS = {
     left: "Left",
@@ -12,6 +13,8 @@
 
   let pending = null;
   let expiryTimer = null;
+  let recentAttempt = null;
+  let confirmationTimer = null;
   let sendingPending = false;
   let lastNotice = "";
 
@@ -27,6 +30,11 @@
   function clearExpiryTimer() {
     clearTimeout(expiryTimer);
     expiryTimer = null;
+  }
+
+  function clearConfirmationTimer() {
+    clearTimeout(confirmationTimer);
+    confirmationTimer = null;
   }
 
   function scheduleExpiry(now = Date.now()) {
@@ -73,11 +81,19 @@
     return pending ? { ...pending } : null;
   }
 
-  function queueStatus(status, now = Date.now()) {
+  function queueStatus(status, now = Date.now(), metadata = null) {
     const value = String(status || "");
     const memberIndex = focusIndex();
     if (!ALLOWED.has(value) || memberIndex < 0) return null;
-    pending = { status: value, at: Number(now), memberIndex };
+    const extra = metadata && typeof metadata === "object" ? metadata : {};
+    pending = {
+      status: value,
+      at: Number(now),
+      memberIndex,
+      source: extra.source === "unconfirmed" ? "unconfirmed" : "offline",
+      baselineAt: Number.isFinite(Number(extra.baselineAt)) ? Number(extra.baselineAt) : null,
+      baselineStatus: String(extra.baselineStatus || ""),
+    };
     sendingPending = false;
     lastNotice = "";
     scheduleExpiry(Number(now));
@@ -112,9 +128,117 @@
     return afterAt > beforeAt;
   }
 
+  function confirmedAgainstBaseline(item) {
+    if (!item) return false;
+    const after = liveEntry();
+    if (item.status === "clear") return Boolean(item.baselineStatus) && !after?.status;
+    if (after?.status !== item.status) return false;
+    const afterAt = Number(after?.at);
+    if (!Number.isFinite(afterAt)) return false;
+    const baselineAt = Number(item.baselineAt);
+    return !Number.isFinite(baselineAt) || afterAt > baselineAt;
+  }
+
+  function recentAttemptMatchesMember(item = recentAttempt) {
+    if (!item) return true;
+    return Number(item.memberIndex) === focusIndex();
+  }
+
+  function clearRecentAttempt() {
+    recentAttempt = null;
+    clearConfirmationTimer();
+  }
+
+  function settleConfirmedAttempt() {
+    if (!recentAttempt) return false;
+    const item = recentAttempt;
+    if (!recentAttemptMatchesMember(item)) {
+      clearRecentAttempt();
+      return false;
+    }
+    if (!confirmedAgainstBaseline(item)) return false;
+    clearRecentAttempt();
+    if (pending?.source === "unconfirmed" && pending.status === item.status && pending.memberIndex === item.memberIndex) {
+      pending = null;
+      sendingPending = false;
+      clearExpiryTimer();
+      lastNotice = "The shared meetup confirmed this status after the slow response. Nothing needs to be sent again.";
+      render();
+    }
+    return true;
+  }
+
+  function promoteUnconfirmedAttempt(now = Date.now()) {
+    clearConfirmationTimer();
+    const item = recentAttempt;
+    if (!item || !recentAttemptMatchesMember(item)) {
+      clearRecentAttempt();
+      return false;
+    }
+    if (settleConfirmedAttempt()) return false;
+    const age = now - Number(item.at);
+    if (age < CONFIRM_WAIT_MS) {
+      scheduleConfirmation(now);
+      return false;
+    }
+    if (window.NVSSharedLive?.hasPendingPlanUpdate?.() || !window.NVSSharedLive?.canCheckIn?.()) {
+      clearRecentAttempt();
+      return false;
+    }
+    recentAttempt = null;
+    pending = {
+      status: item.status,
+      at: Number(item.at),
+      memberIndex: item.memberIndex,
+      source: "unconfirmed",
+      baselineAt: item.baselineAt,
+      baselineStatus: item.baselineStatus,
+    };
+    sendingPending = false;
+    lastNotice = "Meet Schwerin could not confirm that the original status tap was shared. It is kept pending only in this tab; verify it is still true before sending again.";
+    scheduleExpiry(now);
+    render();
+    return true;
+  }
+
+  function scheduleConfirmation(now = Date.now()) {
+    clearConfirmationTimer();
+    if (document.hidden || !recentAttempt) return;
+    const remaining = CONFIRM_WAIT_MS - (now - Number(recentAttempt.at));
+    if (remaining <= 0) {
+      promoteUnconfirmedAttempt(now);
+      return;
+    }
+    confirmationTimer = setTimeout(() => promoteUnconfirmedAttempt(Date.now()), remaining + 25);
+  }
+
+  function rememberOnlineAttempt(status, now = Date.now()) {
+    const value = String(status || "");
+    const memberIndex = focusIndex();
+    if (!ALLOWED.has(value) || memberIndex < 0) return null;
+    const before = liveEntry();
+    if (value === "clear" && !before?.status) return null;
+    recentAttempt = {
+      status: value,
+      at: Number(now),
+      memberIndex,
+      baselineAt: Number.isFinite(Number(before?.at)) ? Number(before.at) : null,
+      baselineStatus: String(before?.status || ""),
+    };
+    scheduleConfirmation(Number(now));
+    return { ...recentAttempt };
+  }
+
   async function sendPending() {
     const item = currentPending();
     if (!item || sendingPending) return false;
+    if (item.source === "unconfirmed" && confirmedAgainstBaseline(item)) {
+      pending = null;
+      lastNotice = "This status was already confirmed by the shared meetup. Nothing was sent again.";
+      clearExpiryTimer();
+      render();
+      return true;
+    }
     if (!navigator.onLine) {
       lastNotice = "Still offline. The pending status remains only in this tab.";
       render();
@@ -203,9 +327,10 @@
     const writable = Boolean(window.NVSSharedLive?.canCheckIn?.());
     const online = Boolean(navigator.onLine);
     let detail = `“${label}” is saved only in this open tab and has not been shared.`;
+    if (item.source === "unconfirmed") detail = `Meet Schwerin could not confirm whether “${label}” reached the shared meetup. It is saved only in this open tab and will never retry automatically.`;
     if (planChanged) detail += " The organizer changed the plan; reload before sending it.";
     else if (!writable) detail += " This personal link is currently read-only.";
-    else if (online) detail += " Connection is available again. Confirm it is still true, then send it.";
+    else if (online) detail += " Confirm it is still true, then send it only if needed.";
     else detail += " Reconnect within 5 minutes, then confirm and send it.";
     if (lastNotice) detail += ` ${lastNotice}`;
 
@@ -222,11 +347,15 @@
       .replaceAll("'", "&#039;");
   }
 
-  function interceptOfflineCheckin(event) {
+  function interceptCheckin(event) {
     const button = event.target?.closest?.("[data-v010-status]");
-    if (!button || navigator.onLine) return;
+    if (!button) return;
     const status = String(button.dataset.v010Status || "");
     if (!ALLOWED.has(status) || button.disabled || focusIndex() < 0) return;
+    if (navigator.onLine) {
+      rememberOnlineAttempt(status);
+      return;
+    }
     event.preventDefault();
     event.stopImmediatePropagation();
     queueStatus(status);
@@ -234,27 +363,34 @@
     render();
   }
 
-  document.addEventListener("click", interceptOfflineCheckin, true);
+  document.addEventListener("click", interceptCheckin, true);
   document.addEventListener("click", (event) => {
     if (event.target?.closest?.("[data-v0111-pending-send]")) void sendPending();
     if (event.target?.closest?.("[data-v0111-pending-discard]")) discardPending();
   });
   document.addEventListener("visibilitychange", () => {
     clearExpiryTimer();
+    clearConfirmationTimer();
     if (!document.hidden) {
+      settleConfirmedAttempt();
+      promoteUnconfirmedAttempt(Date.now());
       expirePending(Date.now());
       scheduleExpiry();
+      scheduleConfirmation();
       render();
     }
   });
   ["online", "offline", "pageshow", "nvs-shared-live-change", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => {
     window.addEventListener(name, () => {
+      if (name === "nvs-shared-live-change") settleConfirmedAttempt();
       expirePending(Date.now());
       scheduleExpiry();
+      scheduleConfirmation();
       render();
     });
   });
   window.addEventListener("nvs-shared-session-expired", () => {
+    clearRecentAttempt();
     discardPending("The shared meetup session expired, so the pending status was discarded. Nothing was shared.");
   });
 
@@ -264,7 +400,11 @@
     discardPending,
     sendPending,
     render,
+    rememberOnlineAttempt,
+    settleConfirmedAttempt,
+    promoteUnconfirmedAttempt,
     maxPendingMs: MAX_PENDING_MS,
+    confirmWaitMs: CONFIRM_WAIT_MS,
   });
 
   render();
