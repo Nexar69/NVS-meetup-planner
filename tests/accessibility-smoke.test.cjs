@@ -28,6 +28,12 @@ assert.match(runtime, /v010StatusList/, "shared member statuses should receive s
 assert.match(runtime, /setAttribute\("role", "list"\)/, "shared member status container should identify as a list");
 assert.match(runtime, /setAttribute\("role", "listitem"\)/, "each shared member status should identify as a list item");
 assert.match(runtime, /Meetup member status/, "shared member status list should expose an accessible label");
+assert.doesNotMatch(runtime, /MutationObserver/, "accessibility enhancements should be event-first instead of observing the whole document");
+assert.match(runtime, /nvs-shared-live-change/, "shared-live lifecycle events should refresh accessibility semantics");
+assert.match(runtime, /nvs-live-plan-synced/, "plan sync should refresh accessibility semantics");
+assert.match(runtime, /nvs-shared-view-resumed/, "Safari shared-view resume should refresh accessibility semantics");
+assert.match(runtime, /visibilitychange/, "foreground resume should refresh accessibility semantics");
+assert.match(runtime, /if \(!document\.hidden\) enhance\(\)/, "hidden pages should not perform accessibility rescans");
 
 assert.match(styles, /min-width:44px;min-height:44px/, "important touch controls should meet a 44px minimum target");
 assert.match(styles, /:focus-visible/, "keyboard users should receive a visible focus indicator");
@@ -35,4 +41,4 @@ assert.match(styles, /prefers-reduced-motion:\s*reduce/, "the app should honor t
 assert.match(styles, /animation-duration:\.001ms/, "reduced-motion mode should suppress animated transitions globally");
 assert.match(styles, /forced-colors:\s*active/, "high-contrast/forced-colors environments should receive a compatible fallback");
 
-console.log("accessibility-smoke: dialog, live-region, semantic-list, motion and touch-target contracts passed");
+console.log("accessibility-smoke: event-first dialog, live-region, semantic-list, motion and touch-target contracts passed");
