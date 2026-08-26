@@ -81,6 +81,7 @@ jobs:
           node tests/shared-reload-safari.test.cjs
           node tests/routing-coalescer.test.cjs
           node tests/provider-health.test.cjs
+          node tests/live-meetup-scheduler.test.cjs
           node tests/service-worker-behavior.test.cjs
           node tests/service-worker-cache-failure.test.cjs
           node tests/service-worker-static-timeout.test.cjs
