@@ -100,11 +100,23 @@ self.addEventListener("notificationclick", (event) => {
     await self.clients.openWindow("./");
   })());
 });
+async function safeCacheMatch(key) {
+  try {
+    return await caches.match(key);
+  } catch {
+    return null;
+  }
+}
 async function updateCache(request, response, navigation = false) {
   if (!response?.ok) return response;
-  const cache = await caches.open(CACHE_NAME);
-  const key = navigation ? "./index.html" : request;
-  await cache.put(key, response.clone());
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    const key = navigation ? "./index.html" : request;
+    await cache.put(key, response.clone());
+  } catch {
+    // CacheStorage can fail because of quota/private-mode/browser issues. A healthy
+    // network response should still be usable instead of turning into an app load failure.
+  }
   return response;
 }
 async function timedFetch(request) {
@@ -125,15 +137,24 @@ async function networkFirst(request, navigation = false) {
   try {
     const response = await timedFetch(request);
     if (shouldPreferCachedResponse(response)) {
-      const cached = await caches.match(cacheKey);
+      const cached = await safeCacheMatch(cacheKey);
       if (cached) return cached;
     }
     return await updateCache(request, response, navigation);
   } catch {
-    const cached = await caches.match(cacheKey);
+    const cached = await safeCacheMatch(cacheKey);
     if (cached) return cached;
     throw new Error("NETWORK_AND_CACHE_MISS");
   }
+}
+async function cacheFirstWithRefresh(request) {
+  const cached = await safeCacheMatch(request);
+  const fresh = fetch(request).then((response) => updateCache(request, response, false));
+  if (cached) {
+    fresh.catch(() => {});
+    return cached;
+  }
+  return fresh;
 }
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
@@ -142,8 +163,5 @@ self.addEventListener("fetch", (event) => {
   if (requestUrl.pathname.startsWith("/api/")) return;
   if (event.request.mode === "navigate") { event.respondWith(networkFirst(event.request, true)); return; }
   if (/\.(?:js|css|html|webmanifest)$/i.test(requestUrl.pathname)) { event.respondWith(networkFirst(event.request, false)); return; }
-  event.respondWith(caches.match(event.request).then((cached) => {
-    const fresh = fetch(event.request).then((response) => updateCache(event.request, response, false)).catch(() => cached);
-    return cached || fresh;
-  }));
+  event.respondWith(cacheFirstWithRefresh(event.request));
 });
