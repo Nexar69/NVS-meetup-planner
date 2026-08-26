@@ -56,6 +56,17 @@
     return Boolean(window.NVSShare?.getSharedPlan?.() && focusIndex() >= 0);
   }
 
+  function personalViewerHint() {
+    if (isPersonalSharedView() || focusIndex() >= 0) return true;
+    try {
+      const path = String(window.location?.pathname || "");
+      const query = new URLSearchParams(String(window.location?.search || ""));
+      return path.includes("/p/") && query.has("me");
+    } catch {
+      return false;
+    }
+  }
+
   function assignment() {
     const items = window.__NVS_LAST_RECOMMENDATIONS__?.primary?.assignments;
     const focus = focusIndex();
@@ -145,7 +156,7 @@
   }
 
   function render() {
-    if (!isPersonalSharedView() || navigator.onLine) {
+    if (!personalViewerHint() || navigator.onLine) {
       removeCard();
       return;
     }
@@ -194,6 +205,7 @@
     buildSnapshot,
     capture,
     readSnapshot,
+    personalViewerHint,
     refresh,
   });
 
