@@ -79,12 +79,21 @@
     return true;
   }
 
-  function confirmedByLiveState(status) {
+  function liveEntry() {
     const focus = focusIndex();
-    if (focus < 0) return false;
-    const entry = window.NVSSharedLive?.getState?.()?.members?.[String(focus)] || null;
-    if (status === "clear") return !entry?.status;
-    return entry?.status === status;
+    if (focus < 0) return null;
+    return window.NVSSharedLive?.getState?.()?.members?.[String(focus)] || null;
+  }
+
+  function confirmedByFreshLiveState(status, before) {
+    const after = liveEntry();
+    if (status === "clear") return !after?.status;
+    if (after?.status !== status) return false;
+    const afterAt = Number(after?.at);
+    const beforeAt = Number(before?.at);
+    if (!Number.isFinite(afterAt)) return false;
+    if (!Number.isFinite(beforeAt)) return true;
+    return afterAt > beforeAt;
   }
 
   async function sendPending() {
@@ -107,12 +116,13 @@
 
     sendingPending = true;
     lastNotice = "";
+    const before = liveEntry();
     render();
     try {
       await window.NVSSharedLive.checkIn(item.status);
-      if (confirmedByLiveState(item.status)) {
+      if (confirmedByFreshLiveState(item.status, before)) {
         pending = null;
-        lastNotice = "Pending status sent successfully.";
+        lastNotice = item.status === "clear" ? "No active check-in remains." : "Pending status sent successfully.";
         clearExpiryTimer();
         return true;
       }
@@ -122,7 +132,7 @@
         clearExpiryTimer();
         return false;
       }
-      lastNotice = "Meet Schwerin could not confirm that the status was shared. Check your connection and tap Send now again if it is still correct.";
+      lastNotice = "Meet Schwerin could not confirm a fresh shared update. Check your connection and tap Send now again if the status is still correct.";
       return false;
     } finally {
       sendingPending = false;
