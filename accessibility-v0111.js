@@ -48,20 +48,6 @@
     });
   }
 
-  function rememberDialogOpener(event) {
-    const button = event.target?.closest?.("#v011TripModeButton,#v011AlertSettingsButton,#v011TripSettings");
-    if (!button) return;
-    const dialogId = button.id === "v011TripModeButton" ? "v011TripDialog" : "v011SettingsDialog";
-    OPENERS.set(dialogId, button);
-    requestAnimationFrame(() => {
-      const dialog = document.getElementById(dialogId);
-      if (!dialog?.open) return;
-      enhanceDialog(dialog);
-      const close = dialog.querySelector(DIALOGS[dialogId]?.close || "button");
-      focusSafely(close);
-    });
-  }
-
   function enhanceSharedStatusList() {
     const list = document.getElementById("v010StatusList");
     if (!list) return;
@@ -106,18 +92,39 @@
   }
 
   function enhance() {
+    if (document.hidden) return;
     Object.keys(DIALOGS).forEach((id) => enhanceDialog(document.getElementById(id)));
     enhanceLiveRegions();
   }
 
-  document.addEventListener("click", rememberDialogOpener, true);
-  ["nvs-group-recommendations-rendered", "nvs-shared-live-change", "pageshow"].forEach((name) => {
-    window.addEventListener(name, enhance);
-  });
+  function rememberDialogOpener(event) {
+    const button = event.target?.closest?.("#v011TripModeButton,#v011AlertSettingsButton,#v011TripSettings");
+    if (!button) return;
+    const dialogId = button.id === "v011TripModeButton" ? "v011TripDialog" : "v011SettingsDialog";
+    OPENERS.set(dialogId, button);
+    requestAnimationFrame(() => {
+      const dialog = document.getElementById(dialogId);
+      if (!dialog?.open) return;
+      enhanceDialog(dialog);
+      enhanceLiveRegions();
+      const close = dialog.querySelector(DIALOGS[dialogId]?.close || "button");
+      focusSafely(close);
+    });
+  }
 
-  const observer = new MutationObserver(enhance);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-  window.addEventListener("load", enhance);
+  document.addEventListener("click", rememberDialogOpener, true);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) enhance();
+  });
+  [
+    "nvs-group-recommendations-rendered",
+    "nvs-shared-live-change",
+    "nvs-live-plan-synced",
+    "nvs-shared-view-resumed",
+    "pageshow",
+    "load",
+  ].forEach((name) => window.addEventListener(name, enhance));
+
   enhance();
 
   window.NVSAccessibility0111 = Object.freeze({ refresh: enhance });
