@@ -288,7 +288,8 @@
     const card = ensureCard();
     const steps = visibleSegments.map((segment) => {
       const time = formatTime(segment.departure);
-      const platform = segment.platformFrom ? ` · platform ${escapeHtml(segment.platformFrom)}` : "";
+      const platformLabel = realtimeFresh ? "platform" : "last-known platform";
+      const platform = segment.platformFrom ? ` · ${platformLabel} ${escapeHtml(segment.platformFrom)}` : "";
       const status = segmentStatus(segment, realtimeFresh);
       const statusCopy = status ? `<small><strong>${escapeHtml(status)}</strong></small>` : "";
       return `<li><span>${escapeHtml(time || "—")}</span><div><strong>${escapeHtml(segmentTitle(segment))}</strong><small>${escapeHtml(segment.from || "Planned route")}${platform}</small>${statusCopy}</div></li>`;
