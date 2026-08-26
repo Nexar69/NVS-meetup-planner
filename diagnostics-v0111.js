@@ -41,6 +41,22 @@
     };
   }
 
+  function sharedConnectionSummary(now = Date.now()) {
+    const api = window.NVSSharedConnection0111;
+    if (!api?.connectionModel || !api?.getLastSuccessAt) return { available: false };
+    let successAt = 0;
+    try { successAt = Number(api.getLastSuccessAt()) || 0; } catch {}
+    let model = null;
+    try { model = api.connectionModel(now, navigator.onLine, successAt); } catch {}
+    const ageMs = successAt > 0 ? Math.max(0, Number(now) - successAt) : null;
+    return {
+      available: true,
+      status: String(model?.status || "unknown"),
+      hasSuccessfulResponse: successAt > 0,
+      lastResponseAgeSeconds: ageMs == null ? null : Math.floor(ageMs / 1000),
+    };
+  }
+
   function providerSummary() {
     const routing = window.NVSTransit?.getProviderStatus?.() || {};
     const healthState = window.NVSProviderHealth0111?.getState?.() || {};
@@ -105,6 +121,7 @@
       view: viewMode(),
       route: routeSummary(),
       shared: sharedSummary(),
+      sharedConnection: sharedConnectionSummary(now.getTime()),
       provider: providerSummary(),
       pwa: pwaSummary(),
       offlineJourney: offlineSummary(now.getTime()),
@@ -121,7 +138,7 @@
     panel = document.createElement("details");
     panel.id = "v0111DiagnosticsExport";
     panel.className = "v0111-diagnostics-export";
-    panel.innerHTML = `<summary><strong>Debug snapshot</strong><small>Privacy-safe diagnostics</small></summary><div><p>Copy release, routing, sync, offline-fallback and PWA state for bug reports. Names, coordinates, capability keys and plan IDs are excluded.</p><button type="button" id="v0111CopyDiagnostics">Copy diagnostics</button><small id="v0111DiagnosticsStatus" role="status" aria-live="polite"></small></div>`;
+    panel.innerHTML = `<summary><strong>Debug snapshot</strong><small>Privacy-safe diagnostics</small></summary><div><p>Copy release, routing, shared-sync, offline-fallback and PWA state for bug reports. Names, coordinates, capability keys and plan IDs are excluded.</p><button type="button" id="v0111CopyDiagnostics">Copy diagnostics</button><small id="v0111DiagnosticsStatus" role="status" aria-live="polite"></small></div>`;
     if (health) health.insertAdjacentElement("afterend", panel);
     else command.appendChild(panel);
     panel.querySelector("#v0111CopyDiagnostics")?.addEventListener("click", copyDiagnostics);
@@ -178,6 +195,6 @@
 
   function refresh() { ensurePanel(); }
   ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-routing-provider", "nvs-shared-live-change"].forEach((name) => window.addEventListener(name, refresh));
-  window.NVSDiagnostics0111 = Object.freeze({ buildSnapshot, offlineSummary, fallbackClipboardCopy, copyDiagnostics, refresh });
+  window.NVSDiagnostics0111 = Object.freeze({ buildSnapshot, sharedConnectionSummary, offlineSummary, fallbackClipboardCopy, copyDiagnostics, refresh });
   refresh();
 })();
