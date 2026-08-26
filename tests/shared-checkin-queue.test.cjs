@@ -129,7 +129,7 @@ const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf
   assert.ok((listeners.document.click || []).some((entry) => entry.capture === true), "offline status interception must run in capture phase before the base sender");
   assert.match(source, /stopImmediatePropagation\(\)/, "definite-offline taps must not leak through to the base POST handler");
   assert.match(source, /Pending — not shared/, "UI must clearly disclose that queued state has not been shared");
-  assert.match(source, /Connection is available again\. Confirm it is still true, then send it\./, "reconnect must require a fresh explicit send rather than silently auto-posting stale state");
+  assert.match(source, /Confirm it is still true, then send it only if needed\./, "reconnect/uncertain status must still require an explicit user-confirmed send rather than silently auto-posting");
   assert.match(source, /afterAt > beforeAt/, "queued send confirmation must require a fresh live timestamp instead of accepting an old matching status");
   assert.doesNotMatch(source, /localStorage|sessionStorage/, "pending voluntary state must remain memory-only and disappear with the page");
   assert.doesNotMatch(source, /fetch\s*\(/, "queue layer must not create a second direct network path");
