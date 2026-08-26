@@ -2,6 +2,9 @@
   const core = window.NVSIntelligenceCore;
   if (!core) return;
 
+  const REFRESH_MS = 30_000;
+  let timer = null;
+
   function ago(entry) {
     const freshness = core.checkinFreshness(entry, new Date());
     if (!Number.isFinite(freshness.ageMinutes)) return "";
@@ -34,13 +37,32 @@
     if (alert?.textContent?.includes("Replan suggested") && !freshMissed) alert.hidden = true;
   }
 
+  function schedule(delay = REFRESH_MS) {
+    clearTimeout(timer);
+    if (document.hidden) return;
+    timer = setTimeout(() => {
+      render();
+      schedule();
+    }, delay);
+  }
+
+  function refresh() {
+    render();
+    schedule();
+  }
+
   const style = document.createElement("style");
   style.textContent = `.v010-person.v011-stale{border-style:dashed!important;background:#f9fafb!important;opacity:.78}.v010-person.v011-stale .v010-source{background:#eaecf0!important;color:#667085!important}`;
   document.head.appendChild(style);
 
-  window.addEventListener("nvs-shared-live-change", render);
-  window.addEventListener("nvs-group-recommendations-rendered", render);
-  window.addEventListener("pageshow", render);
-  setInterval(render, 30_000);
-  render();
+  window.addEventListener("nvs-shared-live-change", refresh);
+  window.addEventListener("nvs-group-recommendations-rendered", refresh);
+  window.addEventListener("nvs-shared-view-resumed", refresh);
+  window.addEventListener("pageshow", refresh);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) clearTimeout(timer);
+    else refresh();
+  });
+
+  refresh();
 })();
