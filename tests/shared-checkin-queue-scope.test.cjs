@@ -52,6 +52,7 @@ assert.equal(queue.getPending(base + 1_000)?.status, "at-stop");
 
 focus = 1;
 assert.equal(queue.getPending(base + 2_000), null, "switching personal member must discard another member's pending intent");
+queue.render(base + 2_000);
 assert.match(banner.innerHTML, /Personal route changed|pending status was discarded/i);
 
 focus = 0;
