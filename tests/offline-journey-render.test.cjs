@@ -137,22 +137,24 @@ assert.match(card.innerHTML, /At least one remaining saved leg was already cance
 assert.match(card.innerHTML, /Completed legs are hidden when possible/);
 assert.match(card.innerHTML, /Authoritative shared-session expiry is honored offline when known/);
 assert.doesNotMatch(card.innerHTML, /secret|planId|capability/i);
-assert.equal(timers.size, 1, "a fresh offline snapshot should arm exactly one freshness-boundary rerender");
+assert.equal(timers.size, 1, "a fresh offline snapshot should arm exactly one next-boundary rerender");
 const firstTimer = [...timers.values()][0];
-assert.ok(firstTimer.delay > 0 && firstTimer.delay <= 15 * 60_000 + 100, "freshness rerender should target the 15-minute trust boundary, not poll repeatedly");
+assert.ok(firstTimer.delay > 0 && firstTimer.delay <= 15 * 60_000 + 100, "fresh snapshots should first wake at the 15-minute realtime trust boundary");
 
 document.hidden = true;
 documentListeners.visibilitychange?.();
-assert.equal(timers.size, 0, "hidden pages should cancel the offline freshness timer");
+assert.equal(timers.size, 0, "hidden pages should cancel the offline boundary timer");
 document.hidden = false;
 documentListeners.visibilitychange?.();
-assert.equal(timers.size, 1, "returning to a visible offline card should re-arm only the needed one-shot freshness transition");
+assert.equal(timers.size, 1, "returning to a visible offline card should re-arm only the next meaningful boundary");
 
 const staleSnapshot = { ...snapshot, capturedAt: new Date(base - 16 * 60_000).toISOString() };
 sessionStorage.setItem(storageKey, JSON.stringify(staleSnapshot));
 api.refresh();
 card = nodes.get("offlineJourney0111");
-assert.equal(timers.size, 0, "already-stale snapshots should not keep a periodic freshness timer alive");
+assert.equal(timers.size, 1, "stale realtime context should retain one timer for authoritative session expiry instead of polling");
+const expiryTimer = [...timers.values()][0];
+assert.ok(expiryTimer.delay > 45 * 60_000 && expiryTimer.delay <= 61 * 60_000, "after realtime data is stale, the next wake should be the known session-expiry boundary");
 assert.match(card.innerHTML, /Saved realtime details are more than 15 minutes old/);
 assert.match(card.innerHTML, /Stale last-known cancellation/);
 assert.match(card.innerHTML, /last-known platform C/);
@@ -165,7 +167,7 @@ sessionStorage.removeItem(storageKey);
 api.refresh();
 card = nodes.get("offlineJourney0111");
 assert.ok(card, "an offline personal link without a saved route should explain the limitation instead of failing silently");
-assert.equal(timers.size, 0, "the no-snapshot state should leave no freshness timer armed");
+assert.equal(timers.size, 0, "the no-snapshot state should leave no boundary timer armed");
 assert.match(card.innerHTML, /No saved journey is available in this tab/);
 assert.match(card.innerHTML, /Reconnect while this personal route is open/);
 assert.match(card.innerHTML, /does not persist personal route fallbacks beyond this tab/);
@@ -173,8 +175,8 @@ assert.doesNotMatch(card.innerHTML, /Marienplatz|Krebsförden|Replacement buses/
 
 navigator.onLine = true;
 api.refresh();
-assert.equal(timers.size, 0, "normal online rendering should leave no offline freshness timer armed");
+assert.equal(timers.size, 0, "normal online rendering should leave no offline boundary timer armed");
 assert.equal(nodes.has("offlineJourney0111"), false, "offline fallback should disappear immediately when normal online rendering resumes");
-assert.doesNotMatch(source, /setInterval\s*\(/, "offline freshness should use a one-shot boundary timer, never background polling");
+assert.doesNotMatch(source, /setInterval\s*\(/, "offline lifecycle should use one-shot boundary timers, never background polling");
 
-console.log("offline-journey-render: executable mobile fallback hides completed legs, ages realtime facts at a one-shot visible-page boundary, and clearly explains when no tab-scoped route is saved");
+console.log("offline-journey-render: executable mobile fallback hides completed legs, ages realtime facts, self-schedules expiry, and clearly explains when no tab-scoped route is saved");
