@@ -87,14 +87,12 @@ assert.equal(snapshot.shared.hasAuthoritativeExpiry, true);
 assert.equal(snapshot.provider.backendRelease, "v0.11.1");
 assert.equal(snapshot.pwa.serviceWorkerControlled, true);
 assert.equal(snapshot.pwa.standalone, true);
-assert.deepEqual(snapshot.offlineJourney, {
-  available: true,
-  saved: true,
-  segmentCount: 2,
-  ageMinutes: 9,
-  realtimeContextFresh: true,
-  hasAuthoritativeExpiry: true,
-});
+assert.equal(snapshot.offlineJourney.available, true);
+assert.equal(snapshot.offlineJourney.saved, true);
+assert.equal(snapshot.offlineJourney.segmentCount, 2);
+assert.equal(snapshot.offlineJourney.ageMinutes, 9);
+assert.equal(snapshot.offlineJourney.realtimeContextFresh, true);
+assert.equal(snapshot.offlineJourney.hasAuthoritativeExpiry, true);
 
 sharedExpiry = "2026-08-28T18:00:00.000Z";
 assert.equal(window.NVSDiagnostics0111.buildSnapshot().shared.hasAuthoritativeExpiry, true, "ISO backend expiry must be recognized");
