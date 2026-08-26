@@ -51,11 +51,15 @@ const assignment = {
 };
 let sharedPlan = { view: "person", planId: "secret-plan-id" };
 let focus = 0;
+let liveState = { expiresAt: "2026-08-26T08:00:00.000Z", planId: "secret-plan-id", ownerKey: "secret-owner-key" };
 const listeners = {};
 const window = {
   NVSShare: {
     getSharedPlan: () => sharedPlan,
     getFocusIndex: () => focus,
+  },
+  NVSSharedLive: {
+    getState: () => liveState,
   },
   __NVS_LAST_RECOMMENDATIONS__: { primary: { assignments: [assignment] } },
   location: { pathname: "/p/example", search: "?me=0" },
@@ -90,10 +94,12 @@ assert.equal(typeof api?.readSnapshot, "function");
 assert.equal(typeof api?.remainingSegments, "function");
 assert.equal(typeof api?.personalViewerHint, "function");
 assert.equal(typeof api?.clearSnapshot, "function");
+assert.equal(typeof api?.authoritativeExpiry, "function");
 
 const now = new Date("2026-08-26T07:00:00.000Z");
 const snapshot = api.buildSnapshot(assignment, now);
 assert.equal(snapshot.schema, "meet-schwerin-offline-journey-v1");
+assert.equal(snapshot.expiresAt, "2026-08-26T08:00:00.000Z", "offline fallback should inherit the backend-authoritative shared-session deadline when available");
 assert.equal(snapshot.segments.length, 2);
 assert.equal(snapshot.segments[0].line, "2");
 assert.equal(snapshot.segments[0].platformFrom, "C");
@@ -121,10 +127,12 @@ for (const forbidden of [
   "secret-plan-id",
   "secret-capability",
   "secret-key",
+  "secret-owner-key",
   "53.6",
   "11.4",
   "geometry",
   "capabilityKey",
+  "ownerKey",
 ]) {
   assert.equal(serialized.includes(forbidden), false, `offline snapshot must exclude ${forbidden}`);
 }
@@ -133,6 +141,10 @@ assert.equal(serialized.includes("Marienplatz"), true, "planned stop names are r
 const storageKey = "meet-schwerin-offline-journey-v1";
 sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
 assert.equal(api.readSnapshot(now.getTime() + 60_000)?.segments?.length, 2);
+assert.equal(api.readSnapshot(new Date("2026-08-26T08:00:00.000Z").getTime()), null, "offline fallback must stop exactly at the authoritative shared-session deadline");
+assert.equal(sessionStorage.getItem(storageKey), null, "authoritatively expired offline snapshots should be evicted from the tab");
+
+sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
 sharedPlan = null;
 focus = -1;
 assert.equal(api.personalViewerHint(), true, "personal shared URL must keep the offline fallback eligible if the live plan cannot be fetched");
@@ -144,14 +156,19 @@ assert.equal(sessionStorage.getItem(storageKey), null, "scope-mismatched snapsho
 window.location.search = "?me=0";
 sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
 listeners["nvs-shared-session-expired"]?.();
-assert.equal(sessionStorage.getItem(storageKey), null, "authoritative shared-session expiry should clear the tab-only route snapshot immediately");
+assert.equal(sessionStorage.getItem(storageKey), null, "authoritative shared-session expiry event should clear the tab-only route snapshot immediately");
 
-sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
+const legacySnapshot = { ...snapshot, expiresAt: null };
+sessionStorage.setItem(storageKey, JSON.stringify(legacySnapshot));
+assert.equal(api.readSnapshot(now.getTime() + 60_000)?.segments?.length, 2, "legacy snapshots without an authoritative deadline should remain compatible within the local age limit");
 window.location.search = "";
 assert.equal(api.personalViewerHint(), false, "a generic shared URL must not expose a personal tab snapshot without a person hint");
 window.location.search = "?me=0";
-assert.equal(api.readSnapshot(now.getTime() + 13 * 60 * 60_000), null, "old tab snapshots must self-expire");
+assert.equal(api.readSnapshot(now.getTime() + 13 * 60 * 60_000), null, "old tab snapshots must self-expire even without authoritative expiry metadata");
 assert.equal(sessionStorage.getItem(storageKey), null, "expired snapshot should be removed from the tab");
+
+liveState = null;
+assert.equal(api.authoritativeExpiry(), null, "offline snapshot capture must not invent an expiry when authoritative live metadata is unavailable");
 
 assert.match(source, /sessionStorage\.setItem/);
 assert.match(source, /sessionStorage\.removeItem/);
@@ -162,6 +179,7 @@ assert.match(source, /firstDisruptionText/, "offline snapshots should preserve a
 assert.match(source, /Last-known platform change/, "offline UI should retain a known realtime platform change instead of silently reverting to the planned platform");
 assert.match(source, /plannedPlatformFrom/, "offline snapshot should keep the planned boarding platform only when needed to explain drift");
 assert.match(source, /Completed legs are hidden when possible/, "offline mobile copy should explain why earlier route legs may no longer be shown");
+assert.match(source, /Authoritative shared-session expiry is honored offline when known/, "offline privacy copy should disclose authoritative expiry enforcement");
 assert.match(source, /nvs-shared-session-expired/, "backend-authoritative session expiry should clear any tab-only saved personal route");
 assert.doesNotMatch(source, /localStorage|indexedDB/i, "offline journey data must remain tab-scoped, not durable");
 assert.doesNotMatch(source, /fetch\s*\(|XMLHttpRequest|sendBeacon/i, "offline fallback must not make its own network requests");
@@ -175,4 +193,4 @@ assert.match(release, /offline-journey-v0111\.css/);
 assert.match(sw, /offline-journey-v0111\.js/);
 assert.match(sw, /offline-journey-v0111\.css/);
 
-console.log("offline-journey: tab-scoped fallback keeps only relevant legs, preserves disruption/platform context and enforces member scope, expiry, privacy, accessibility and no-GPS contracts");
+console.log("offline-journey: tab-scoped fallback keeps relevant legs and last-known disruption context while enforcing member scope, authoritative/legacy expiry, privacy, accessibility and no-GPS contracts");
