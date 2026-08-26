@@ -2,6 +2,7 @@
   const STALE_AFTER_MS = 30_000;
   let lastSuccessAt = 0;
   let staleTimer = null;
+  let checking = false;
 
   function clearStaleTimer() {
     clearTimeout(staleTimer);
@@ -38,6 +39,21 @@
     }, remaining + 25);
   }
 
+  function ensureRetryButton(sync) {
+    let button = document.getElementById("v0111SharedConnectionRetry");
+    if (button || !sync || typeof document.createElement !== "function") return button;
+    button = document.createElement("button");
+    button.type = "button";
+    button.id = "v0111SharedConnectionRetry";
+    button.className = "v0111-shared-connection-retry";
+    button.textContent = "Check now";
+    button.hidden = true;
+    button.addEventListener?.("click", () => { void retryNow(); });
+    if (typeof sync.insertAdjacentElement === "function") sync.insertAdjacentElement("afterend", button);
+    else sync.parentElement?.appendChild?.(button);
+    return button;
+  }
+
   function render(now = Date.now()) {
     const sync = document.getElementById("v010Sync");
     if (!sync) return;
@@ -51,6 +67,13 @@
         : model.status === "offline"
           ? "The browser reports that this device is offline."
           : "Waiting for the first shared-live response.";
+    const retry = ensureRetryButton(sync);
+    if (retry) {
+      retry.hidden = model.status !== "delayed" || !navigator.onLine;
+      retry.disabled = checking;
+      retry.textContent = checking ? "Checking…" : "Check now";
+      retry.setAttribute?.("aria-label", checking ? "Checking Shared Live now" : "Check Shared Live now");
+    }
   }
 
   function markSuccess(now = Date.now()) {
@@ -58,6 +81,24 @@
     render(lastSuccessAt);
     scheduleStale(lastSuccessAt);
     return lastSuccessAt;
+  }
+
+  async function retryNow() {
+    if (checking || document.hidden || !navigator.onLine) return false;
+    const refresh = window.NVSSharedLive?.refresh;
+    if (typeof refresh !== "function") return false;
+    checking = true;
+    render();
+    try {
+      await refresh();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      checking = false;
+      render();
+      scheduleStale();
+    }
   }
 
   function onLiveChange() {
@@ -82,6 +123,7 @@
   window.NVSSharedConnection0111 = Object.freeze({
     connectionModel,
     markSuccess,
+    retryNow,
     render,
     getLastSuccessAt: () => lastSuccessAt,
   });
