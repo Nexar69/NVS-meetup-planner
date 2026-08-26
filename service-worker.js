@@ -56,6 +56,7 @@ const APP_SHELL = [
   "./instructions-v083.js",
   "./live-v090.js",
   "./share-v010.js",
+  "./shared-live-timeout-v0111.js",
   "./shared-live-v010.js",
   "./shared-checkin-queue-v0111.js",
   "./shared-connection-v0111.js",
@@ -96,8 +97,6 @@ async function precacheAppShell() {
     await cache.addAll(APP_SHELL);
     return true;
   } catch {
-    // A quota/private-mode/transient asset failure should not brick the service worker.
-    // Activation keeps older healthy caches until this revision has a usable shell.
     return false;
   }
 }
@@ -164,10 +163,7 @@ async function updateCache(request, response, navigation = false) {
     const cache = await caches.open(CACHE_NAME);
     const key = navigation ? "./index.html" : request;
     await cache.put(key, response.clone());
-  } catch {
-    // CacheStorage can fail because of quota/private-mode/browser issues. A healthy
-    // network response should still be usable instead of turning into an app load failure.
-  }
+  } catch {}
   return response;
 }
 async function timedFetch(request) {
