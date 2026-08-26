@@ -53,12 +53,13 @@ assert.deepEqual({ ...api.connectionModel(100_000, false, 0) }, { status: "offli
 assert.equal(api.connectionModel(100_000, true, 75_000).status, "current", "a response within 30 seconds should be current");
 assert.equal(api.connectionModel(100_001, true, 70_000).status, "delayed", "a response older than 30 seconds should be delayed");
 
-api.markSuccess(100_000);
-assert.equal(api.getLastSuccessAt(), 100_000);
+const lifecycleNow = Date.now();
+api.markSuccess(lifecycleNow);
+assert.equal(api.getLastSuccessAt(), lifecycleNow);
 assert.equal(sync.dataset.connection, "current");
 assert.equal(sync.textContent, "Live sync current");
 assert.equal(timers.size, 1, "one stale-boundary timer should be armed after a successful response");
-assert.ok([...timers.values()][0].delay >= 30_000 && [...timers.values()][0].delay <= 30_100);
+assert.ok([...timers.values()][0].delay >= 29_900 && [...timers.values()][0].delay <= 30_100);
 
 online = false;
 listeners.get("offline")();
