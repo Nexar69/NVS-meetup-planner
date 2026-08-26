@@ -118,6 +118,26 @@
     return "Replan this view";
   }
 
+  function reloadPendingPlan() {
+    const button = document.getElementById("v0111RecoveryAction");
+    const reliableReload = window.NVSSharedReload0111?.reloadUpdatedPlan;
+    if (typeof reliableReload === "function") return reliableReload(button);
+
+    // Compatibility fallback for a partially updated app shell. Prefer same-URL
+    // navigation if reload itself throws, matching the shared Safari reload guard.
+    try {
+      window.location.reload();
+      return true;
+    } catch {
+      try {
+        window.location.assign(window.location.href);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
   function ensureDesk() {
     let desk = document.getElementById("v0111RecoveryDesk");
     if (desk) return desk;
@@ -152,7 +172,7 @@
     });
     desk.querySelector("#v0111RecoveryAction")?.addEventListener("click", () => {
       if (window.NVSSharedLive?.hasPendingPlanUpdate?.()) {
-        window.location.reload();
+        reloadPendingPlan();
         return;
       }
       if (!navigator.onLine) return;
@@ -234,9 +254,10 @@
 
   function schedule() {
     clearTimeout(timer);
+    if (document.hidden) return;
     timer = setTimeout(() => {
       render();
-      if (!document.hidden) schedule();
+      schedule();
     }, 5_000);
   }
 
@@ -273,6 +294,7 @@
     getTimetableHint: timetableHint,
     getViewContext: viewContext,
     isRelevantForView: relevantForContext,
+    reloadPendingPlan,
   });
 
   start();
