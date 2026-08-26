@@ -87,6 +87,7 @@ vm.runInNewContext(source, {
 const api = window.NVSOfflineJourney0111;
 assert.equal(typeof api?.buildSnapshot, "function");
 assert.equal(typeof api?.readSnapshot, "function");
+assert.equal(typeof api?.remainingSegments, "function");
 assert.equal(typeof api?.personalViewerHint, "function");
 assert.equal(typeof api?.clearSnapshot, "function");
 
@@ -104,6 +105,14 @@ assert.ok(snapshot.segments[0].disruption.length <= 180, "offline disruption tex
 assert.equal(snapshot.segments[1].mode, "WALK");
 assert.equal(snapshot.segments[1].cancelled, false);
 assert.equal(snapshot.segments[1].platformChanged, false);
+
+assert.equal(api.remainingSegments(snapshot, new Date("2026-08-26T07:20:00.000Z").getTime()).length, 2, "active and future legs should remain visible offline");
+const afterFirstLeg = api.remainingSegments(snapshot, new Date("2026-08-26T07:31:00.000Z").getTime());
+assert.equal(afterFirstLeg.length, 1, "clearly completed legs should be hidden to keep the mobile fallback focused");
+assert.equal(afterFirstLeg[0].mode, "WALK");
+const afterJourney = api.remainingSegments(snapshot, new Date("2026-08-26T08:00:00.000Z").getTime());
+assert.equal(afterJourney.length, 1, "when every timed leg is past, keep only the final leg as a reference instead of showing the whole stale route");
+assert.equal(afterJourney[0].mode, "WALK");
 
 const serialized = JSON.stringify(snapshot);
 for (const forbidden of [
@@ -148,10 +157,11 @@ assert.match(source, /sessionStorage\.setItem/);
 assert.match(source, /sessionStorage\.removeItem/);
 assert.match(source, /URLSearchParams/);
 assert.match(source, /Cancelled when last online/, "offline UI should surface an already-known cancellation rather than showing the old leg as normal");
-assert.match(source, /At least one saved leg was already cancelled/, "offline cancellation fallback should instruct the rider not to rely on the cancelled leg");
+assert.match(source, /remaining saved leg/, "offline cancellation fallback should focus warnings on still-relevant legs");
 assert.match(source, /firstDisruptionText/, "offline snapshots should preserve a bounded last-known provider disruption note");
 assert.match(source, /Last-known platform change/, "offline UI should retain a known realtime platform change instead of silently reverting to the planned platform");
 assert.match(source, /plannedPlatformFrom/, "offline snapshot should keep the planned boarding platform only when needed to explain drift");
+assert.match(source, /Completed legs are hidden when possible/, "offline mobile copy should explain why earlier route legs may no longer be shown");
 assert.match(source, /nvs-shared-session-expired/, "backend-authoritative session expiry should clear any tab-only saved personal route");
 assert.doesNotMatch(source, /localStorage|indexedDB/i, "offline journey data must remain tab-scoped, not durable");
 assert.doesNotMatch(source, /fetch\s*\(|XMLHttpRequest|sendBeacon/i, "offline fallback must not make its own network requests");
@@ -165,4 +175,4 @@ assert.match(release, /offline-journey-v0111\.css/);
 assert.match(sw, /offline-journey-v0111\.js/);
 assert.match(sw, /offline-journey-v0111\.css/);
 
-console.log("offline-journey: tab-scoped fallback preserves last-known disruption/platform context while enforcing member scope, authoritative expiry, age expiry, privacy, accessibility and no-GPS contracts");
+console.log("offline-journey: tab-scoped fallback keeps only relevant legs, preserves disruption/platform context and enforces member scope, expiry, privacy, accessibility and no-GPS contracts");
