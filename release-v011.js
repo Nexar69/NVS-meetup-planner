@@ -22,6 +22,23 @@
     document.body.appendChild(script);
   }
 
+  function loadSharedConnection0111() {
+    if (!document.querySelector('link[data-shared-connection-v0111="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./shared-connection-v0111.css";
+      link.dataset.sharedConnectionV0111 = "true";
+      document.head.appendChild(link);
+    }
+    if (!document.querySelector('script[data-shared-connection-v0111="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./shared-connection-v0111.js";
+      script.async = false;
+      script.dataset.sharedConnectionV0111 = "true";
+      document.body.appendChild(script);
+    }
+  }
+
   function loadSharedReload0111() {
     if (document.querySelector('script[data-shared-reload-v0111="true"]')) return;
     const script = document.createElement("script");
@@ -231,6 +248,7 @@
 
   loadFreshnessGuard();
   loadSharedLiveFreshness0111();
+  loadSharedConnection0111();
   loadSharedReload0111();
   loadRoutingCoalescer0111();
   loadAccessibility0111();
@@ -249,6 +267,7 @@
   window.addEventListener("load", () => {
     loadFreshnessGuard();
     loadSharedLiveFreshness0111();
+    loadSharedConnection0111();
     loadSharedReload0111();
     loadRoutingCoalescer0111();
     loadAccessibility0111();
