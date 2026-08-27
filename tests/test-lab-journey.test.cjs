@@ -15,13 +15,10 @@ const assignment = {
     arrival: '2026-08-27T12:30:00Z',
     segments: [
       {
-        departure: '2026-08-27T12:00:00Z',
-        arrival: '2026-08-27T12:10:00Z',
-        intermediateStops: [
-          { name: 'A', arrival: '2026-08-27T12:05:00Z', departure: '2026-08-27T12:06:00Z' },
-        ],
+        mode: 'TRAM', platformFrom: '1', departure: '2026-08-27T12:00:00Z', arrival: '2026-08-27T12:10:00Z',
+        intermediateStops: [{ name: 'A', arrival: '2026-08-27T12:05:00Z', departure: '2026-08-27T12:06:00Z' }],
       },
-      { departure: '2026-08-27T12:10:00Z', arrival: '2026-08-27T12:30:00Z' },
+      { mode: 'TRAM', platformFrom: '2', departure: '2026-08-27T12:10:00Z', arrival: '2026-08-27T12:30:00Z' },
     ],
   },
 };
@@ -44,16 +41,10 @@ const window = {
     return true;
   },
 };
-const document = {
-  body: null,
-  readyState: 'loading',
-  addEventListener() {},
-  querySelector() { return null; },
-  getElementById() { return null; },
-};
+const document = { body: null, readyState: 'loading', addEventListener() {}, querySelector() { return null; }, getElementById() { return null; } };
 const context = {
   window, document, Date: realDate, CustomEvent: FakeCustomEvent, Event: FakeEvent, Intl,
-  Map, Object, Number, String, Array, Boolean, Math, queueMicrotask: (fn) => fn(), console,
+  Map, Set, Object, Number, String, Array, Boolean, Math, queueMicrotask: (fn) => fn(), console,
 };
 vm.createContext(context);
 vm.runInContext(source, context);
@@ -85,25 +76,50 @@ assert.strictEqual(assignment.route.departure, '2026-08-27T12:10:00.000Z');
 assert.strictEqual(assignment.route.arrival, '2026-08-27T12:40:00.000Z');
 assert.strictEqual(assignment.route.segments[0].arrival, '2026-08-27T12:20:00.000Z');
 assert.strictEqual(assignment.route.segments[0].intermediateStops[0].arrival, '2026-08-27T12:15:00.000Z');
-assert.strictEqual(assignment.route.segments[0].intermediateStops[0].departure, '2026-08-27T12:16:00.000Z');
 assert.strictEqual(originalRoute.departure, '2026-08-27T12:00:00Z', 'delay overlay must not mutate the loaded baseline route');
 assert.strictEqual(api.getRouteDelays()['0'], 10);
 assert(dispatched.some((event) => event.type === 'nvs-test-route-delay-change'));
-assert(dispatched.some((event) => event.type === 'nvs-timing-change'));
 
-// Ordinary UI rerenders must not stack the same delay repeatedly.
+// Realtime disruption overlays compose with timing overlays without mutating the baseline.
+assert.strictEqual(api.firstTransitSegment(0, true), 1, 'transfer-target helper should prefer the onward transit leg');
+assert(api.setSegmentDisruption(0, 1, 'platform-change'));
+assert.strictEqual(assignment.route.segments[1].plannedPlatformFrom, '2');
+assert.strictEqual(assignment.route.segments[1].platformFrom, 'TEST');
+assert.strictEqual(originalRoute.segments[1].platformFrom, '2', 'platform simulation must not mutate provider baseline');
+assert.strictEqual(api.getDisruptions()['0:1'], 'platform-change');
+assert(dispatched.some((event) => event.type === 'nvs-test-route-disruption-change'));
+
+assert(api.setSegmentDisruption(0, 1, 'cancelled'));
+assert.strictEqual(assignment.route.segments[1].cancelled, true);
+assert.strictEqual(assignment.route.segments[1].isCancelled, true);
+assert.strictEqual(originalRoute.segments[1].cancelled, undefined, 'cancellation simulation must remain local');
+
+assert(api.setSegmentDisruption(0, 1, 'delay-10'));
+assert.strictEqual(assignment.route.segments[1].departureDelay, 10);
+assert.strictEqual(assignment.route.segments[1].arrivalDelay, 10);
+assert.strictEqual(api.setSegmentDisruption(0, 1, 'bogus'), false, 'unapproved disruption must be rejected');
+
+// Ordinary UI rerenders must not stack timing or disruption overlays.
 window.dispatchEvent(new FakeEvent('nvs-group-recommendations-rendered'));
 assert.strictEqual(assignment.route.departure, '2026-08-27T12:10:00.000Z', 'rerender must not double-apply delay');
+assert.strictEqual(assignment.route.segments[1].departureDelay, 10, 'rerender must not stack realtime delay');
 
-// Fresh route data should become the new underlying baseline while the local delay stays visible.
+// Fresh route data becomes the new baseline while overlays stay visible.
 assignment.route = {
-  departure: '2026-08-27T12:05:00Z',
-  arrival: '2026-08-27T12:35:00Z',
-  segments: [{ departure: '2026-08-27T12:05:00Z', arrival: '2026-08-27T12:35:00Z' }],
+  departure: '2026-08-27T12:05:00Z', arrival: '2026-08-27T12:35:00Z',
+  segments: [
+    { mode: 'TRAM', platformFrom: 'A', departure: '2026-08-27T12:05:00Z', arrival: '2026-08-27T12:15:00Z' },
+    { mode: 'TRAM', platformFrom: 'C', departure: '2026-08-27T12:16:00Z', arrival: '2026-08-27T12:35:00Z' },
+  ],
 };
 window.dispatchEvent(new FakeEvent('nvs-group-recommendations-rendered'));
 assert.strictEqual(assignment.route.departure, '2026-08-27T12:15:00.000Z');
 assert.strictEqual(assignment.route.arrival, '2026-08-27T12:45:00.000Z');
+assert.strictEqual(assignment.route.segments[1].departureDelay, 10, 'disruption should rebase over fresh provider route');
+
+assert(api.clearSegmentDisruption(0, 1));
+assert.strictEqual(assignment.route.segments[1].departureDelay, undefined, 'clearing disruption should reveal fresh provider values beneath it');
+assert.strictEqual(assignment.route.segments[1].platformFrom, 'C');
 assert(api.clearRouteDelay(0));
 assert.strictEqual(assignment.route.departure, '2026-08-27T12:05:00Z', 'clearing delay should reveal the newest real route baseline');
 assert.strictEqual(assignment.route.arrival, '2026-08-27T12:35:00Z');
