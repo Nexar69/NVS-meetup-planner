@@ -13,8 +13,10 @@ html[data-nvs-test-mode="true"] .app-shell { padding-top: 2.5rem; }
 .nvs-test-actions button { padding: .35rem .15rem; font-size: .75rem; }
 .nvs-test-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(6rem,.45fr); gap: .6rem; align-items: end; }
 .nvs-test-reset { width: 100%; padding: .55rem .75rem; }
+.nvs-test-diagnostics { display: grid; gap: .2rem; padding: .65rem .75rem; border: 1px solid #fedf89; border-radius: .75rem; background: #fffaeb; color: #7a2e0e; font-size: .76rem; line-height: 1.35; overflow-wrap: anywhere; }
+.nvs-test-diagnostics strong { font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; }
 .nvs-test-note { margin: 0; line-height: 1.45; }
 .nvs-test-lab button:focus-visible, .nvs-test-lab input:focus-visible, .nvs-test-lab select:focus-visible, .nvs-test-lab summary:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
 @media (max-width: 520px) { .nvs-test-lab { right: .6rem; bottom: .6rem; width: calc(100vw - 1.2rem); } .nvs-test-actions { grid-template-columns: repeat(3,1fr); } }
 @media (prefers-reduced-motion: reduce) { .nvs-test-lab * { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
-@media (forced-colors: active) { .nvs-test-lab details, .nvs-test-actions button, .nvs-test-row button, .nvs-test-reset, .nvs-test-field input, .nvs-test-field select { border: 1px solid CanvasText; } .nvs-test-banner { forced-color-adjust: none; } }
+@media (forced-colors: active) { .nvs-test-lab details, .nvs-test-actions button, .nvs-test-row button, .nvs-test-reset, .nvs-test-field input, .nvs-test-field select, .nvs-test-diagnostics { border: 1px solid CanvasText; } .nvs-test-banner { forced-color-adjust: none; } }
