@@ -23,6 +23,8 @@ const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
   "trip-guidance-v0111.js",
   "trip-guidance-v0111.css",
   "intelligence-voluntary-sync-v0111.js",
+  "test-lab-v0111.js",
+  "test-lab-v0111.css",
   "share-v010.js",
   "shared-live-v010.js",
   "release-v011.js",
@@ -64,7 +66,7 @@ assert.match(release, /loadIntelligenceVoluntarySync0111/, "v0.11.1 release owne
 assert.match(release, /intelligence-voluntary-sync-v0111\.js/, "voluntary intelligence sync must be wired by the release owner");
 
 const serviceWorker = read("service-worker.js");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r12/, "service worker cache must be the latest v0.11.1 revision");
+assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r13/, "service worker cache must be the latest v0.11.1 revision");
 for (const asset of [
   "intelligence-core.js",
   "intelligence-v011.js",
@@ -83,6 +85,8 @@ for (const asset of [
   "trip-guidance-v0111.js",
   "trip-guidance-v0111.css",
   "intelligence-voluntary-sync-v0111.js",
+  "test-lab-v0111.js",
+  "test-lab-v0111.css",
   "share-v010.js",
   "shared-live-v010.js",
   "release-v011.js",
@@ -194,4 +198,4 @@ assert.match(vmv, /plannedPlatformFrom/, "VMV adapter must preserve planned plat
 assert.match(vmv, /cancelled/, "VMV adapter must preserve cancellation state");
 assert.match(vmv, /remarks/, "VMV adapter must preserve disruption remarks");
 
-console.log("release-smoke: v0.11.1 wiring, r12 voluntary-status-aware guidance/command sync and no-op plan revision protection look consistent");
+console.log("release-smoke: v0.11.1 wiring, r13 hardened Test Lab app shell, voluntary-status-aware guidance/command sync and no-op plan revision protection look consistent");
