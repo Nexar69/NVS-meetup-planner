@@ -4,6 +4,8 @@
   const PRESETS = Object.freeze([
     { id: "transfer-window", label: "Transfer window", detail: "jump 3 min before next transfer" },
     { id: "delayed-rider", label: "Delayed rider", detail: "+5 min whole route · convergence stress" },
+    { id: "platform-change", label: "Platform changed", detail: "next transfer leg → TEST platform" },
+    { id: "cancelled-transfer", label: "Onward cancelled", detail: "cancel next transfer leg · recovery stress" },
     { id: "missed-transfer", label: "Missed transfer", detail: "jump past transfer · mark missed" },
     { id: "all-arrived", label: "Everyone arrived", detail: "jump past arrival · confirm all here" },
     { id: "routing-fallback", label: "VMV fallback", detail: "VMV fails · refresh to test Transitous" },
@@ -26,7 +28,7 @@
     const segments = Array.isArray(route?.segments) ? route.segments : [];
     for (let segmentIndex = 1; segmentIndex < segments.length; segmentIndex += 1) {
       const time = asTime(segments[segmentIndex]?.departure);
-      if (Number.isFinite(time)) return { time, segmentIndex };
+      if (Number.isFinite(time) && String(segments[segmentIndex]?.mode || "").toUpperCase() !== "WALK") return { time, segmentIndex };
     }
     return null;
   }
@@ -59,12 +61,14 @@
       network: window.NVSTestLab.getNetwork?.() || "normal",
       statuses: window.NVSTestJourney.getOverrides(),
       delays: window.NVSTestJourney.getRouteDelays(),
+      disruptions: window.NVSTestJourney.getDisruptions?.() || {},
     };
   }
 
   function clearOverlays() {
     window.NVSTestJourney.resetMembers();
     window.NVSTestJourney.resetRouteDelays();
+    window.NVSTestJourney.resetDisruptions?.();
   }
 
   function restore(state) {
@@ -72,6 +76,10 @@
     window.NVSTestLab.setNetwork?.(state.network || "normal");
     Object.entries(state.delays || {}).forEach(([index, minutes]) => {
       window.NVSTestJourney.setRouteDelay(Number(index), Number(minutes));
+    });
+    Object.entries(state.disruptions || {}).forEach(([key, kind]) => {
+      const [index, segmentIndex] = String(key).split(":").map(Number);
+      window.NVSTestJourney.setSegmentDisruption?.(index, segmentIndex, kind);
     });
     Object.entries(state.statuses || {}).forEach(([index, status]) => {
       window.NVSTestJourney.setMemberStatus(Number(index), status);
@@ -82,9 +90,9 @@
   function preflight(preset) {
     const list = assignments();
 
-    if (preset === "transfer-window") {
+    if (preset === "transfer-window" || preset === "platform-change" || preset === "cancelled-transfer") {
       const target = firstTransfer();
-      return target ? { list, target } : null;
+      return target && typeof window.NVSTestJourney.setSegmentDisruption === "function" ? { list, target } : (preset === "transfer-window" && target ? { list, target } : null);
     }
 
     if (preset === "delayed-rider") {
@@ -103,11 +111,7 @@
       return arrivals.length ? { list, arrivals } : null;
     }
 
-    if (preset === "routing-fallback") {
-      return typeof window.NVSTestLab.setNetwork === "function" ? { list } : null;
-    }
-
-    if (preset === "api-offline") {
+    if (preset === "routing-fallback" || preset === "api-offline") {
       return typeof window.NVSTestLab.setNetwork === "function" ? { list } : null;
     }
 
@@ -118,9 +122,9 @@
     const preset = String(id || "");
     if (!PRESETS.some((item) => item.id === preset)) return { available: false, reason: "Unknown scenario." };
     if (preflight(preset)) return { available: true, reason: "" };
-    if (preset === "transfer-window") return { available: false, reason: "Load a route with a transfer first." };
+    if (["transfer-window", "platform-change", "cancelled-transfer"].includes(preset)) return { available: false, reason: "Load a route with a transit transfer first." };
     if (preset === "delayed-rider") return { available: false, reason: "Load a timed route first." };
-    if (preset === "missed-transfer") return { available: false, reason: liveReady() ? "Load a route with a transfer first." : "Wait for read-only Shared Live state and a transfer route." };
+    if (preset === "missed-transfer") return { available: false, reason: liveReady() ? "Load a route with a transit transfer first." : "Wait for read-only Shared Live state and a transfer route." };
     if (preset === "all-arrived") return { available: false, reason: liveReady() ? "Load a timed group route first." : "Wait for read-only Shared Live state." };
     return { available: false, reason: "This Test Lab capability is unavailable." };
   }
@@ -129,7 +133,6 @@
     if (applying) return false;
     const preset = String(id || "");
     if (!PRESETS.some((item) => item.id === preset)) return false;
-
     const plan = preflight(preset);
     if (!plan) return false;
 
@@ -143,29 +146,28 @@
       if (preset === "transfer-window") {
         ok = window.NVSTestLab.setNow(plan.target.time - 3 * 60_000);
       }
-
       if (preset === "delayed-rider") {
         ok = window.NVSTestJourney.setRouteDelay(plan.target.memberIndex, 5)
           && window.NVSTestLab.setNow(plan.target.time - 5 * 60_000);
       }
-
+      if (preset === "platform-change") {
+        ok = window.NVSTestJourney.setSegmentDisruption(plan.target.memberIndex, plan.target.segmentIndex, "platform-change")
+          && window.NVSTestLab.setNow(plan.target.time - 5 * 60_000);
+      }
+      if (preset === "cancelled-transfer") {
+        ok = window.NVSTestJourney.setSegmentDisruption(plan.target.memberIndex, plan.target.segmentIndex, "cancelled")
+          && window.NVSTestLab.setNow(plan.target.time - 5 * 60_000);
+      }
       if (preset === "missed-transfer") {
         ok = window.NVSTestLab.setNow(plan.target.time + 30_000)
           && window.NVSTestJourney.setMemberStatus(plan.target.memberIndex, "missed");
       }
-
       if (preset === "all-arrived") {
         const statusOk = plan.list.every((_, index) => window.NVSTestJourney.setMemberStatus(index, "arrived"));
         ok = statusOk && window.NVSTestLab.setNow(Math.max(...plan.arrivals) + 60_000);
       }
-
-      if (preset === "routing-fallback") {
-        ok = window.NVSTestLab.setNetwork("vmv-fail");
-      }
-
-      if (preset === "api-offline") {
-        ok = window.NVSTestLab.setNetwork("offline-api");
-      }
+      if (preset === "routing-fallback") ok = window.NVSTestLab.setNetwork("vmv-fail");
+      if (preset === "api-offline") ok = window.NVSTestLab.setNetwork("offline-api");
 
       if (!ok) return false;
       window.dispatchEvent(new CustomEvent("nvs-test-scenario-change", { detail: { scenario: preset } }));
@@ -219,7 +221,7 @@
     const note = section.querySelector("#nvsTestScenarioNote");
     if (note) note.textContent = liveReady()
       ? "Presets replace current local overlays/network mode. If a preset cannot apply, the previous simulation is restored."
-      : "Unavailable route/live presets stay disabled until their prerequisites load; network presets work anytime.";
+      : "Unavailable route/live presets stay disabled until their prerequisites load; route disruption and network presets never write to the backend.";
   }
 
   window.NVSTestScenarios = Object.freeze({
@@ -230,7 +232,7 @@
     resetScenario,
   });
 
-  ["nvs-group-recommendations-rendered", "nvs-shared-live-change", "nvs-test-state-change", "nvs-test-route-delay-change", "nvs-test-member-state-change"].forEach((type) => {
+  ["nvs-group-recommendations-rendered", "nvs-shared-live-change", "nvs-test-state-change", "nvs-test-route-delay-change", "nvs-test-route-disruption-change", "nvs-test-member-state-change"].forEach((type) => {
     window.addEventListener(type, () => queueMicrotask(render));
   });
   window.addEventListener("load", render);
