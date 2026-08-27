@@ -185,6 +185,23 @@
     return -1;
   }
 
+  function shiftSegmentRealtime(route, segmentIndex, minutes) {
+    const segment = route?.segments?.[segmentIndex];
+    if (!segment) return false;
+    segment.departure = shiftTemporal(segment.departure, minutes);
+    segment.arrival = shiftTemporal(segment.arrival, minutes);
+    if (Array.isArray(segment.intermediateStops)) {
+      segment.intermediateStops = segment.intermediateStops.map((stop) => ({
+        ...stop,
+        arrival: shiftTemporal(stop?.arrival, minutes),
+        departure: shiftTemporal(stop?.departure, minutes),
+      }));
+    }
+    if (segmentIndex === 0) route.departure = shiftTemporal(route.departure, minutes);
+    if (segmentIndex === route.segments.length - 1) route.arrival = shiftTemporal(route.arrival, minutes);
+    return true;
+  }
+
   function applyDisruption(route, memberIndex, segmentIndex, kind) {
     const segment = route?.segments?.[segmentIndex];
     if (!segment) return false;
@@ -203,6 +220,7 @@
     }
     if (kind === "delay-5" || kind === "delay-10") {
       const minutes = kind === "delay-10" ? 10 : 5;
+      if (!shiftSegmentRealtime(route, segmentIndex, minutes)) return false;
       segment.departureDelay = minutes;
       segment.arrivalDelay = minutes;
       segment.testLabDisruption = kind;
