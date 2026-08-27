@@ -1,4 +1,4 @@
-const CACHE_NAME = "meet-schwerin-v0.11.1-r14";
+const CACHE_NAME = "meet-schwerin-v0.11.1-r15";
 const NETWORK_TIMEOUT_MS = 5_000;
 
 const APP_SHELL = [
@@ -83,6 +83,7 @@ const APP_SHELL = [
   "./update-safety-v0111.js",
   "./test-lab-v0111.js",
   "./test-lab-journey-v0111.js",
+  "./test-lab-scenarios-v0111.js",
   "./release-v074.js",
   "./release-v080.js",
   "./release-v090.js",
