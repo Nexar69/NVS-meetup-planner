@@ -131,15 +131,21 @@ self.addEventListener("activate", (event) => {
     await self.clients.claim();
   })());
 });
+function clientIsInAppScope(clientUrl) {
+  try {
+    const scopeUrl = new URL(self.registration?.scope || "./", `${self.location.origin}/`);
+    const url = new URL(clientUrl);
+    return url.origin === scopeUrl.origin && url.pathname.startsWith(scopeUrl.pathname);
+  } catch {
+    return false;
+  }
+}
 async function reopenFromNotification() {
   let windows = [];
   try {
     windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
   } catch {}
-  const ownOrigin = self.location.origin;
-  const existing = windows.find((client) => {
-    try { return new URL(client.url).origin === ownOrigin; } catch { return false; }
-  });
+  const existing = windows.find((client) => clientIsInAppScope(client.url));
   if (existing) {
     try {
       await existing.focus();
