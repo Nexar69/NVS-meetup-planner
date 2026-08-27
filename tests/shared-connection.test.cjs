@@ -80,6 +80,7 @@ assert.deepEqual({ ...api.connectionModel(100_000, false, 0, 0) }, { status: "of
 assert.equal(api.connectionModel(100_000, true, 75_000, 0).status, "current", "a response within 30 seconds should be current");
 assert.equal(api.connectionModel(100_001, true, 70_000, 0).status, "delayed", "a response older than 30 seconds should be delayed");
 assert.equal(api.connectionModel(100_000, true, 99_000, 99_500).status, "delayed", "a timeout newer than a healthy response should immediately make sync delayed");
+assert.equal(api.connectionModel(100_000, true, 99_500, 99_500).status, "delayed", "same-millisecond timeout after a response must not be hidden by timestamp equality");
 assert.equal(api.connectionModel(100_000, true, 0, 99_500).status, "delayed", "a timeout before the first success should not remain stuck on connecting");
 assert.equal(api.connectionModel(100_000, false, 99_000, 99_500).status, "offline", "true offline should remain stronger than timeout state");
 
@@ -87,6 +88,7 @@ const lifecycleNow = Date.now();
 api.markSuccess(lifecycleNow);
 assert.equal(api.getLastSuccessAt(), lifecycleNow);
 assert.equal(api.getLastFailureAt(), 0);
+assert.equal(api.getSuccessVersion(), 1);
 assert.equal(sync.dataset.connection, "current");
 assert.equal(sync.textContent, "Live sync current");
 assert.equal(timers.size, 1, "one stale-boundary timer should be armed after a successful response");
@@ -94,6 +96,14 @@ assert.ok([...timers.values()][0].delay >= 29_900 && [...timers.values()][0].del
 const retry = elements.get("v0111SharedConnectionRetry");
 assert.ok(retry, "connection freshness should add one recovery button beside the sync chip");
 assert.equal(retry.hidden, true, "manual refresh should stay quiet while sync is healthy");
+
+api.markFailure(lifecycleNow);
+assert.equal(sync.dataset.connection, "delayed", "same-millisecond timeout should override the prior response when it occurs afterward");
+assert.equal(timers.size, 0);
+api.markSuccess(lifecycleNow);
+assert.equal(api.getSuccessVersion(), 2, "acknowledgements need a monotonic sequence independent of timestamp resolution");
+assert.equal(api.getLastFailureAt(), 0);
+assert.equal(sync.dataset.connection, "current");
 
 listeners.get("nvs-shared-live-timeout")();
 assert.equal(sync.dataset.connection, "delayed", "an observed transport timeout should mark Shared Live delayed immediately");
@@ -120,12 +130,15 @@ assert.equal(retry.textContent, "Check now");
   assert.equal(noAck, false, "a refresh attempt without a new successful-response event must not claim recovery");
   assert.equal(sync.dataset.connection, "delayed");
 
+  const sameTimestamp = api.getLastSuccessAt();
+  const versionBeforeRetry = api.getSuccessVersion();
   window.NVSSharedLive.refresh = async () => {
     refreshCalls += 1;
-    api.markSuccess(Date.now());
+    api.markSuccess(sameTimestamp);
   };
   const acknowledged = await api.retryNow();
-  assert.equal(acknowledged, true, "manual retry should report recovery only after a fresh backend acknowledgement");
+  assert.equal(acknowledged, true, "manual retry must recognize a fresh acknowledgement even when Date.now has the same millisecond value");
+  assert.equal(api.getSuccessVersion(), versionBeforeRetry + 1);
   assert.equal(sync.dataset.connection, "current");
   assert.equal(retry.hidden, true, "successful acknowledgement should remove the delayed recovery action");
 
@@ -165,12 +178,13 @@ assert.equal(retry.textContent, "Check now");
   assert.match(sw, /shared-connection-v0111\.js/, "connection freshness runtime should be available offline");
   assert.match(sw, /shared-connection-v0111\.css/, "connection freshness styles should be available offline");
   assert.match(source, /nvs-shared-live-timeout/, "connection freshness should react to bounded transport timeouts immediately");
+  assert.match(source, /successVersion/, "fresh acknowledgement detection should not depend only on millisecond timestamp ordering");
   assert.match(source, /NVSSharedLive\?\.refresh/, "manual recovery should reuse the existing shared-live refresh path");
   assert.doesNotMatch(source, /fetch\s*\(|XMLHttpRequest|sendBeacon/, "connection freshness must not add another direct network path");
   assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/, "connection freshness should remain memory-only");
   assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "connection freshness must not introduce location tracking");
 
-  console.log("shared-connection: immediate timeout-delayed state, current/delayed/offline/connecting states, acknowledged retry, visibility lifecycle and privacy boundaries passed");
+  console.log("shared-connection: immediate timeout-delayed state, race-safe acknowledgement sequencing, retry, visibility lifecycle and privacy boundaries passed");
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
