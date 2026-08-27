@@ -51,13 +51,14 @@
     bypassNextGet = true;
   }
 
-  function shouldBackOffGet(now = Date.now()) {
-    if (!(getBackoffUntil > now)) return false;
-    if (bypassNextGet) {
-      bypassNextGet = false;
-      return false;
-    }
+  function consumeGetBypass() {
+    if (!bypassNextGet) return false;
+    bypassNextGet = false;
     return true;
+  }
+
+  function shouldBackOffGet(now = Date.now()) {
+    return getBackoffUntil > now;
   }
 
   function mergeAbortSignal(existingSignal, controller) {
@@ -123,14 +124,18 @@
 
   function sharedGet(input, init = {}) {
     const key = sharedLiveUrl(input);
-    let pending = pendingGets.get(key);
-    if (pending) return consumerView(pending, init?.signal);
-    if (shouldBackOffGet()) {
-      return Promise.reject(new DOMException("Shared Live polling is temporarily backed off", "RetryLaterError"));
+    const forceFresh = consumeGetBypass();
+    if (!forceFresh) {
+      const pending = pendingGets.get(key);
+      if (pending) return consumerView(pending, init?.signal);
+      if (shouldBackOffGet()) {
+        return Promise.reject(new DOMException("Shared Live polling is temporarily backed off", "RetryLaterError"));
+      }
     }
+
     const sharedInit = { ...init };
     delete sharedInit.signal;
-    pending = performBoundedFetch(input, sharedInit).finally(() => {
+    const pending = performBoundedFetch(input, sharedInit).finally(() => {
       if (pendingGets.get(key) === pending) pendingGets.delete(key);
     });
     pendingGets.set(key, pending);
