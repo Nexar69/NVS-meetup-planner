@@ -41,7 +41,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
         const normalized = typeof key === "string" ? key : key.url;
         return cacheEntries.get(normalized) || null;
       },
-      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r13", "meet-schwerin-v0.11.1-r14"]; },
+      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r13", "meet-schwerin-v0.11.1-r14", "meet-schwerin-v0.11.1-r15"]; },
       async delete(key) { deleted.push(key); return true; },
     },
     self: {
@@ -115,11 +115,12 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     assert.ok(rt.addedShells[0].includes("./test-lab-v0111.js"), "hardened Test Lab runtime should be available offline");
     assert.ok(rt.addedShells[0].includes("./test-lab-v0111.css"), "hardened Test Lab styles should be available offline");
     assert.ok(rt.addedShells[0].includes("./test-lab-journey-v0111.js"), "Test Lab journey simulation should be available offline");
+    assert.ok(rt.addedShells[0].includes("./test-lab-scenarios-v0111.js"), "Test Lab scenario presets should be available offline");
   }
   {
     const rt = runtime();
     await rt.dispatch("activate");
-    assert.deepEqual(rt.deleted, ["old-cache", "meet-schwerin-v0.11.1-r13"], "healthy r14 shell should clean older caches while preserving itself");
+    assert.deepEqual(rt.deleted, ["old-cache", "meet-schwerin-v0.11.1-r13", "meet-schwerin-v0.11.1-r14"], "healthy r15 shell should clean older caches while preserving itself");
     assert.equal(rt.claimed, 1);
   }
   {
@@ -226,11 +227,11 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     await rt.dispatch("notificationclick", { notification: { close() { closed += 1; } } });
     assert.equal(closed, 1, "notification lifecycle should resolve safely even when browser window APIs fail");
   }
-  assert.match(originalSource, /meet-schwerin-v0\.11\.1-r14/, "service-worker behavior suite should exercise the current cache revision");
+  assert.match(originalSource, /meet-schwerin-v0\.11\.1-r15/, "service-worker behavior suite should exercise the current cache revision");
   assert.match(originalSource, /NETWORK_TIMEOUT_MS = 5_000/, "network-first routes should have a bounded slow-network wait");
   assert.match(originalSource, /AbortController/, "slow network-first requests should be cancellable");
   assert.match(originalSource, /response\.status === 408 \|\| response\.status === 429 \|\| response\.status >= 500/, "transient HTTP failures should prefer a healthy cached app-shell response");
   assert.match(originalSource, /currentShellReady/, "activation should verify the new shell before deleting older offline caches");
   assert.match(originalSource, /async function reopenFromNotification/, "notification taps should isolate browser client/window failures");
-  console.log("service-worker-behavior: privacy, offline, guarded install/activation, slow-network/transient-server fallback, resilient notification taps and r14 app-shell behavior passed");
+  console.log("service-worker-behavior: privacy, offline, guarded install/activation, slow-network/transient-server fallback, resilient notification taps and r15 app-shell behavior passed");
 })().catch((error) => { console.error(error); process.exit(1); });
