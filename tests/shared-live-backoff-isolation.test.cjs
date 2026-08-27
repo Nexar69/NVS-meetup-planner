@@ -70,6 +70,11 @@ vm.runInNewContext(source, {
   const sessionA = "https://worker.example/api/live/SESSION_A";
   const sessionB = "https://worker.example/api/live/SESSION_B";
   const sessionC = "https://worker.example/api/live/SESSION_C";
+  const foreignLiveShape = "https://third-party.example/api/live/SESSION_A";
+
+  assert.equal(api.isSharedLiveRequest(sessionA), true, "configured backend live route should be guarded");
+  assert.equal(api.isSharedLiveRequest(foreignLiveShape), false,
+    "live-shaped URLs on an unrelated origin must bypass the global Shared Live fetch guard");
 
   await window.fetch(sessionA, { method: "GET" });
   assert.ok(api.getBackoffUntil(sessionA) > Date.now(), "503 should back off only session A");
@@ -80,6 +85,22 @@ vm.runInNewContext(source, {
   assert.equal(api.getBackoffUntil(sessionB), 0, "session B must not inherit session A backoff");
   await assert.rejects(window.fetch(sessionA, { method: "GET" }), /backed off|RetryLaterError/i);
   assert.equal(calls.get(sessionA), 1, "backed-off session A should be suppressed locally");
+
+  const eventCountBeforeForeign = events.length;
+  const currentBackoffBeforeForeign = api.getBackoffUntil();
+  const foreignResponse = await window.fetch(foreignLiveShape, { method: "GET" });
+  assert.equal(foreignResponse.status, 503, "foreign live-shaped request should pass through untouched");
+  assert.equal(calls.get(foreignLiveShape), 1, "foreign live-shaped request should reach original fetch directly");
+  assert.equal(events.length, eventCountBeforeForeign, "foreign live-shaped request must not emit Shared Live lifecycle events");
+  assert.equal(api.getBackoffUntil(foreignLiveShape), 0,
+    "explicit foreign URL health lookup must not fall back to the current session bucket");
+  api.resetGetBackoff(false, foreignLiveShape);
+  assert.equal(api.getBackoffUntil(), currentBackoffBeforeForeign,
+    "scoped reset for a foreign URL must be a no-op, not clear current/all Shared Live state");
+  api.allowNextGet(foreignLiveShape);
+  await assert.rejects(window.fetch(sessionA, { method: "GET" }), /backed off|RetryLaterError/i);
+  assert.equal(calls.get(sessionA), 1,
+    "foreign URL must not grant a fresh-GET bypass to the current Shared Live session");
 
   await window.fetch(sessionB, { method: "GET" });
   assert.equal(calls.get(sessionB), 1, "healthy session B must still reach the network while A is backed off");
@@ -108,5 +129,5 @@ vm.runInNewContext(source, {
     "per-session backoff must remain memory-only and location-free");
   assert.doesNotMatch(source, /setInterval\s*\(/, "per-session isolation must not add background polling");
 
-  console.log("shared-live-backoff-isolation: per-session overload/backoff state, cross-origin backend keying, and current-session UI isolation passed");
+  console.log("shared-live-backoff-isolation: configured-backend scoping, foreign-origin isolation, and per-session state passed");
 })().catch((error) => { console.error(error); process.exit(1); });
