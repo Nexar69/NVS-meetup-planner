@@ -13,11 +13,29 @@
   const getGenerationByKey = new Map();
   const pendingGets = new Map();
 
+  function pageOrigin() {
+    try { return window.location.origin || new URL(window.location.href).origin; }
+    catch { return ""; }
+  }
+
+  function configuredBackendBase() {
+    const fallback = pageOrigin();
+    const configured = window.__NVS_BACKEND_URL__ || window.NVSConfig?.backendUrl || fallback;
+    try {
+      return new URL(String(configured || fallback), window.location.href);
+    } catch {
+      try { return new URL(fallback || window.location.href); }
+      catch { return null; }
+    }
+  }
+
   function sharedLiveUrl(input) {
     try {
       const raw = typeof input === "string" ? input : input?.url;
       if (!raw) return "";
       const url = new URL(raw, window.location.href);
+      const backend = configuredBackendBase();
+      if (!backend || url.origin !== backend.origin) return "";
       return /\/api\/live\/[^/]+\/?$/.test(url.pathname) ? url.href : "";
     } catch {
       return "";
@@ -45,20 +63,12 @@
     }
   }
 
-  function configuredBackendBase() {
-    const configured = window.__NVS_BACKEND_URL__ || window.NVSConfig?.backendUrl || window.location.origin;
-    try {
-      return new URL(String(configured || window.location.origin), window.location.href);
-    } catch {
-      return new URL(window.location.origin, window.location.href);
-    }
-  }
-
   function currentPageLiveUrl() {
     const planId = currentPagePlanId();
-    if (!planId) return "";
+    const backend = configuredBackendBase();
+    if (!planId || !backend) return "";
     try {
-      return new URL(`/api/live/${encodeURIComponent(planId)}`, configuredBackendBase()).href;
+      return new URL(`/api/live/${encodeURIComponent(planId)}`, backend).href;
     } catch {
       return "";
     }
