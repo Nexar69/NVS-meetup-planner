@@ -104,6 +104,10 @@ assert(api?.active, 'scenario presets should activate only on top of the hardene
 assert.deepStrictEqual(Array.from(api.presets, (item) => item.id), [
   'transfer-window', 'delayed-rider', 'missed-transfer', 'all-arrived', 'routing-fallback', 'api-offline',
 ]);
+assert.strictEqual(api.availability('transfer-window').available, true);
+assert.strictEqual(api.availability('missed-transfer').available, true);
+assert.strictEqual(api.availability('routing-fallback').available, true);
+assert.strictEqual(api.availability('bogus').available, false);
 
 // Transfer-window is deliberately time-only: whole-route delay overlays do not tighten an internal connection.
 assert(api.applyPreset('transfer-window'));
@@ -145,6 +149,10 @@ now = Date.parse('2026-08-27T11:55:00Z');
 const originalSegments = assignments[0].route.segments;
 assignments[0].route.segments = [originalSegments[0]];
 liveReady = false;
+const unavailable = api.availability('missed-transfer');
+assert.strictEqual(unavailable.available, false);
+assert(/Shared Live/.test(unavailable.reason), 'unavailable missed-transfer should explain its missing live-state prerequisite');
+assert.strictEqual(api.availability('routing-fallback').available, true, 'network-only scenarios should remain usable without route/live prerequisites');
 assert.strictEqual(api.applyPreset('missed-transfer'), false);
 assert.strictEqual(statuses.get(1), 'on-vehicle', 'failed preset should preserve prior status overlay');
 assert.strictEqual(delays.get(1), 10, 'failed preset should preserve prior route-delay overlay');
@@ -165,5 +173,7 @@ assert(!/\bfetch\s*\(/.test(source), 'scenario presets must not add a network pa
 assert(!/getCurrentPosition|watchPosition|geolocation/.test(source), 'scenario presets must not use location APIs');
 assert(!/setInterval\s*\(/.test(source), 'scenario presets must not add a background polling loop');
 assert(source.includes('Atomic local stress tests · never shared'), 'scenario UI must keep its safety boundary visible');
+assert(source.includes('aria-disabled'), 'unavailable scenarios should expose disabled semantics');
+assert(source.includes('aria-live="polite"'), 'scenario prerequisite guidance should be announced politely');
 
 console.log('Test Lab scenario preset tests passed.');
