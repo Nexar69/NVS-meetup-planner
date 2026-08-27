@@ -19,6 +19,7 @@ function makeRuntime(fetchImpl) {
   vm.runInNewContext(source, {
     window,
     URL,
+    Request,
     AbortController,
     DOMException,
     CustomEvent,
@@ -72,6 +73,20 @@ function makeRuntime(fetchImpl) {
       rt.window.fetch(url, { method: "POST", body: "{}" }),
     ]);
     assert.equal(calls, 2, "voluntary POST check-ins must never be coalesced or throttled with GET polling");
+  }
+
+  {
+    let calls = 0;
+    const rt = makeRuntime(async () => {
+      calls += 1;
+      return new Response("{}", { status: 200 });
+    });
+    const url = "https://backend.example/api/live/ABC234";
+    await Promise.all([
+      rt.window.fetch(new Request(url, { method: "POST", body: "{}" })),
+      rt.window.fetch(new Request(url, { method: "POST", body: "{}" })),
+    ]);
+    assert.equal(calls, 2, "POST methods carried by Request objects must stay independent and must never be misclassified as coalescible GETs");
   }
 
   {
@@ -151,7 +166,8 @@ function makeRuntime(fetchImpl) {
   }
 
   assert.match(source, /forceFresh = consumeGetBypass\(\)/, "manual bypass should explicitly force one fresh Shared Live GET");
+  assert.match(source, /init\?\.method \|\| input\?\.method \|\| "GET"/, "request classification must honor methods carried by Request objects");
   assert.doesNotMatch(source, /localStorage|sessionStorage/, "GET coalescing state must remain memory-only");
   assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "Shared Live coalescing must not introduce location access");
-  console.log("shared-live-coalescing: duplicate GET suppression, response isolation, POST independence, retry cleanup, consumer cancellation and manual fresh-retry escape passed");
+  console.log("shared-live-coalescing: duplicate GET suppression, response isolation, POST independence including Request objects, retry cleanup, consumer cancellation and manual fresh-retry escape passed");
 })().catch((error) => { console.error(error); process.exit(1); });
