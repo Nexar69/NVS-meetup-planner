@@ -32,7 +32,7 @@ function originalFetch(input, init = {}) {
 
 const window = {
   fetch: originalFetch,
-  location: { href: "https://meet.example/p/SESSION_A" },
+  location: { href: "https://meet.example/p/SESSION_A", pathname: "/p/SESSION_A" },
   dispatchEvent(event) { events.push(event); return true; },
   addEventListener(name, handler) { listeners.set(name, handler); },
 };
@@ -79,14 +79,16 @@ vm.runInNewContext(source, {
   assert.equal(events.length, 1,
     "starting a GET for another shared session must not make the first session's timeout look stale");
   assert.equal(events[0].type, "nvs-shared-live-timeout");
-  assert.equal(api.getConsecutiveGetTimeouts(), 1,
+  assert.equal(api.getConsecutiveGetTimeouts(sessionA), 1,
     "different-session traffic must not suppress timeout accounting for the original current request");
+  assert.equal(api.getConsecutiveGetTimeouts(sessionB), 0,
+    "healthy session B must not inherit session A's timeout streak");
 
   api.resetGetBackoff();
   const sessionC = "https://meet.example/api/live/SESSION_C";
   const staleC = window.fetch(sessionC, { method: "GET" });
   const staleCTimer = timers.at(-1);
-  api.allowNextGet();
+  api.allowNextGet(sessionC);
   await window.fetch(sessionC, { method: "GET" });
   assert.equal(callsByUrl.get(sessionC), 2, "explicit fresh retry should escape a same-session hung request");
 
@@ -95,7 +97,7 @@ vm.runInNewContext(source, {
   await assert.rejects(staleC, /timed out|TimeoutError/i);
   assert.equal(events.length, eventsBeforeStaleC,
     "a superseded GET for the same session must remain unable to downgrade the newer healthy request");
-  assert.equal(api.getConsecutiveGetTimeouts(), 0,
+  assert.equal(api.getConsecutiveGetTimeouts(sessionC), 0,
     "same-session stale timeout must not restart backoff after a fresh retry succeeds");
 
   const sessionD = "https://meet.example/api/live/SESSION_D";
@@ -123,8 +125,10 @@ vm.runInNewContext(source, {
   await assert.rejects(staleE, /timed out|TimeoutError/i);
   assert.equal(events.length, eventsBeforeReconnectStale,
     "late failures from any pre-reconnect session must not downgrade post-reconnect health");
-  assert.equal(api.getConsecutiveGetTimeouts(), 0);
-  assert.equal(api.getBackoffUntil(), 0);
+  assert.equal(api.getConsecutiveGetTimeouts(sessionD), 0);
+  assert.equal(api.getConsecutiveGetTimeouts(sessionE), 0);
+  assert.equal(api.getBackoffUntil(sessionD), 0);
+  assert.equal(api.getBackoffUntil(sessionE), 0);
 
   assert.doesNotMatch(JSON.stringify(events), /SESSION_[A-E]|https?:/,
     "generation-isolation lifecycle events must not leak shared IDs or URLs");
