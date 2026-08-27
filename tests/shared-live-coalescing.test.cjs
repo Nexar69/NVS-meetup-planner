@@ -8,7 +8,7 @@ const source = fs.readFileSync(path.resolve(__dirname, "../shared-live-timeout-v
 function makeRuntime(fetchImpl) {
   const listeners = {};
   const window = {
-    location: { href: "https://app.example/p/ABC234?me=0" },
+    location: { href: "https://app.example/p/ABC234?me=0", pathname: "/p/ABC234" },
     fetch: fetchImpl,
     addEventListener(name, fn) { listeners[name] = fn; },
     dispatchEvent() {},
@@ -185,11 +185,39 @@ function makeRuntime(fetchImpl) {
     assert.equal(rt.window.NVSSharedLiveTimeout0111.getPendingGetCount(), 0, "manual replacement and older poll cleanup must leave no poisoned pending entry");
   }
 
-  assert.match(source, /forceFresh = consumeGetBypass\(\)/, "manual bypass should explicitly force one fresh Shared Live GET");
+  {
+    let calls = 0;
+    const releases = [];
+    const rt = makeRuntime(async () => {
+      calls += 1;
+      return new Promise((resolve) => { releases.push(resolve); });
+    });
+    const ownUrl = "https://backend.example/api/live/ABC234";
+    const otherUrl = "https://backend.example/api/live/XYZ789";
+    const ownAutomatic = rt.window.fetch(ownUrl, { method: "GET" });
+    const otherAutomatic = rt.window.fetch(otherUrl, { method: "GET" });
+    assert.equal(calls, 2);
+
+    rt.window.NVSSharedLiveTimeout0111.allowNextGet();
+    const otherOverlap = rt.window.fetch(otherUrl, { method: "GET" });
+    assert.equal(calls, 2, "an overlapping GET for another shared session must not consume this page's manual retry bypass");
+
+    const ownManual = rt.window.fetch(ownUrl, { method: "GET" });
+    assert.equal(calls, 3, "the current personal session must retain its manual fresh-retry bypass even when another session refreshes first");
+
+    releases[2](new Response("{}", { status: 200 }));
+    assert.equal((await ownManual).status, 200);
+    releases[0](new Response("{}", { status: 200 }));
+    releases[1](new Response("{}", { status: 200 }));
+    await Promise.all([ownAutomatic, otherAutomatic, otherOverlap]);
+  }
+
+  assert.match(source, /forceFresh = consumeGetBypass\(key\)/, "manual bypass should explicitly force one fresh GET for the matching Shared Live session");
+  assert.match(source, /function currentPagePlanId\(\)/, "manual recovery should scope its bypass to the current shared-plan page when possible");
   assert.match(source, /init\?\.method \|\| input\?\.method \|\| "GET"/, "request classification must honor methods carried by Request objects");
   assert.match(source, /function requestSignal\(input, init/, "Request-carried abort signals should be normalized explicitly");
   assert.match(source, /ignoreInputSignal: true/, "coalesced underlying GETs must stay independent of the first Request consumer's signal");
   assert.doesNotMatch(source, /localStorage|sessionStorage/, "GET coalescing state must remain memory-only");
   assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "Shared Live coalescing must not introduce location access");
-  console.log("shared-live-coalescing: duplicate GET suppression, response isolation, POST independence including Request objects, retry cleanup, init/Request consumer cancellation and manual fresh-retry escape passed");
+  console.log("shared-live-coalescing: duplicate GET suppression, response isolation, POST independence, consumer cancellation and session-scoped manual fresh-retry isolation passed");
 })().catch((error) => { console.error(error); process.exit(1); });
