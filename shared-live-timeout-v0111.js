@@ -9,6 +9,7 @@
   let consecutiveGetTimeouts = 0;
   let getBackoffUntil = 0;
   let bypassNextGet = false;
+  let getGeneration = 0;
   const pendingGets = new Map();
 
   function sharedLiveUrl(input) {
@@ -77,6 +78,9 @@
     return true;
   }
   function shouldBackOffGet(now = Date.now()) { return getBackoffUntil > now; }
+  function isCurrentGetGeneration(generation) {
+    return generation == null || generation === getGeneration;
+  }
 
   function mergeAbortSignal(existingSignal, controller) {
     if (!existingSignal) return () => {};
@@ -129,7 +133,7 @@
     }, REQUEST_TIMEOUT_MS);
     try {
       const response = await originalFetch(input, { ...init, signal: controller.signal });
-      if (method === "GET") {
+      if (method === "GET" && isCurrentGetGeneration(options.getGeneration)) {
         if (isTransientStatus(response?.status)) {
           const retryMs = noteTransientResponse(response);
           announceTransient(response, retryMs);
@@ -139,7 +143,7 @@
       }
       return response;
     } catch (error) {
-      if (timedOut) {
+      if (timedOut && (method !== "GET" || isCurrentGetGeneration(options.getGeneration))) {
         if (method === "GET") noteGetTimeout();
         announceTimeout(input, init);
       }
@@ -162,7 +166,8 @@
 
     const sharedInit = { ...init };
     delete sharedInit.signal;
-    const pending = performBoundedFetch(input, sharedInit, { ignoreInputSignal: true }).finally(() => {
+    const generation = ++getGeneration;
+    const pending = performBoundedFetch(input, sharedInit, { ignoreInputSignal: true, getGeneration: generation }).finally(() => {
       if (pendingGets.get(key) === pending) pendingGets.delete(key);
     });
     pendingGets.set(key, pending);
@@ -176,7 +181,15 @@
     return performBoundedFetch(input, init);
   }
 
-  window.addEventListener?.("online", resetGetBackoff);
+  function handleOnline() {
+    // Invalidate any pre-reconnect GET so a late timeout/503 cannot downgrade a
+    // newer healthy connection, and let the next refresh escape old coalescing.
+    getGeneration += 1;
+    resetGetBackoff();
+    allowNextGet();
+  }
+
+  window.addEventListener?.("online", handleOnline);
   window.fetch = boundedFetch;
   window.NVSSharedLiveTimeout0111 = Object.freeze({
     REQUEST_TIMEOUT_MS,
