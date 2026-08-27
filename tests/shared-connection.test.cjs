@@ -193,6 +193,7 @@ assert.equal(retry.textContent, "Check now");
   listeners.get("document:visibilitychange")();
   assert.equal(timers.size, 1, "visible pages should re-arm the stale boundary");
 
+  window.NVSSharedLive.refresh = async () => { refreshCalls += 1; };
   api.markSuccess(Date.now() - 31_000);
   await api.retryNow();
   assert.equal(retry.disabled, true);
