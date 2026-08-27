@@ -3,52 +3,36 @@
   const RETRY_COOLDOWN_MS = 10_000;
   let lastSuccessAt = 0;
   let lastFailureAt = 0;
+  let lastFailureKind = "";
   let successVersion = 0;
   let staleTimer = null;
   let retryTimer = null;
   let retryCooldownUntil = 0;
   let checking = false;
 
-  function clearStaleTimer() {
-    clearTimeout(staleTimer);
-    staleTimer = null;
-  }
-
-  function clearRetryTimer() {
-    clearTimeout(retryTimer);
-    retryTimer = null;
-  }
-
+  function clearStaleTimer() { clearTimeout(staleTimer); staleTimer = null; }
+  function clearRetryTimer() { clearTimeout(retryTimer); retryTimer = null; }
   function formatAge(ageMs) {
     const seconds = Math.max(0, Math.round(Number(ageMs || 0) / 1000));
     if (seconds < 60) return `${seconds}s`;
     return `${Math.max(1, Math.round(seconds / 60))} min`;
   }
-
-  function hasNewerFailure(successAt = lastSuccessAt, failureAt = lastFailureAt) {
-    return failureAt > 0 && failureAt >= successAt;
-  }
-
+  function hasNewerFailure(successAt = lastSuccessAt, failureAt = lastFailureAt) { return failureAt > 0 && failureAt >= successAt; }
   function retrySeconds(now = Date.now()) {
     if (!(retryCooldownUntil > now)) return 0;
     return Math.max(1, Math.ceil((retryCooldownUntil - now) / 1000));
   }
 
-  function connectionModel(now = Date.now(), online = navigator.onLine, successAt = lastSuccessAt, failureAt = lastFailureAt) {
-    if (!online) {
-      return {
-        status: "offline",
-        text: successAt > 0 ? `Offline · last live response ${formatAge(now - successAt)} ago` : "Offline · no live response yet",
-      };
-    }
-    if (hasNewerFailure(successAt, failureAt)) {
-      return {
-        status: "delayed",
-        text: successAt > 0
-          ? `Live sync delayed · request timed out ${formatAge(now - failureAt)} ago`
-          : "Live sync delayed · shared-live request timed out",
-      };
-    }
+  function failureCopy(now, successAt, failureAt, kind = lastFailureKind) {
+    const reason = kind === "server" ? "server asked us to slow down" : "request timed out";
+    return successAt > 0
+      ? `Live sync delayed · ${reason} ${formatAge(now - failureAt)} ago`
+      : `Live sync delayed · ${reason}`;
+  }
+
+  function connectionModel(now = Date.now(), online = navigator.onLine, successAt = lastSuccessAt, failureAt = lastFailureAt, failureKind = lastFailureKind) {
+    if (!online) return { status: "offline", text: successAt > 0 ? `Offline · last live response ${formatAge(now - successAt)} ago` : "Offline · no live response yet" };
+    if (hasNewerFailure(successAt, failureAt)) return { status: "delayed", text: failureCopy(now, successAt, failureAt, failureKind) };
     if (!(successAt > 0)) return { status: "connecting", text: "Connecting to shared live…" };
     const age = Math.max(0, now - successAt);
     if (age <= STALE_AFTER_MS) return { status: "current", text: "Live sync current" };
@@ -60,20 +44,12 @@
     if (document.hidden || !navigator.onLine || !(lastSuccessAt > 0) || hasNewerFailure()) return;
     const remaining = STALE_AFTER_MS - Math.max(0, now - lastSuccessAt);
     if (remaining <= 0) return;
-    staleTimer = setTimeout(() => {
-      staleTimer = null;
-      render();
-    }, remaining + 25);
+    staleTimer = setTimeout(() => { staleTimer = null; render(); }, remaining + 25);
   }
-
   function scheduleRetryReady(now = Date.now()) {
     clearRetryTimer();
     if (document.hidden || !navigator.onLine || !(retryCooldownUntil > now)) return;
-    retryTimer = setTimeout(() => {
-      retryTimer = null;
-      retryCooldownUntil = 0;
-      render();
-    }, Math.max(1, retryCooldownUntil - now) + 25);
+    retryTimer = setTimeout(() => { retryTimer = null; retryCooldownUntil = 0; render(); }, Math.max(1, retryCooldownUntil - now) + 25);
   }
 
   function ensureRetryButton(sync) {
@@ -110,17 +86,14 @@
       retry.hidden = model.status !== "delayed" || !navigator.onLine;
       retry.disabled = checking || cooldownSeconds > 0;
       retry.textContent = checking ? "Checking…" : cooldownSeconds > 0 ? `Try again in ${cooldownSeconds}s` : "Check now";
-      retry.setAttribute?.("aria-label", checking
-        ? "Checking Shared Live now"
-        : cooldownSeconds > 0
-          ? `Shared Live check available again in ${cooldownSeconds} seconds`
-          : "Check Shared Live now");
+      retry.setAttribute?.("aria-label", checking ? "Checking Shared Live now" : cooldownSeconds > 0 ? `Shared Live check available again in ${cooldownSeconds} seconds` : "Check Shared Live now");
     }
   }
 
   function markSuccess(now = Date.now()) {
     lastSuccessAt = Number(now) || Date.now();
     lastFailureAt = 0;
+    lastFailureKind = "";
     successVersion += 1;
     retryCooldownUntil = 0;
     clearRetryTimer();
@@ -129,9 +102,9 @@
     scheduleStale(currentNow);
     return lastSuccessAt;
   }
-
-  function markFailure(now = Date.now()) {
+  function markFailure(now = Date.now(), kind = "timeout") {
     lastFailureAt = Number(now) || Date.now();
+    lastFailureKind = kind === "server" ? "server" : "timeout";
     clearStaleTimer();
     render(lastFailureAt);
     return lastFailureAt;
@@ -151,38 +124,26 @@
       await refresh();
       acknowledged = successVersion > beforeVersion;
       return acknowledged;
-    } catch {
-      return false;
-    } finally {
+    } catch { return false; }
+    finally {
       checking = false;
-      if (acknowledged) {
-        retryCooldownUntil = 0;
-        clearRetryTimer();
-      } else if (navigator.onLine) {
-        retryCooldownUntil = Date.now() + RETRY_COOLDOWN_MS;
-      }
+      if (acknowledged) { retryCooldownUntil = 0; clearRetryTimer(); }
+      else if (navigator.onLine) retryCooldownUntil = Date.now() + RETRY_COOLDOWN_MS;
       render();
       scheduleStale();
       scheduleRetryReady();
     }
   }
 
-  function onLiveChange() {
-    markSuccess(Date.now());
-  }
-
-  function onLiveTimeout() {
-    markFailure(Date.now());
-  }
+  function onLiveChange() { markSuccess(Date.now()); }
+  function onLiveTimeout() { markFailure(Date.now(), "timeout"); }
+  function onLiveDegraded() { markFailure(Date.now(), "server"); }
 
   window.addEventListener("nvs-shared-live-change", onLiveChange);
   window.addEventListener("nvs-shared-live-timeout", onLiveTimeout);
+  window.addEventListener("nvs-shared-live-degraded", onLiveDegraded);
   ["online", "offline", "pageshow", "nvs-group-recommendations-rendered", "nvs-display-options-change", "nvs-shared-view-resumed"].forEach((name) => {
-    window.addEventListener(name, () => {
-      render();
-      scheduleStale();
-      scheduleRetryReady();
-    });
+    window.addEventListener(name, () => { render(); scheduleStale(); scheduleRetryReady(); });
   });
   document.addEventListener("visibilitychange", () => {
     clearStaleTimer();
@@ -203,6 +164,7 @@
     render,
     getLastSuccessAt: () => lastSuccessAt,
     getLastFailureAt: () => lastFailureAt,
+    getLastFailureKind: () => lastFailureKind,
     getSuccessVersion: () => successVersion,
     getRetryCooldownUntil: () => retryCooldownUntil,
   });
