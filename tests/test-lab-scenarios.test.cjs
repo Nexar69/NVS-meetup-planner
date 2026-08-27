@@ -88,10 +88,10 @@ vm.runInContext(source, context, { filename: 'test-lab-scenarios-v0111.js' });
 const api = window.NVSTestScenarios;
 assert(api?.active, 'scenario presets should activate only on top of the hardened Test Lab journey API');
 assert.deepStrictEqual(Array.from(api.presets, (item) => item.id), [
-  'transfer-window', 'delayed-rider', 'delayed-transfer', 'platform-change', 'cancelled-transfer', 'missed-transfer', 'all-arrived', 'routing-fallback', 'api-offline',
+  'transfer-window', 'delayed-rider', 'incoming-delay', 'platform-change', 'cancelled-transfer', 'missed-transfer', 'all-arrived', 'routing-fallback', 'api-offline',
 ]);
 assert.strictEqual(api.availability('transfer-window').available, true);
-assert.strictEqual(api.availability('delayed-transfer').available, true);
+assert.strictEqual(api.availability('incoming-delay').available, true);
 assert.strictEqual(api.availability('platform-change').available, true);
 assert.strictEqual(api.availability('cancelled-transfer').available, true);
 assert.strictEqual(api.availability('missed-transfer').available, true);
@@ -109,10 +109,11 @@ assert(api.applyPreset('delayed-rider'));
 assert.strictEqual(delays.get(0), 5);
 assert.strictEqual(now, Date.parse('2026-08-27T12:25:00Z'));
 
-assert(api.applyPreset('delayed-transfer'));
-assert.strictEqual(delays.size, 0, 'realtime transfer delay must not become a whole-route delay');
-assert.strictEqual(disruptions.get('0:1'), 'delay-5', 'realtime delay scenario should target the onward transfer leg');
-assert.strictEqual(now, Date.parse('2026-08-27T12:07:00Z'), 'realtime delay scenario should jump five minutes before onward departure');
+assert(api.applyPreset('incoming-delay'));
+assert.strictEqual(delays.size, 0, 'incoming transfer delay must not become a whole-route delay');
+assert.strictEqual(disruptions.get('0:0'), 'delay-5', 'transfer stress should delay the incoming leg so the connection window shrinks');
+assert.strictEqual(disruptions.has('0:1'), false, 'transfer stress must not delay the onward departure and accidentally widen the connection');
+assert.strictEqual(now, Date.parse('2026-08-27T12:07:00Z'), 'incoming delay scenario should jump five minutes before onward departure');
 
 assert(api.applyPreset('platform-change'));
 assert.strictEqual(delays.size, 0, 'platform preset should replace unrelated delay overlays');
@@ -142,6 +143,21 @@ assert.strictEqual(disruptions.size, 0);
 assert(api.applyPreset('api-offline'));
 assert.strictEqual(network, 'offline-api');
 
+// Transfer-only presets require an actual direct transit -> transit handoff.
+const directSegments = assignments[0].route.segments;
+assignments[0].route.segments = [
+  { mode: 'TRAM', departure: '2026-08-27T12:00:00Z', arrival: '2026-08-27T12:08:00Z' },
+  { mode: 'WALK', departure: '2026-08-27T12:08:00Z', arrival: '2026-08-27T12:11:00Z' },
+  { mode: 'TRAM', departure: '2026-08-27T12:12:00Z', arrival: '2026-08-27T12:30:00Z' },
+];
+assert.strictEqual(api.availability('transfer-window').available, false, 'walk-mediated changes must not masquerade as direct protected transfers');
+assert.strictEqual(api.availability('incoming-delay').available, false);
+assert.strictEqual(api.availability('platform-change').available, false);
+assert.strictEqual(api.availability('cancelled-transfer').available, false);
+assert.strictEqual(api.availability('missed-transfer').available, false);
+assert(/direct transit transfer/.test(api.availability('incoming-delay').reason));
+assignments[0].route.segments = directSegments;
+
 // Failed preflight preserves every local simulation dimension atomically.
 statuses.clear(); statuses.set(1, 'on-vehicle');
 delays.clear(); delays.set(1, 10);
@@ -151,12 +167,12 @@ now = Date.parse('2026-08-27T11:55:00Z');
 const originalSegments = assignments[0].route.segments;
 assignments[0].route.segments = [originalSegments[0]];
 liveReady = false;
-assert.strictEqual(api.availability('delayed-transfer').available, false);
-assert(/transit transfer/.test(api.availability('delayed-transfer').reason));
+assert.strictEqual(api.availability('incoming-delay').available, false);
+assert(/direct transit transfer/.test(api.availability('incoming-delay').reason));
 assert.strictEqual(api.availability('cancelled-transfer').available, false);
-assert(/transit transfer/.test(api.availability('cancelled-transfer').reason));
+assert(/direct transit transfer/.test(api.availability('cancelled-transfer').reason));
 assert.strictEqual(api.availability('routing-fallback').available, true);
-assert.strictEqual(api.applyPreset('delayed-transfer'), false);
+assert.strictEqual(api.applyPreset('incoming-delay'), false);
 assert.strictEqual(api.applyPreset('cancelled-transfer'), false);
 assert.strictEqual(statuses.get(1), 'on-vehicle');
 assert.strictEqual(delays.get(1), 10);
@@ -181,5 +197,6 @@ assert(!/setInterval\s*\(/.test(source), 'scenario presets must not add a backgr
 assert(source.includes('Atomic local stress tests · never shared'), 'scenario UI must keep its safety boundary visible');
 assert(source.includes('aria-disabled'), 'unavailable scenarios should expose disabled semantics');
 assert(source.includes('aria-live="polite"'), 'scenario prerequisite guidance should be announced politely');
+assert(!source.includes('Onward +5 min'), 'the misleading onward-delay transfer-stress label must not return');
 
 console.log('Test Lab scenario preset tests passed.');
