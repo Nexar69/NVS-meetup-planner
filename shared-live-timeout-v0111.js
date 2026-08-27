@@ -9,7 +9,8 @@
   let consecutiveGetTimeouts = 0;
   let getBackoffUntil = 0;
   let bypassNextGet = false;
-  let getGeneration = 0;
+  let getGenerationEpoch = 0;
+  const getGenerationByKey = new Map();
   const pendingGets = new Map();
 
   function sharedLiveUrl(input) {
@@ -78,8 +79,18 @@
     return true;
   }
   function shouldBackOffGet(now = Date.now()) { return getBackoffUntil > now; }
+
+  function nextGetGeneration(key) {
+    const value = (getGenerationByKey.get(key) || 0) + 1;
+    getGenerationByKey.set(key, value);
+    return Object.freeze({ epoch: getGenerationEpoch, key, value });
+  }
+
   function isCurrentGetGeneration(generation) {
-    return generation == null || generation === getGeneration;
+    return generation == null || (
+      generation.epoch === getGenerationEpoch
+      && getGenerationByKey.get(generation.key) === generation.value
+    );
   }
 
   function mergeAbortSignal(existingSignal, controller) {
@@ -166,7 +177,7 @@
 
     const sharedInit = { ...init };
     delete sharedInit.signal;
-    const generation = ++getGeneration;
+    const generation = nextGetGeneration(key);
     const pending = performBoundedFetch(input, sharedInit, { ignoreInputSignal: true, getGeneration: generation }).finally(() => {
       if (pendingGets.get(key) === pending) pendingGets.delete(key);
     });
@@ -182,9 +193,11 @@
   }
 
   function handleOnline() {
-    // Invalidate any pre-reconnect GET so a late timeout/503 cannot downgrade a
-    // newer healthy connection, and let the next refresh escape old coalescing.
-    getGeneration += 1;
+    // Invalidate every pre-reconnect GET so late timeout/503 results cannot
+    // downgrade newer healthy connections, while keeping generations isolated
+    // between distinct shared sessions during ordinary operation.
+    getGenerationEpoch += 1;
+    getGenerationByKey.clear();
     resetGetBackoff();
     allowNextGet();
   }
