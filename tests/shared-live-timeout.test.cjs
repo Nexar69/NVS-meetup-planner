@@ -5,7 +5,7 @@ const vm = require("node:vm");
 
 const source = fs.readFileSync(path.resolve(__dirname, "../shared-live-timeout-v0111.js"), "utf8");
 const calls = [];
-let abortListeners = [];
+const events = [];
 
 const originalFetch = (input, init = {}) => {
   calls.push({ input, init });
@@ -20,10 +20,14 @@ const originalFetch = (input, init = {}) => {
 const window = {
   fetch: originalFetch,
   location: { href: "https://meet.example/p/ABC234" },
+  dispatchEvent(event) { events.push(event); return true; },
 };
 
 class FastAbortController extends AbortController {}
 class FastDOMException extends DOMException {}
+class FakeCustomEvent {
+  constructor(type, init = {}) { this.type = type; this.detail = init.detail; }
+}
 let timers = [];
 function fastSetTimeout(fn, delay) {
   const id = { fn, delay, active: true };
@@ -37,6 +41,7 @@ vm.runInNewContext(source, {
   URL,
   AbortController: FastAbortController,
   DOMException: FastDOMException,
+  CustomEvent: FakeCustomEvent,
   setTimeout: fastSetTimeout,
   clearTimeout: fastClearTimeout,
   Object,
@@ -52,11 +57,13 @@ assert.equal(window.NVSSharedLiveTimeout0111.isSharedLiveRequest("https://other.
   await window.fetch("https://meet.example/api/health", { method: "GET" });
   assert.equal(calls.at(-1).init.signal, undefined, "unrelated fetches must stay untouched");
   assert.equal(timers.length, 0, "unrelated fetches must not allocate timeout timers");
+  assert.equal(events.length, 0);
 
   await window.fetch("https://meet.example/api/live/ABC234", { method: "GET" });
   assert.ok(calls.at(-1).init.signal, "Shared Live GET should receive an abort signal");
   assert.equal(timers.at(-1).delay, 8000);
   assert.equal(timers.at(-1).active, false, "successful Shared Live fetch should clear its timeout");
+  assert.equal(events.length, 0, "successful requests must not emit a timeout event");
 
   const external = new AbortController();
   const pending = window.fetch("https://meet.example/api/live/hang", { method: "POST", signal: external.signal });
@@ -65,13 +72,18 @@ assert.equal(window.NVSSharedLiveTimeout0111.isSharedLiveRequest("https://other.
   timer.fn();
   await assert.rejects(pending, /timed out|TimeoutError/i, "stalled Shared Live requests should abort at the deadline");
   assert.equal(timer.active, false, "timeout should be cleared after abort settles");
+  assert.equal(events.length, 1, "transport timeout should emit one lifecycle signal");
+  assert.equal(events[0].type, "nvs-shared-live-timeout");
+  assert.deepEqual({ ...events[0].detail }, { method: "POST", timeoutMs: 8000 });
+  assert.doesNotMatch(JSON.stringify(events[0].detail), /ABC234|hang|https?:/i, "timeout signal must not leak plan IDs or URLs");
 
   const external2 = new AbortController();
   const pending2 = window.fetch("https://meet.example/api/live/hang", { method: "GET", signal: external2.signal });
   external2.abort(new Error("caller cancelled"));
   await assert.rejects(pending2, /caller cancelled|aborted/i, "caller-provided abort must propagate through the bounded request");
+  assert.equal(events.length, 1, "caller cancellation must not masquerade as a transport timeout");
 
   assert.doesNotMatch(source, /localStorage|sessionStorage|geolocation|watchPosition|getCurrentPosition/,
     "timeout layer must not add storage or location behavior");
-  console.log("shared-live-timeout: GET/POST timeout, cleanup, caller abort propagation and narrow request scope passed");
+  console.log("shared-live-timeout: GET/POST timeout, privacy-safe timeout signal, cleanup, caller abort propagation and narrow request scope passed");
 })().catch((error) => { console.error(error); process.exit(1); });
