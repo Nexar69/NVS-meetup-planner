@@ -1,6 +1,7 @@
 (() => {
   const REQUEST_TIMEOUT_MS = 8_000;
   const MAX_GET_BACKOFF_MS = 60_000;
+  const DEFAULT_HTTP_BACKOFF_MS = 24_000;
   const originalFetch = window.fetch?.bind(window);
   if (typeof originalFetch !== "function") return;
 
@@ -20,14 +21,8 @@
     }
   }
 
-  function isSharedLiveRequest(input) {
-    return Boolean(sharedLiveUrl(input));
-  }
-
-  function requestMethod(input, init = {}) {
-    return String(init?.method || input?.method || "GET").toUpperCase();
-  }
-
+  function isSharedLiveRequest(input) { return Boolean(sharedLiveUrl(input)); }
+  function requestMethod(input, init = {}) { return String(init?.method || input?.method || "GET").toUpperCase(); }
   function requestSignal(input, init = {}) {
     if (Object.prototype.hasOwnProperty.call(init || {}, "signal")) return init.signal || null;
     return input?.signal || null;
@@ -52,19 +47,34 @@
     return backoffMs;
   }
 
-  function allowNextGet() {
-    bypassNextGet = true;
+  function isTransientStatus(status) {
+    const value = Number(status) || 0;
+    return value === 408 || value === 429 || value >= 500;
   }
 
+  function retryAfterMs(response, now = Date.now()) {
+    const raw = String(response?.headers?.get?.("retry-after") || "").trim();
+    if (!raw) return 0;
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(MAX_GET_BACKOFF_MS, Math.round(seconds * 1000));
+    const date = Date.parse(raw);
+    if (!Number.isFinite(date)) return 0;
+    return Math.min(MAX_GET_BACKOFF_MS, Math.max(0, date - now));
+  }
+
+  function noteTransientResponse(response, now = Date.now()) {
+    const retryMs = retryAfterMs(response, now) || DEFAULT_HTTP_BACKOFF_MS;
+    getBackoffUntil = now + Math.min(MAX_GET_BACKOFF_MS, Math.max(1_000, retryMs));
+    return getBackoffUntil - now;
+  }
+
+  function allowNextGet() { bypassNextGet = true; }
   function consumeGetBypass() {
     if (!bypassNextGet) return false;
     bypassNextGet = false;
     return true;
   }
-
-  function shouldBackOffGet(now = Date.now()) {
-    return getBackoffUntil > now;
-  }
+  function shouldBackOffGet(now = Date.now()) { return getBackoffUntil > now; }
 
   function mergeAbortSignal(existingSignal, controller) {
     if (!existingSignal) return () => {};
@@ -84,20 +94,23 @@
     return new Promise((resolve, reject) => {
       const abort = () => reject(signal.reason || new DOMException("Aborted", "AbortError"));
       signal.addEventListener?.("abort", abort, { once: true });
-      sharedPromise.then(
-        (response) => resolve(clone(response)),
-        reject,
-      ).finally(() => signal.removeEventListener?.("abort", abort));
+      sharedPromise.then((response) => resolve(clone(response)), reject)
+        .finally(() => signal.removeEventListener?.("abort", abort));
     });
   }
 
   function announceTimeout(input, init = {}) {
     try {
       window.dispatchEvent?.(new CustomEvent("nvs-shared-live-timeout", {
-        detail: {
-          method: requestMethod(input, init),
-          timeoutMs: REQUEST_TIMEOUT_MS,
-        },
+        detail: { method: requestMethod(input, init), timeoutMs: REQUEST_TIMEOUT_MS },
+      }));
+    } catch {}
+  }
+
+  function announceTransient(response, retryMs) {
+    try {
+      window.dispatchEvent?.(new CustomEvent("nvs-shared-live-degraded", {
+        detail: { status: Number(response?.status) || 0, retryAfterMs: Math.round(retryMs) },
       }));
     } catch {}
   }
@@ -114,7 +127,14 @@
     }, REQUEST_TIMEOUT_MS);
     try {
       const response = await originalFetch(input, { ...init, signal: controller.signal });
-      if (method === "GET") resetGetBackoff();
+      if (method === "GET") {
+        if (isTransientStatus(response?.status)) {
+          const retryMs = noteTransientResponse(response);
+          announceTransient(response, retryMs);
+        } else {
+          resetGetBackoff();
+        }
+      }
       return response;
     } catch (error) {
       if (timedOut) {
@@ -135,9 +155,7 @@
     if (!forceFresh) {
       const pending = pendingGets.get(key);
       if (pending) return consumerView(pending, consumerSignal);
-      if (shouldBackOffGet()) {
-        return Promise.reject(new DOMException("Shared Live polling is temporarily backed off", "RetryLaterError"));
-      }
+      if (shouldBackOffGet()) return Promise.reject(new DOMException("Shared Live polling is temporarily backed off", "RetryLaterError"));
     }
 
     const sharedInit = { ...init };
@@ -161,7 +179,10 @@
   window.NVSSharedLiveTimeout0111 = Object.freeze({
     REQUEST_TIMEOUT_MS,
     MAX_GET_BACKOFF_MS,
+    DEFAULT_HTTP_BACKOFF_MS,
     isSharedLiveRequest,
+    isTransientStatus,
+    retryAfterMs,
     getBackoffMs,
     allowNextGet,
     resetGetBackoff,
