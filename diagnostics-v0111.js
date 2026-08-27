@@ -48,12 +48,18 @@
     try { successAt = Number(api.getLastSuccessAt()) || 0; } catch {}
     let model = null;
     try { model = api.connectionModel(now, navigator.onLine, successAt); } catch {}
+    let cooldownUntil = 0;
+    try { cooldownUntil = Number(api.getRetryCooldownUntil?.()) || 0; } catch {}
     const ageMs = successAt > 0 ? Math.max(0, Number(now) - successAt) : null;
+    const cooldownMs = Math.max(0, cooldownUntil - Number(now));
+    const retryCooldownSeconds = cooldownMs > 0 ? Math.ceil(cooldownMs / 1000) : 0;
     return {
       available: true,
       status: String(model?.status || "unknown"),
       hasSuccessfulResponse: successAt > 0,
       lastResponseAgeSeconds: ageMs == null ? null : Math.floor(ageMs / 1000),
+      retryCoolingDown: retryCooldownSeconds > 0,
+      retryCooldownSeconds,
     };
   }
 
