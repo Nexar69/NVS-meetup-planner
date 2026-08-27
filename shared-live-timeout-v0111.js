@@ -6,8 +6,7 @@
   const originalFetch = window.fetch?.bind(window);
   if (typeof originalFetch !== "function") return;
 
-  let consecutiveGetTimeouts = 0;
-  let getBackoffUntil = 0;
+  const getHealthByKey = new Map();
   let bypassNextGet = false;
   let bypassPlanId = "";
   let getGenerationEpoch = 0;
@@ -46,6 +45,16 @@
     }
   }
 
+  function currentPageLiveUrl() {
+    const planId = currentPagePlanId();
+    if (!planId) return "";
+    try {
+      return new URL(`/api/live/${encodeURIComponent(planId)}`, window.location.href).href;
+    } catch {
+      return "";
+    }
+  }
+
   function isSharedLiveRequest(input) { return Boolean(sharedLiveUrl(input)); }
   function requestMethod(input, init = {}) { return String(init?.method || input?.method || "GET").toUpperCase(); }
   function requestSignal(input, init = {}) {
@@ -53,25 +62,41 @@
     return input?.signal || null;
   }
 
-  function getBackoffMs(timeoutCount = consecutiveGetTimeouts) {
+  function getHealthState(key, create = false) {
+    if (!key) return null;
+    let state = getHealthByKey.get(key);
+    if (!state && create) {
+      state = { consecutiveTimeouts: 0, backoffUntil: 0 };
+      getHealthByKey.set(key, state);
+    }
+    return state || null;
+  }
+
+  function healthKey(input = null) {
+    return sharedLiveUrl(input) || currentPageLiveUrl();
+  }
+
+  function getBackoffMs(timeoutCount = 0) {
     const count = Math.max(0, Number(timeoutCount) || 0);
     if (count <= 1) return 0;
     return Math.min(MAX_GET_BACKOFF_MS, 24_000 * (2 ** (count - 2)));
   }
 
-  function resetGetBackoff(clearBypass = true) {
-    consecutiveGetTimeouts = 0;
-    getBackoffUntil = 0;
+  function resetGetBackoff(clearBypass = true, input = null) {
+    const key = input == null ? "" : healthKey(input);
+    if (key) getHealthByKey.delete(key);
+    else getHealthByKey.clear();
     if (clearBypass) {
       bypassNextGet = false;
       bypassPlanId = "";
     }
   }
 
-  function noteGetTimeout(now = Date.now()) {
-    consecutiveGetTimeouts += 1;
-    const backoffMs = getBackoffMs();
-    getBackoffUntil = backoffMs > 0 ? now + backoffMs : 0;
+  function noteGetTimeout(key, now = Date.now()) {
+    const state = getHealthState(key, true);
+    state.consecutiveTimeouts += 1;
+    const backoffMs = getBackoffMs(state.consecutiveTimeouts);
+    state.backoffUntil = backoffMs > 0 ? now + backoffMs : 0;
     return backoffMs;
   }
 
@@ -90,11 +115,12 @@
     return Math.min(MAX_GET_BACKOFF_MS, Math.max(0, date - now));
   }
 
-  function noteTransientResponse(response, now = Date.now()) {
+  function noteTransientResponse(key, response, now = Date.now()) {
     const serverRetryMs = retryAfterMs(response, now);
     const retryMs = serverRetryMs == null ? DEFAULT_HTTP_BACKOFF_MS : serverRetryMs;
-    getBackoffUntil = now + Math.min(MAX_GET_BACKOFF_MS, Math.max(MIN_HTTP_BACKOFF_MS, retryMs));
-    return getBackoffUntil - now;
+    const state = getHealthState(key, true);
+    state.backoffUntil = now + Math.min(MAX_GET_BACKOFF_MS, Math.max(MIN_HTTP_BACKOFF_MS, retryMs));
+    return state.backoffUntil - now;
   }
 
   function allowNextGet(input = null) {
@@ -118,7 +144,10 @@
     bypassNextGet = false;
     return true;
   }
-  function shouldBackOffGet(now = Date.now()) { return getBackoffUntil > now; }
+
+  function shouldBackOffGet(key, now = Date.now()) {
+    return (getHealthState(key)?.backoffUntil || 0) > now;
+  }
 
   function nextGetGeneration(key) {
     const value = (getGenerationByKey.get(key) || 0) + 1;
@@ -156,7 +185,14 @@
     });
   }
 
+  function shouldAnnounceForRequest(input) {
+    const pagePlanId = currentPagePlanId();
+    if (!pagePlanId) return true;
+    return planIdFromLiveUrl(input) === pagePlanId;
+  }
+
   function announceTimeout(input, init = {}) {
+    if (!shouldAnnounceForRequest(input)) return;
     try {
       window.dispatchEvent?.(new CustomEvent("nvs-shared-live-timeout", {
         detail: { method: requestMethod(input, init), timeoutMs: REQUEST_TIMEOUT_MS },
@@ -164,7 +200,8 @@
     } catch {}
   }
 
-  function announceTransient(response, retryMs) {
+  function announceTransient(input, response, retryMs) {
+    if (!shouldAnnounceForRequest(input)) return;
     try {
       window.dispatchEvent?.(new CustomEvent("nvs-shared-live-degraded", {
         detail: { status: Number(response?.status) || 0, retryAfterMs: Math.round(retryMs) },
@@ -174,6 +211,7 @@
 
   async function performBoundedFetch(input, init = {}, options = {}) {
     const method = requestMethod(input, init);
+    const key = options.getGeneration?.key || sharedLiveUrl(input);
     const controller = new AbortController();
     const callerSignal = options.ignoreInputSignal ? (init?.signal || null) : requestSignal(input, init);
     const detach = mergeAbortSignal(callerSignal, controller);
@@ -186,16 +224,16 @@
       const response = await originalFetch(input, { ...init, signal: controller.signal });
       if (method === "GET" && isCurrentGetGeneration(options.getGeneration)) {
         if (isTransientStatus(response?.status)) {
-          const retryMs = noteTransientResponse(response);
-          announceTransient(response, retryMs);
+          const retryMs = noteTransientResponse(key, response);
+          announceTransient(input, response, retryMs);
         } else {
-          resetGetBackoff(false);
+          resetGetBackoff(false, key);
         }
       }
       return response;
     } catch (error) {
       if (timedOut && (method !== "GET" || isCurrentGetGeneration(options.getGeneration))) {
-        if (method === "GET") noteGetTimeout();
+        if (method === "GET") noteGetTimeout(key);
         announceTimeout(input, init);
       }
       throw error;
@@ -212,7 +250,7 @@
     if (!forceFresh) {
       const pending = pendingGets.get(key);
       if (pending) return consumerView(pending, consumerSignal);
-      if (shouldBackOffGet()) return Promise.reject(new DOMException("Shared Live polling is temporarily backed off", "RetryLaterError"));
+      if (shouldBackOffGet(key)) return Promise.reject(new DOMException("Shared Live polling is temporarily backed off", "RetryLaterError"));
     }
 
     const sharedInit = { ...init };
@@ -257,8 +295,8 @@
     getBackoffMs,
     allowNextGet,
     resetGetBackoff,
-    getConsecutiveGetTimeouts: () => consecutiveGetTimeouts,
-    getBackoffUntil: () => getBackoffUntil,
+    getConsecutiveGetTimeouts: (input = null) => getHealthState(healthKey(input))?.consecutiveTimeouts || 0,
+    getBackoffUntil: (input = null) => getHealthState(healthKey(input))?.backoffUntil || 0,
     getPendingGetCount: () => pendingGets.size,
   });
 })();
