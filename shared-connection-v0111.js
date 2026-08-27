@@ -2,6 +2,7 @@
   const STALE_AFTER_MS = 30_000;
   let lastSuccessAt = 0;
   let lastFailureAt = 0;
+  let successVersion = 0;
   let staleTimer = null;
   let checking = false;
 
@@ -16,6 +17,10 @@
     return `${Math.max(1, Math.round(seconds / 60))} min`;
   }
 
+  function hasNewerFailure(successAt = lastSuccessAt, failureAt = lastFailureAt) {
+    return failureAt > 0 && failureAt >= successAt;
+  }
+
   function connectionModel(now = Date.now(), online = navigator.onLine, successAt = lastSuccessAt, failureAt = lastFailureAt) {
     if (!online) {
       return {
@@ -23,7 +28,7 @@
         text: successAt > 0 ? `Offline · last live response ${formatAge(now - successAt)} ago` : "Offline · no live response yet",
       };
     }
-    if (failureAt > successAt) {
+    if (hasNewerFailure(successAt, failureAt)) {
       return {
         status: "delayed",
         text: successAt > 0
@@ -39,7 +44,7 @@
 
   function scheduleStale(now = Date.now()) {
     clearStaleTimer();
-    if (document.hidden || !navigator.onLine || !(lastSuccessAt > 0) || lastFailureAt > lastSuccessAt) return;
+    if (document.hidden || !navigator.onLine || !(lastSuccessAt > 0) || hasNewerFailure()) return;
     const remaining = STALE_AFTER_MS - Math.max(0, now - lastSuccessAt);
     if (remaining <= 0) return;
     staleTimer = setTimeout(() => {
@@ -88,6 +93,7 @@
   function markSuccess(now = Date.now()) {
     lastSuccessAt = Number(now) || Date.now();
     lastFailureAt = 0;
+    successVersion += 1;
     render(lastSuccessAt);
     scheduleStale(lastSuccessAt);
     return lastSuccessAt;
@@ -104,12 +110,12 @@
     if (checking || document.hidden || !navigator.onLine) return false;
     const refresh = window.NVSSharedLive?.refresh;
     if (typeof refresh !== "function") return false;
-    const before = lastSuccessAt;
+    const beforeVersion = successVersion;
     checking = true;
     render();
     try {
       await refresh();
-      return lastSuccessAt > before;
+      return successVersion > beforeVersion;
     } catch {
       return false;
     } finally {
@@ -151,6 +157,7 @@
     render,
     getLastSuccessAt: () => lastSuccessAt,
     getLastFailureAt: () => lastFailureAt,
+    getSuccessVersion: () => successVersion,
   });
 
   render();
