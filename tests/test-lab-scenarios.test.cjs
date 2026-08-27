@@ -27,6 +27,7 @@ const assignments = [
 
 let now = Date.parse('2026-08-27T11:50:00Z');
 let liveReady = true;
+let network = 'slow-2';
 const statuses = new Map([[1, 'on-vehicle']]);
 const delays = new Map([[1, 10]]);
 const dispatched = [];
@@ -65,6 +66,13 @@ const window = {
       now = next;
       return true;
     },
+    getNetwork: () => network,
+    setNetwork(value) {
+      const allowed = ['normal', 'slow-2', 'slow-5', 'vmv-fail', 'transit-fail', 'all-fail', 'offline-api'];
+      if (!allowed.includes(String(value))) return false;
+      network = String(value);
+      return true;
+    },
   },
   NVSTestJourney: journey,
   NVSSharedLive: { getState: () => liveReady ? { members: { '0': {}, '1': {} } } : null },
@@ -93,13 +101,21 @@ vm.runInContext(source, context, { filename: 'test-lab-scenarios-v0111.js' });
 
 const api = window.NVSTestScenarios;
 assert(api?.active, 'scenario presets should activate only on top of the hardened Test Lab journey API');
-assert.deepStrictEqual(Array.from(api.presets, (item) => item.id), ['tight-transfer', 'missed-transfer', 'all-arrived']);
+assert.deepStrictEqual(Array.from(api.presets, (item) => item.id), [
+  'transfer-window', 'delayed-rider', 'missed-transfer', 'all-arrived', 'routing-fallback', 'api-offline',
+]);
 
-assert(api.applyPreset('tight-transfer'));
-assert.strictEqual(delays.get(0), 5, 'tight-transfer should locally delay the member with the first transfer');
-assert.strictEqual(delays.has(1), false, 'preset should replace older local delay overlays');
-assert.strictEqual(statuses.size, 0, 'tight-transfer should clear older member-state overlays');
-assert.strictEqual(now, Date.parse('2026-08-27T12:09:00Z'), 'tight-transfer should jump three minutes before the onward departure');
+// Transfer-window is deliberately time-only: whole-route delay overlays do not tighten an internal connection.
+assert(api.applyPreset('transfer-window'));
+assert.strictEqual(delays.size, 0, 'transfer-window must not pretend a whole-route delay changes the internal transfer gap');
+assert.strictEqual(statuses.size, 0, 'transfer-window should clear older member-state overlays');
+assert.strictEqual(network, 'normal');
+assert.strictEqual(now, Date.parse('2026-08-27T12:09:00Z'), 'transfer-window should jump three minutes before the onward departure');
+
+assert(api.applyPreset('delayed-rider'));
+assert.strictEqual(delays.get(0), 5, 'delayed-rider should locally delay the first loaded rider route');
+assert.strictEqual(now, Date.parse('2026-08-27T12:25:00Z'), 'delayed-rider should jump five minutes before that rider original arrival');
+assert.strictEqual(network, 'normal');
 
 assert(api.applyPreset('missed-transfer'));
 assert.strictEqual(delays.size, 0, 'missed-transfer should not retain unrelated delay overlays');
@@ -111,19 +127,29 @@ assert.strictEqual(statuses.get(0), 'arrived');
 assert.strictEqual(statuses.get(1), 'arrived');
 assert.strictEqual(now, Date.parse('2026-08-27T12:41:00Z'), 'everyone-arrived should jump one minute past the latest planned arrival');
 
-// A preset that cannot apply must restore the previous local simulation atomically.
+assert(api.applyPreset('routing-fallback'));
+assert.strictEqual(network, 'vmv-fail', 'routing-fallback should fail only VMV so refresh/replan exercises Transitous fallback');
+assert.strictEqual(statuses.size, 0);
+assert.strictEqual(delays.size, 0);
+
+assert(api.applyPreset('api-offline'));
+assert.strictEqual(network, 'offline-api', 'api-offline should use the existing backend+transit API failure mode');
+
+// A preset that cannot apply must preserve the previous local simulation atomically, including network mode.
 statuses.clear();
 statuses.set(1, 'on-vehicle');
 delays.clear();
 delays.set(1, 10);
+network = 'slow-5';
 now = Date.parse('2026-08-27T11:55:00Z');
 const originalSegments = assignments[0].route.segments;
 assignments[0].route.segments = [originalSegments[0]];
 liveReady = false;
 assert.strictEqual(api.applyPreset('missed-transfer'), false);
-assert.strictEqual(statuses.get(1), 'on-vehicle', 'failed preset should restore prior status overlay');
-assert.strictEqual(delays.get(1), 10, 'failed preset should restore prior route-delay overlay');
-assert.strictEqual(now, Date.parse('2026-08-27T11:55:00Z'), 'failed preset should restore prior simulated clock');
+assert.strictEqual(statuses.get(1), 'on-vehicle', 'failed preset should preserve prior status overlay');
+assert.strictEqual(delays.get(1), 10, 'failed preset should preserve prior route-delay overlay');
+assert.strictEqual(network, 'slow-5', 'failed preset should preserve prior network simulation');
+assert.strictEqual(now, Date.parse('2026-08-27T11:55:00Z'), 'failed preset should preserve prior simulated clock');
 assignments[0].route.segments = originalSegments;
 liveReady = true;
 
@@ -131,6 +157,7 @@ assert.strictEqual(api.applyPreset('bogus'), false, 'unknown scenario IDs must b
 assert(api.resetScenario());
 assert.strictEqual(statuses.size, 0);
 assert.strictEqual(delays.size, 0);
+assert.strictEqual(network, 'normal', 'clearing scenarios should restore normal network behavior');
 assert(dispatched.some((event) => event.type === 'nvs-test-scenario-change'));
 
 assert(!/localStorage|sessionStorage/.test(source), 'scenario presets must remain memory-only');
