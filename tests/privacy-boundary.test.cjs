@@ -3,9 +3,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
-const runtimeFiles = fs.readdirSync(root)
+const browserRuntimeFiles = fs.readdirSync(root)
   .filter((name) => name.endsWith(".js"))
   .map((name) => path.join(root, name));
+const runtimeFiles = [...browserRuntimeFiles];
 const workerDir = path.join(root, "worker", "src");
 if (fs.existsSync(workerDir)) {
   runtimeFiles.push(...fs.readdirSync(workerDir)
@@ -30,6 +31,16 @@ assert.match(places, /function useCurrentLocation\(button\)[\s\S]*navigator\.geo
 assert.doesNotMatch(places, /watchPosition\s*\(/, "planner must never introduce continuous/background GPS watching");
 assert.match(places, /source:\s*"gps"[\s\S]*persist:\s*false/, "one-shot current position must not be persisted as a saved custom place");
 
+// Keep browser-side networking on the single fetch transport. Test Lab, Shared Live timeout/backoff,
+// coalescing and weak-network safety all wrap fetch deliberately; a new XHR/sendBeacon path could
+// otherwise bypass those reviewed write-isolation and lifecycle guarantees.
+const alternateWriteTransportPattern = /\b(?:XMLHttpRequest|sendBeacon)\b/;
+for (const file of browserRuntimeFiles) {
+  const relative = path.relative(root, file).replaceAll("\\", "/");
+  const source = fs.readFileSync(file, "utf8");
+  assert.doesNotMatch(source, alternateWriteTransportPattern, `${relative} must keep browser networking on fetch; update the safety layers and this contract before introducing XHR/sendBeacon`);
+}
+
 const sw = fs.readFileSync(path.join(root, "service-worker.js"), "utf8");
 assert.match(sw, /pathname\.startsWith\("\/api\/"\)\) return;/, "service worker must continue bypassing shared-live/API responses");
 assert.doesNotMatch(sw, /APP_SHELL[\s\S]*"\.\/api\//, "API/capability responses must never enter the offline app shell");
@@ -45,4 +56,4 @@ assert.match(diagnostics, /No names, coordinates, route geometry, capability key
 const whatIf = fs.readFileSync(path.join(root, "what-if-v0111.js"), "utf8");
 assert.doesNotMatch(whatIf, /fetch\(|XMLHttpRequest|sendBeacon|localStorage|sessionStorage/, "What if? must remain ephemeral and local-only");
 
-console.log(`privacy-boundary: scanned ${runtimeFiles.length} app/Worker scripts; only explicit one-shot My location access is allowed, with no background GPS, API caching, persistent capability storage or What-if network/storage writes`);
+console.log(`privacy-boundary: scanned ${runtimeFiles.length} app/Worker scripts; browser networking stays on fetch, and only explicit one-shot My location access is allowed, with no background GPS, API caching, persistent capability storage or What-if network/storage writes`);
