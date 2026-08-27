@@ -1,6 +1,7 @@
 (() => {
   const STALE_AFTER_MS = 30_000;
   let lastSuccessAt = 0;
+  let lastFailureAt = 0;
   let staleTimer = null;
   let checking = false;
 
@@ -15,11 +16,19 @@
     return `${Math.max(1, Math.round(seconds / 60))} min`;
   }
 
-  function connectionModel(now = Date.now(), online = navigator.onLine, successAt = lastSuccessAt) {
+  function connectionModel(now = Date.now(), online = navigator.onLine, successAt = lastSuccessAt, failureAt = lastFailureAt) {
     if (!online) {
       return {
         status: "offline",
         text: successAt > 0 ? `Offline · last live response ${formatAge(now - successAt)} ago` : "Offline · no live response yet",
+      };
+    }
+    if (failureAt > successAt) {
+      return {
+        status: "delayed",
+        text: successAt > 0
+          ? `Live sync delayed · request timed out ${formatAge(now - failureAt)} ago`
+          : "Live sync delayed · shared-live request timed out",
       };
     }
     if (!(successAt > 0)) return { status: "connecting", text: "Connecting to shared live…" };
@@ -30,7 +39,7 @@
 
   function scheduleStale(now = Date.now()) {
     clearStaleTimer();
-    if (document.hidden || !navigator.onLine || !(lastSuccessAt > 0)) return;
+    if (document.hidden || !navigator.onLine || !(lastSuccessAt > 0) || lastFailureAt > lastSuccessAt) return;
     const remaining = STALE_AFTER_MS - Math.max(0, now - lastSuccessAt);
     if (remaining <= 0) return;
     staleTimer = setTimeout(() => {
@@ -63,7 +72,7 @@
     sync.title = model.status === "current"
       ? "A shared-live response arrived recently."
       : model.status === "delayed"
-        ? "No shared-live response has arrived within the expected window. Timetable and saved information may still remain visible."
+        ? "Shared Live has not responded as expected. Timetable and saved information may still remain visible."
         : model.status === "offline"
           ? "The browser reports that this device is offline."
           : "Waiting for the first shared-live response.";
@@ -78,9 +87,17 @@
 
   function markSuccess(now = Date.now()) {
     lastSuccessAt = Number(now) || Date.now();
+    lastFailureAt = 0;
     render(lastSuccessAt);
     scheduleStale(lastSuccessAt);
     return lastSuccessAt;
+  }
+
+  function markFailure(now = Date.now()) {
+    lastFailureAt = Number(now) || Date.now();
+    clearStaleTimer();
+    render(lastFailureAt);
+    return lastFailureAt;
   }
 
   async function retryNow() {
@@ -106,7 +123,12 @@
     markSuccess(Date.now());
   }
 
+  function onLiveTimeout() {
+    markFailure(Date.now());
+  }
+
   window.addEventListener("nvs-shared-live-change", onLiveChange);
+  window.addEventListener("nvs-shared-live-timeout", onLiveTimeout);
   ["online", "offline", "pageshow", "nvs-group-recommendations-rendered", "nvs-display-options-change", "nvs-shared-view-resumed"].forEach((name) => {
     window.addEventListener(name, () => {
       render();
@@ -124,9 +146,11 @@
   window.NVSSharedConnection0111 = Object.freeze({
     connectionModel,
     markSuccess,
+    markFailure,
     retryNow,
     render,
     getLastSuccessAt: () => lastSuccessAt,
+    getLastFailureAt: () => lastFailureAt,
   });
 
   render();
