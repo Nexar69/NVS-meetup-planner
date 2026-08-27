@@ -130,14 +130,17 @@ assert.equal(retry.textContent, "Check now");
   assert.equal(noAck, false, "a refresh attempt without a new successful-response event must not claim recovery");
   assert.equal(sync.dataset.connection, "delayed");
 
-  const sameTimestamp = api.getLastSuccessAt();
+  const sameTimestamp = Date.now();
+  api.markSuccess(sameTimestamp);
+  api.markFailure(sameTimestamp);
+  assert.equal(sync.dataset.connection, "delayed", "same-millisecond failure should create a real retryable delayed state");
   const versionBeforeRetry = api.getSuccessVersion();
   window.NVSSharedLive.refresh = async () => {
     refreshCalls += 1;
     api.markSuccess(sameTimestamp);
   };
   const acknowledged = await api.retryNow();
-  assert.equal(acknowledged, true, "manual retry must recognize a fresh acknowledgement even when Date.now has the same millisecond value");
+  assert.equal(acknowledged, true, "manual retry must recognize a fresh acknowledgement even when the timestamp has the same millisecond value");
   assert.equal(api.getSuccessVersion(), versionBeforeRetry + 1);
   assert.equal(sync.dataset.connection, "current");
   assert.equal(retry.hidden, true, "successful acknowledgement should remove the delayed recovery action");
