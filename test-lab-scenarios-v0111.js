@@ -2,9 +2,9 @@
   if (!window.NVSTestLab?.active || !window.NVSTestJourney?.active || window.NVSTestScenarios?.active) return;
 
   const PRESETS = Object.freeze([
-    { id: "transfer-window", label: "Transfer window", detail: "jump 3 min before next transfer" },
+    { id: "transfer-window", label: "Transfer window", detail: "jump 3 min before next direct transfer" },
     { id: "delayed-rider", label: "Delayed rider", detail: "+5 min whole route · convergence stress" },
-    { id: "delayed-transfer", label: "Onward +5 min", detail: "realtime +5 min on next transfer leg" },
+    { id: "incoming-delay", label: "Incoming +5 min", detail: "incoming leg +5 min · transfer stress" },
     { id: "platform-change", label: "Platform changed", detail: "next transfer leg → TEST platform" },
     { id: "cancelled-transfer", label: "Onward cancelled", detail: "cancel next transfer leg · recovery stress" },
     { id: "missed-transfer", label: "Missed transfer", detail: "jump past transfer · mark missed" },
@@ -23,13 +23,25 @@
     const time = value instanceof Date ? value.getTime() : new Date(value).getTime();
     return Number.isFinite(time) ? time : NaN;
   };
+  const isTransit = (segment) => String(segment?.mode || "").toUpperCase() !== "WALK";
 
   function transferFor(index) {
     const route = assignments()[index]?.route;
     const segments = Array.isArray(route?.segments) ? route.segments : [];
     for (let segmentIndex = 1; segmentIndex < segments.length; segmentIndex += 1) {
-      const time = asTime(segments[segmentIndex]?.departure);
-      if (Number.isFinite(time) && String(segments[segmentIndex]?.mode || "").toUpperCase() !== "WALK") return { time, segmentIndex };
+      const incoming = segments[segmentIndex - 1];
+      const onward = segments[segmentIndex];
+      if (!isTransit(incoming) || !isTransit(onward)) continue;
+      const incomingArrival = asTime(incoming?.arrival);
+      const onwardDeparture = asTime(onward?.departure);
+      if (!Number.isFinite(incomingArrival) || !Number.isFinite(onwardDeparture)) continue;
+      return {
+        time: onwardDeparture,
+        incomingArrival,
+        gapMs: onwardDeparture - incomingArrival,
+        segmentIndex,
+        incomingIndex: segmentIndex - 1,
+      };
     }
     return null;
   }
@@ -91,7 +103,7 @@
   function preflight(preset) {
     const list = assignments();
 
-    if (["transfer-window", "delayed-transfer", "platform-change", "cancelled-transfer"].includes(preset)) {
+    if (["transfer-window", "incoming-delay", "platform-change", "cancelled-transfer"].includes(preset)) {
       const target = firstTransfer();
       return target && typeof window.NVSTestJourney.setSegmentDisruption === "function" ? { list, target } : (preset === "transfer-window" && target ? { list, target } : null);
     }
@@ -123,9 +135,9 @@
     const preset = String(id || "");
     if (!PRESETS.some((item) => item.id === preset)) return { available: false, reason: "Unknown scenario." };
     if (preflight(preset)) return { available: true, reason: "" };
-    if (["transfer-window", "delayed-transfer", "platform-change", "cancelled-transfer"].includes(preset)) return { available: false, reason: "Load a route with a transit transfer first." };
+    if (["transfer-window", "incoming-delay", "platform-change", "cancelled-transfer"].includes(preset)) return { available: false, reason: "Load a route with a direct transit transfer first." };
     if (preset === "delayed-rider") return { available: false, reason: "Load a timed route first." };
-    if (preset === "missed-transfer") return { available: false, reason: liveReady() ? "Load a route with a transit transfer first." : "Wait for read-only Shared Live state and a transfer route." };
+    if (preset === "missed-transfer") return { available: false, reason: liveReady() ? "Load a route with a direct transit transfer first." : "Wait for read-only Shared Live state and a direct transit transfer." };
     if (preset === "all-arrived") return { available: false, reason: liveReady() ? "Load a timed group route first." : "Wait for read-only Shared Live state." };
     return { available: false, reason: "This Test Lab capability is unavailable." };
   }
@@ -151,8 +163,8 @@
         ok = window.NVSTestJourney.setRouteDelay(plan.target.memberIndex, 5)
           && window.NVSTestLab.setNow(plan.target.time - 5 * 60_000);
       }
-      if (preset === "delayed-transfer") {
-        ok = window.NVSTestJourney.setSegmentDisruption(plan.target.memberIndex, plan.target.segmentIndex, "delay-5")
+      if (preset === "incoming-delay") {
+        ok = window.NVSTestJourney.setSegmentDisruption(plan.target.memberIndex, plan.target.incomingIndex, "delay-5")
           && window.NVSTestLab.setNow(plan.target.time - 5 * 60_000);
       }
       if (preset === "platform-change") {
