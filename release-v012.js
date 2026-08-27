@@ -19,5 +19,7 @@
     applyReleaseCopy();
     setTimeout(applyReleaseCopy, 260);
   });
-  window.addEventListener("nvs-group-recommendations-rendered", applyReleaseCopy);
+  ["nvs-group-recommendations-rendered", "nvs-routing-provider", "nvs-test-state-change"].forEach((name) => {
+    window.addEventListener(name, applyReleaseCopy);
+  });
 })();
