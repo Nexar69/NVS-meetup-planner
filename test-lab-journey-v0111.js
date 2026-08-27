@@ -3,9 +3,11 @@
 
   const STATUSES = ["timetable", "left", "on-vehicle", "at-stop", "missed", "arrived"];
   const DELAYS = [0, 3, 5, 10, 20, 30, 60];
+  const DISRUPTIONS = ["real", "platform-change", "cancelled", "delay-5", "delay-10"];
   const overrides = new Map();
   const baselines = new Map();
   const delayOverrides = new Map();
+  const disruptionOverrides = new Map();
   const routeBaselines = new Map();
   let applying = false;
   let applyingRoutes = false;
@@ -158,6 +160,57 @@
     return copy;
   }
 
+  function disruptionKey(memberIndex, segmentIndex) {
+    return `${memberIndex}:${segmentIndex}`;
+  }
+
+  function memberHasRouteOverlay(index) {
+    if (delayOverrides.has(index)) return true;
+    const prefix = `${index}:`;
+    return [...disruptionOverrides.keys()].some((key) => key.startsWith(prefix));
+  }
+
+  function firstTransitSegment(index, preferTransfer = false) {
+    const segments = assignments()[Number(index)]?.route?.segments;
+    if (!Array.isArray(segments)) return -1;
+    const start = preferTransfer ? 1 : 0;
+    for (let i = start; i < segments.length; i += 1) {
+      if (String(segments[i]?.mode || "").toUpperCase() !== "WALK") return i;
+    }
+    if (preferTransfer) {
+      for (let i = 0; i < Math.min(1, segments.length); i += 1) {
+        if (String(segments[i]?.mode || "").toUpperCase() !== "WALK") return i;
+      }
+    }
+    return -1;
+  }
+
+  function applyDisruption(route, memberIndex, segmentIndex, kind) {
+    const segment = route?.segments?.[segmentIndex];
+    if (!segment) return false;
+    if (kind === "platform-change") {
+      const planned = String(segment.plannedPlatformFrom || segment.platformFrom || "1").trim() || "1";
+      segment.plannedPlatformFrom = planned;
+      segment.platformFrom = planned === "TEST" ? "ALT" : "TEST";
+      segment.testLabDisruption = "platform-change";
+      return true;
+    }
+    if (kind === "cancelled") {
+      segment.cancelled = true;
+      segment.isCancelled = true;
+      segment.testLabDisruption = "cancelled";
+      return true;
+    }
+    if (kind === "delay-5" || kind === "delay-10") {
+      const minutes = kind === "delay-10" ? 10 : 5;
+      segment.departureDelay = minutes;
+      segment.arrivalDelay = minutes;
+      segment.testLabDisruption = kind;
+      return true;
+    }
+    return false;
+  }
+
   function rememberRouteBaseline(index, assignment) {
     const current = assignment?.route;
     if (!current) return null;
@@ -172,40 +225,56 @@
     window.dispatchEvent(new CustomEvent("nvs-test-route-delay-change", {
       detail: { count: delayOverrides.size, delays: Object.fromEntries(delayOverrides) },
     }));
+    window.dispatchEvent(new CustomEvent("nvs-test-route-disruption-change", {
+      detail: { count: disruptionOverrides.size, disruptions: Object.fromEntries(disruptionOverrides) },
+    }));
     window.dispatchEvent(new Event("nvs-group-recommendations-rendered"));
     window.dispatchEvent(new Event("nvs-timing-change"));
   }
 
-  function applyRouteDelays() {
+  function applyRouteOverlays() {
     if (applyingRoutes) return false;
     const list = assignments();
-    if (!list.length || !delayOverrides.size) return false;
+    if (!list.length || (!delayOverrides.size && !disruptionOverrides.size)) return false;
     applyingRoutes = true;
+    let changed = false;
     try {
-      delayOverrides.forEach((minutes, index) => {
-        const assignment = list[index];
-        if (!assignment?.route) return;
+      list.forEach((assignment, index) => {
+        if (!assignment?.route || !memberHasRouteOverlay(index)) return;
         const baseline = rememberRouteBaseline(index, assignment);
         if (!baseline) return;
-        const applied = shiftedRoute(baseline.route, minutes);
+        const delay = delayOverrides.get(index) || 0;
+        const applied = delay ? shiftedRoute(baseline.route, delay) : cloneValue(baseline.route);
+        const prefix = `${index}:`;
+        disruptionOverrides.forEach((kind, key) => {
+          if (!key.startsWith(prefix)) return;
+          const segmentIndex = Number(key.slice(prefix.length));
+          applyDisruption(applied, index, segmentIndex, kind);
+        });
+        applied.testLabSimulated = true;
         baseline.applied = applied;
         assignment.route = applied;
+        changed = true;
       });
-      emitRouteChange();
-      return true;
+      if (changed) emitRouteChange();
+      return changed;
     } finally { applyingRoutes = false; }
+  }
+
+  function restoreRouteIfClear(index) {
+    if (memberHasRouteOverlay(index)) return;
+    const assignment = assignments()[index];
+    const baseline = routeBaselines.get(index);
+    if (assignment && baseline && assignment.route === baseline.applied) assignment.route = baseline.route;
+    routeBaselines.delete(index);
   }
 
   function clearRouteDelay(index) {
     const memberIndex = Number(index);
-    const list = assignments();
     if (!Number.isInteger(memberIndex) || memberIndex < 0) return false;
-    const assignment = list[memberIndex];
-    const baseline = routeBaselines.get(memberIndex);
-    if (assignment && baseline && assignment.route === baseline.applied) assignment.route = baseline.route;
     delayOverrides.delete(memberIndex);
-    routeBaselines.delete(memberIndex);
-    emitRouteChange();
+    restoreRouteIfClear(memberIndex);
+    if (memberHasRouteOverlay(memberIndex)) applyRouteOverlays(); else emitRouteChange();
     render();
     return true;
   }
@@ -216,13 +285,49 @@
     if (!Number.isInteger(memberIndex) || memberIndex < 0 || !DELAYS.includes(amount) || !assignments()[memberIndex]?.route) return false;
     if (amount === 0) return clearRouteDelay(memberIndex);
     delayOverrides.set(memberIndex, amount);
-    const result = applyRouteDelays();
+    const result = applyRouteOverlays();
     render();
     return result;
   }
 
   function resetRouteDelays() {
     [...delayOverrides.keys()].forEach((index) => clearRouteDelay(index));
+  }
+
+  function setSegmentDisruption(index, segmentIndex, kind) {
+    const memberIndex = Number(index);
+    const legIndex = Number(segmentIndex);
+    const next = String(kind || "real");
+    const route = assignments()[memberIndex]?.route;
+    if (!Number.isInteger(memberIndex) || memberIndex < 0 || !Number.isInteger(legIndex) || legIndex < 0 || !DISRUPTIONS.includes(next) || !route?.segments?.[legIndex]) return false;
+    const key = disruptionKey(memberIndex, legIndex);
+    if (next === "real") return clearSegmentDisruption(memberIndex, legIndex);
+    disruptionOverrides.set(key, next);
+    const result = applyRouteOverlays();
+    render();
+    return result;
+  }
+
+  function clearSegmentDisruption(index, segmentIndex) {
+    const memberIndex = Number(index);
+    const legIndex = Number(segmentIndex);
+    if (!Number.isInteger(memberIndex) || memberIndex < 0 || !Number.isInteger(legIndex) || legIndex < 0) return false;
+    disruptionOverrides.delete(disruptionKey(memberIndex, legIndex));
+    restoreRouteIfClear(memberIndex);
+    if (memberHasRouteOverlay(memberIndex)) applyRouteOverlays(); else emitRouteChange();
+    render();
+    return true;
+  }
+
+  function resetDisruptions() {
+    const members = new Set([...disruptionOverrides.keys()].map((key) => Number(key.split(":")[0])));
+    disruptionOverrides.clear();
+    members.forEach((index) => {
+      restoreRouteIfClear(index);
+      if (memberHasRouteOverlay(index)) applyRouteOverlays();
+    });
+    emitRouteChange();
+    render();
   }
 
   function ensureUi() {
@@ -244,6 +349,8 @@
       if (select) setMemberStatus(select.dataset.testMember, select.value);
       const delay = event.target.closest?.("[data-test-delay]");
       if (delay) setRouteDelay(delay.dataset.testDelay, delay.value);
+      const disruption = event.target.closest?.("[data-test-disruption]");
+      if (disruption) setSegmentDisruption(disruption.dataset.testDisruption, disruption.dataset.testSegment, disruption.value);
     });
     return section;
   }
@@ -258,10 +365,15 @@
 
     const memberRoot = section.querySelector("#nvsTestJourneyMembers");
     const members = assignments();
-    if (memberRoot) memberRoot.innerHTML = members.map((assignment, index) => `<div class="nvs-test-row"><label class="nvs-test-field"><span>${esc(assignment.member?.name || `Person ${index + 1}`)} state</span><select data-test-member="${index}" ${liveState()?.members ? "" : "disabled"}>${STATUSES.map((status) => `<option value="${status}" ${overrides.get(index) === status || (!overrides.has(index) && status === "timetable") ? "selected" : ""}>${status === "timetable" ? "Real/timetable" : esc(status)}</option>`).join("")}</select></label><label class="nvs-test-field"><span>${esc(assignment.member?.name || `Person ${index + 1}`)} delay</span><select data-test-delay="${index}">${DELAYS.map((minutes) => `<option value="${minutes}" ${delayOverrides.get(index) === minutes || (!delayOverrides.has(index) && minutes === 0) ? "selected" : ""}>${minutes === 0 ? "Real timing" : `+${minutes} min`}</option>`).join("")}</select></label></div>`).join("");
+    if (memberRoot) memberRoot.innerHTML = members.map((assignment, index) => {
+      const name = esc(assignment.member?.name || `Person ${index + 1}`);
+      const target = firstTransitSegment(index, true);
+      const disruption = target >= 0 ? (disruptionOverrides.get(disruptionKey(index, target)) || "real") : "real";
+      return `<div class="nvs-test-row"><label class="nvs-test-field"><span>${name} state</span><select data-test-member="${index}" ${liveState()?.members ? "" : "disabled"}>${STATUSES.map((status) => `<option value="${status}" ${overrides.get(index) === status || (!overrides.has(index) && status === "timetable") ? "selected" : ""}>${status === "timetable" ? "Real/timetable" : esc(status)}</option>`).join("")}</select></label><label class="nvs-test-field"><span>${name} delay</span><select data-test-delay="${index}">${DELAYS.map((minutes) => `<option value="${minutes}" ${delayOverrides.get(index) === minutes || (!delayOverrides.has(index) && minutes === 0) ? "selected" : ""}>${minutes === 0 ? "Real timing" : `+${minutes} min`}</option>`).join("")}</select></label><label class="nvs-test-field"><span>${name} next transit leg</span><select data-test-disruption="${index}" data-test-segment="${target}" ${target < 0 ? "disabled" : ""}>${DISRUPTIONS.map((kind) => `<option value="${kind}" ${disruption === kind ? "selected" : ""}>${kind === "real" ? "Real realtime" : kind === "platform-change" ? "Platform change → TEST" : kind === "cancelled" ? "Cancelled" : kind === "delay-10" ? "+10 min realtime" : "+5 min realtime"}</option>`).join("")}</select></label></div>`;
+    }).join("");
 
     const note = section.querySelector("#nvsTestJourneyNote");
-    if (note) note.textContent = liveState()?.members ? "Member states and route delays are memory-only overlays. Incoming read-only Shared Live and route data remain the baseline underneath them." : "Route-delay simulation works on loaded routes. Member-state simulation unlocks after a shared session has loaded read-only live state.";
+    if (note) note.textContent = liveState()?.members ? "Member state, timing and disruption overlays are memory-only. Incoming read-only Shared Live and fresh provider routes remain the baseline underneath them." : "Route timing/disruption simulation works on loaded routes. Member-state simulation unlocks after a shared session has loaded read-only live state.";
   }
 
   window.addEventListener("nvs-shared-live-change", () => {
@@ -272,13 +384,14 @@
   });
   window.addEventListener("nvs-group-recommendations-rendered", () => {
     if (applyingRoutes) return;
-    if (delayOverrides.size) queueMicrotask(applyRouteDelays);
+    if (delayOverrides.size || disruptionOverrides.size) queueMicrotask(applyRouteOverlays);
     queueMicrotask(render);
   });
   window.addEventListener("nvs-test-state-change", (event) => {
     if (event.detail?.reason === "reset") {
       resetMembers();
       resetRouteDelays();
+      resetDisruptions();
     }
     render();
   });
@@ -294,8 +407,13 @@
     setRouteDelay,
     clearRouteDelay,
     resetRouteDelays,
+    setSegmentDisruption,
+    clearSegmentDisruption,
+    resetDisruptions,
+    firstTransitSegment,
     getOverrides: () => Object.fromEntries(overrides),
     getRouteDelays: () => Object.fromEntries(delayOverrides),
+    getDisruptions: () => Object.fromEntries(disruptionOverrides),
   });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render, { once: true }); else render();
 })();
