@@ -67,6 +67,7 @@ jobs:
           node tests/intelligence-core.test.cjs
           node tests/privacy-boundary.test.cjs
           node tests/release-smoke.test.cjs
+          node tests/test-lab.test.cjs
           node tests/recovery-ownership.test.cjs
           node tests/recovery-reload-safari.test.cjs
           node tests/accessibility-smoke.test.cjs
