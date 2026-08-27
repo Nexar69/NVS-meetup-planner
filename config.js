@@ -126,4 +126,39 @@
     hasBackend: Boolean(backendUrl),
     release: "v0.8.1",
   });
+
+  function loadTestLabIfRequested() {
+    let active = false;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      active = params.get("test") === "1" || params.get("test") === "true";
+    } catch {}
+    if (!active || window.NVSTestLab?.active) return;
+
+    if (!document.querySelector('link[data-test-lab-v0111="true"]')) {
+      if (document.readyState === "loading") {
+        document.write('<link rel="stylesheet" href="./test-lab-v0111.css" data-test-lab-v0111="true">');
+      } else {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = "./test-lab-v0111.css";
+        link.dataset.testLabV0111 = "true";
+        document.head.appendChild(link);
+      }
+    }
+
+    if (!document.querySelector('script[data-test-lab-v0111="true"]')) {
+      if (document.readyState === "loading") {
+        document.write('<script src="./test-lab-v0111.js" data-test-lab-v0111="true"><\/script>');
+      } else {
+        const script = document.createElement("script");
+        script.src = "./test-lab-v0111.js";
+        script.async = false;
+        script.dataset.testLabV0111 = "true";
+        document.body.appendChild(script);
+      }
+    }
+  }
+
+  loadTestLabIfRequested();
 })();
