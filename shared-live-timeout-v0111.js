@@ -9,6 +9,7 @@
   let consecutiveGetTimeouts = 0;
   let getBackoffUntil = 0;
   let bypassNextGet = false;
+  let bypassPlanId = "";
   let getGenerationEpoch = 0;
   const getGenerationByKey = new Map();
   const pendingGets = new Map();
@@ -19,6 +20,27 @@
       if (!raw) return "";
       const url = new URL(raw, window.location.href);
       return /\/api\/live\/[^/]+\/?$/.test(url.pathname) ? url.href : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function planIdFromLiveUrl(input) {
+    const url = sharedLiveUrl(input);
+    if (!url) return "";
+    try {
+      const match = new URL(url).pathname.match(/\/api\/live\/([^/]+)\/?$/);
+      return match?.[1] || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function currentPagePlanId() {
+    const fromSharedLive = String(window.NVSSharedLive?.getPlanId?.() || "");
+    if (fromSharedLive) return fromSharedLive;
+    try {
+      return window.location.pathname.match(/^\/p\/([^/]+)\/?$/)?.[1] || "";
     } catch {
       return "";
     }
@@ -41,6 +63,7 @@
     consecutiveGetTimeouts = 0;
     getBackoffUntil = 0;
     bypassNextGet = false;
+    bypassPlanId = "";
   }
 
   function noteGetTimeout(now = Date.now()) {
@@ -72,8 +95,23 @@
     return getBackoffUntil - now;
   }
 
-  function allowNextGet() { bypassNextGet = true; }
-  function consumeGetBypass() {
+  function allowNextGet(input = null) {
+    const scopedPlanId = planIdFromLiveUrl(input) || currentPagePlanId();
+    if (scopedPlanId) {
+      bypassPlanId = scopedPlanId;
+      bypassNextGet = false;
+      return;
+    }
+    bypassNextGet = true;
+    bypassPlanId = "";
+  }
+
+  function consumeGetBypass(key) {
+    if (bypassPlanId) {
+      if (planIdFromLiveUrl(key) !== bypassPlanId) return false;
+      bypassPlanId = "";
+      return true;
+    }
     if (!bypassNextGet) return false;
     bypassNextGet = false;
     return true;
@@ -168,7 +206,7 @@
   function sharedGet(input, init = {}) {
     const key = sharedLiveUrl(input);
     const consumerSignal = requestSignal(input, init);
-    const forceFresh = consumeGetBypass();
+    const forceFresh = consumeGetBypass(key);
     if (!forceFresh) {
       const pending = pendingGets.get(key);
       if (pending) return consumerView(pending, consumerSignal);
