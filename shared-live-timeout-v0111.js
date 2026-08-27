@@ -25,13 +25,31 @@
     return () => existingSignal.removeEventListener?.("abort", abort);
   }
 
+  function announceTimeout(init = {}) {
+    try {
+      window.dispatchEvent?.(new CustomEvent("nvs-shared-live-timeout", {
+        detail: {
+          method: String(init?.method || "GET").toUpperCase(),
+          timeoutMs: REQUEST_TIMEOUT_MS,
+        },
+      }));
+    } catch {}
+  }
+
   async function boundedFetch(input, init = {}) {
     if (!isSharedLiveRequest(input)) return originalFetch(input, init);
     const controller = new AbortController();
     const detach = mergeAbortSignal(init?.signal, controller);
-    const timeout = setTimeout(() => controller.abort(new DOMException("Shared Live request timed out", "TimeoutError")), REQUEST_TIMEOUT_MS);
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort(new DOMException("Shared Live request timed out", "TimeoutError"));
+    }, REQUEST_TIMEOUT_MS);
     try {
       return await originalFetch(input, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (timedOut) announceTimeout(init);
+      throw error;
     } finally {
       clearTimeout(timeout);
       detach();
