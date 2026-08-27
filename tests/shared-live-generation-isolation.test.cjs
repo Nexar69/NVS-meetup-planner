@@ -6,6 +6,7 @@ const vm = require("node:vm");
 const source = fs.readFileSync(path.resolve(__dirname, "../shared-live-timeout-v0111.js"), "utf8");
 const events = [];
 const callsByUrl = new Map();
+const listeners = new Map();
 let timers = [];
 
 function originalFetch(input, init = {}) {
@@ -13,7 +14,10 @@ function originalFetch(input, init = {}) {
   const count = (callsByUrl.get(url) || 0) + 1;
   callsByUrl.set(url, count);
 
-  if (url.endsWith("/SESSION_A") || (url.endsWith("/SESSION_C") && count === 1)) {
+  if (
+    url.endsWith("/SESSION_A")
+    || ((url.endsWith("/SESSION_C") || url.endsWith("/SESSION_D") || url.endsWith("/SESSION_E")) && count === 1)
+  ) {
     return new Promise((resolve, reject) => {
       init.signal?.addEventListener("abort", () => reject(init.signal.reason || new Error("aborted")), { once: true });
     });
@@ -30,7 +34,7 @@ const window = {
   fetch: originalFetch,
   location: { href: "https://meet.example/p/SESSION_A" },
   dispatchEvent(event) { events.push(event); return true; },
-  addEventListener() {},
+  addEventListener(name, handler) { listeners.set(name, handler); },
 };
 
 class FakeCustomEvent {
@@ -94,11 +98,39 @@ vm.runInNewContext(source, {
   assert.equal(api.getConsecutiveGetTimeouts(), 0,
     "same-session stale timeout must not restart backoff after a fresh retry succeeds");
 
-  assert.doesNotMatch(JSON.stringify(events), /SESSION_[ABC]|https?:/,
+  const sessionD = "https://meet.example/api/live/SESSION_D";
+  const sessionE = "https://meet.example/api/live/SESSION_E";
+  const staleD = window.fetch(sessionD, { method: "GET" });
+  const staleDTimer = timers.at(-1);
+  const staleE = window.fetch(sessionE, { method: "GET" });
+  const staleETimer = timers.at(-1);
+  assert.equal(api.getPendingGetCount(), 2, "two distinct sessions may both have coalescing entries before reconnect");
+
+  listeners.get("online")?.();
+  assert.equal(api.getPendingGetCount(), 0,
+    "reconnect should release every pre-reconnect coalescing entry, not just whichever session refreshes first");
+
+  const freshD = window.fetch(sessionD, { method: "GET" });
+  const freshE = window.fetch(sessionE, { method: "GET" });
+  assert.equal(callsByUrl.get(sessionD), 2, "session D should start a genuinely fresh request after reconnect");
+  assert.equal(callsByUrl.get(sessionE), 2, "session E should independently start a genuinely fresh request after reconnect");
+  await Promise.all([freshD, freshE]);
+
+  const eventsBeforeReconnectStale = events.length;
+  staleDTimer.fn();
+  staleETimer.fn();
+  await assert.rejects(staleD, /timed out|TimeoutError/i);
+  await assert.rejects(staleE, /timed out|TimeoutError/i);
+  assert.equal(events.length, eventsBeforeReconnectStale,
+    "late failures from any pre-reconnect session must not downgrade post-reconnect health");
+  assert.equal(api.getConsecutiveGetTimeouts(), 0);
+  assert.equal(api.getBackoffUntil(), 0);
+
+  assert.doesNotMatch(JSON.stringify(events), /SESSION_[A-E]|https?:/,
     "generation-isolation lifecycle events must not leak shared IDs or URLs");
   assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB|geolocation|watchPosition|getCurrentPosition/,
     "generation isolation must remain memory-only and location-free");
   assert.doesNotMatch(source, /setInterval\s*\(/, "generation isolation must not add a background loop");
 
-  console.log("shared-live-generation-isolation: cross-session independence and same-session stale-request protection passed");
+  console.log("shared-live-generation-isolation: cross-session independence, all-session reconnect release, and same-session stale-request protection passed");
 })().catch((error) => { console.error(error); process.exit(1); });
