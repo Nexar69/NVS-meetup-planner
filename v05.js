@@ -226,6 +226,32 @@
     }
   }
 
+  function loadTestLab() {
+    if (!document.querySelector('link[data-test-lab-v012="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./test-lab-v012.css";
+      link.dataset.testLabV012 = "true";
+      document.head.appendChild(link);
+    }
+
+    if (!document.querySelector('script[data-test-lab-v012="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./test-lab-v012.js";
+      script.async = false;
+      script.dataset.testLabV012 = "true";
+      document.body.appendChild(script);
+    }
+
+    if (!document.querySelector('script[data-release-v012="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./release-v012.js";
+      script.async = false;
+      script.dataset.releaseV012 = "true";
+      document.body.appendChild(script);
+    }
+  }
+
   installDepartureGuard();
   updateReleaseCopy();
   installHiddenSelectSync();
@@ -235,4 +261,5 @@
   loadLiveMeetup();
   loadSharedLiveMeetup();
   loadMeetupIntelligence();
+  loadTestLab();
 })();
