@@ -65,39 +65,56 @@
     window.NVSTestLab.setNow(state.now);
   }
 
+  function preflight(preset) {
+    const list = assignments();
+    if (!list.length) return null;
+
+    if (preset === "tight-transfer") {
+      const target = firstTransfer();
+      return target ? { list, target } : null;
+    }
+
+    if (preset === "missed-transfer") {
+      const target = firstTransfer();
+      return target && liveReady() ? { list, target } : null;
+    }
+
+    if (preset === "all-arrived") {
+      if (!liveReady()) return null;
+      const arrivals = list.map((item) => asTime(item.route?.arrival)).filter(Number.isFinite);
+      return arrivals.length ? { list, arrivals } : null;
+    }
+
+    return null;
+  }
+
   function applyPreset(id) {
     if (applying) return false;
     const preset = String(id || "");
     if (!PRESETS.some((item) => item.id === preset)) return false;
 
+    const plan = preflight(preset);
+    if (!plan) return false;
+
     const before = snapshot();
     applying = true;
     let ok = false;
     try {
-      const list = assignments();
-      if (!list.length) return false;
       clearOverlays();
 
       if (preset === "tight-transfer") {
-        const target = firstTransfer();
-        if (!target) return false;
-        ok = window.NVSTestJourney.setRouteDelay(target.memberIndex, 5)
-          && window.NVSTestLab.setNow(target.time - 3 * 60_000);
+        ok = window.NVSTestJourney.setRouteDelay(plan.target.memberIndex, 5)
+          && window.NVSTestLab.setNow(plan.target.time - 3 * 60_000);
       }
 
       if (preset === "missed-transfer") {
-        const target = firstTransfer();
-        if (!target || !liveReady()) return false;
-        ok = window.NVSTestLab.setNow(target.time + 30_000)
-          && window.NVSTestJourney.setMemberStatus(target.memberIndex, "missed");
+        ok = window.NVSTestLab.setNow(plan.target.time + 30_000)
+          && window.NVSTestJourney.setMemberStatus(plan.target.memberIndex, "missed");
       }
 
       if (preset === "all-arrived") {
-        if (!liveReady()) return false;
-        const arrivals = list.map((item) => asTime(item.route?.arrival)).filter(Number.isFinite);
-        if (!arrivals.length) return false;
-        const statusOk = list.every((_, index) => window.NVSTestJourney.setMemberStatus(index, "arrived"));
-        ok = statusOk && window.NVSTestLab.setNow(Math.max(...arrivals) + 60_000);
+        const statusOk = plan.list.every((_, index) => window.NVSTestJourney.setMemberStatus(index, "arrived"));
+        ok = statusOk && window.NVSTestLab.setNow(Math.max(...plan.arrivals) + 60_000);
       }
 
       if (!ok) return false;
