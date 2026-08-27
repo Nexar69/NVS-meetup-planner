@@ -1,14 +1,22 @@
 (() => {
   const STALE_AFTER_MS = 30_000;
+  const RETRY_COOLDOWN_MS = 10_000;
   let lastSuccessAt = 0;
   let lastFailureAt = 0;
   let successVersion = 0;
   let staleTimer = null;
+  let retryTimer = null;
+  let retryCooldownUntil = 0;
   let checking = false;
 
   function clearStaleTimer() {
     clearTimeout(staleTimer);
     staleTimer = null;
+  }
+
+  function clearRetryTimer() {
+    clearTimeout(retryTimer);
+    retryTimer = null;
   }
 
   function formatAge(ageMs) {
@@ -19,6 +27,11 @@
 
   function hasNewerFailure(successAt = lastSuccessAt, failureAt = lastFailureAt) {
     return failureAt > 0 && failureAt >= successAt;
+  }
+
+  function retrySeconds(now = Date.now()) {
+    if (!(retryCooldownUntil > now)) return 0;
+    return Math.max(1, Math.ceil((retryCooldownUntil - now) / 1000));
   }
 
   function connectionModel(now = Date.now(), online = navigator.onLine, successAt = lastSuccessAt, failureAt = lastFailureAt) {
@@ -53,6 +66,16 @@
     }, remaining + 25);
   }
 
+  function scheduleRetryReady(now = Date.now()) {
+    clearRetryTimer();
+    if (document.hidden || !navigator.onLine || !(retryCooldownUntil > now)) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      retryCooldownUntil = 0;
+      render();
+    }, Math.max(1, retryCooldownUntil - now) + 25);
+  }
+
   function ensureRetryButton(sync) {
     let button = document.getElementById("v0111SharedConnectionRetry");
     if (button || !sync || typeof document.createElement !== "function") return button;
@@ -83,10 +106,15 @@
           : "Waiting for the first shared-live response.";
     const retry = ensureRetryButton(sync);
     if (retry) {
+      const cooldownSeconds = retrySeconds(now);
       retry.hidden = model.status !== "delayed" || !navigator.onLine;
-      retry.disabled = checking;
-      retry.textContent = checking ? "Checking…" : "Check now";
-      retry.setAttribute?.("aria-label", checking ? "Checking Shared Live now" : "Check Shared Live now");
+      retry.disabled = checking || cooldownSeconds > 0;
+      retry.textContent = checking ? "Checking…" : cooldownSeconds > 0 ? `Try again in ${cooldownSeconds}s` : "Check now";
+      retry.setAttribute?.("aria-label", checking
+        ? "Checking Shared Live now"
+        : cooldownSeconds > 0
+          ? `Shared Live check available again in ${cooldownSeconds} seconds`
+          : "Check Shared Live now");
     }
   }
 
@@ -94,6 +122,8 @@
     lastSuccessAt = Number(now) || Date.now();
     lastFailureAt = 0;
     successVersion += 1;
+    retryCooldownUntil = 0;
+    clearRetryTimer();
     render(lastSuccessAt);
     scheduleStale(lastSuccessAt);
     return lastSuccessAt;
@@ -107,21 +137,31 @@
   }
 
   async function retryNow() {
-    if (checking || document.hidden || !navigator.onLine) return false;
+    const now = Date.now();
+    if (checking || document.hidden || !navigator.onLine || retryCooldownUntil > now) return false;
     const refresh = window.NVSSharedLive?.refresh;
     if (typeof refresh !== "function") return false;
     const beforeVersion = successVersion;
+    let acknowledged = false;
     checking = true;
-    render();
+    render(now);
     try {
       await refresh();
-      return successVersion > beforeVersion;
+      acknowledged = successVersion > beforeVersion;
+      return acknowledged;
     } catch {
       return false;
     } finally {
       checking = false;
+      if (acknowledged) {
+        retryCooldownUntil = 0;
+        clearRetryTimer();
+      } else if (navigator.onLine) {
+        retryCooldownUntil = Date.now() + RETRY_COOLDOWN_MS;
+      }
       render();
       scheduleStale();
+      scheduleRetryReady();
     }
   }
 
@@ -139,13 +179,17 @@
     window.addEventListener(name, () => {
       render();
       scheduleStale();
+      scheduleRetryReady();
     });
   });
   document.addEventListener("visibilitychange", () => {
     clearStaleTimer();
+    clearRetryTimer();
     if (!document.hidden) {
+      if (retryCooldownUntil <= Date.now()) retryCooldownUntil = 0;
       render();
       scheduleStale();
+      scheduleRetryReady();
     }
   });
 
@@ -158,6 +202,7 @@
     getLastSuccessAt: () => lastSuccessAt,
     getLastFailureAt: () => lastFailureAt,
     getSuccessVersion: () => successVersion,
+    getRetryCooldownUntil: () => retryCooldownUntil,
   });
 
   render();
