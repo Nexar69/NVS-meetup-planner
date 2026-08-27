@@ -40,6 +40,10 @@ function runCase({ search, readyState }) {
           window.NVSTestLab = { active: true };
           node.dispatch?.('load');
         }
+        if (node.src === './test-lab-journey-v0111.js') {
+          window.NVSTestJourney = { active: true };
+          node.dispatch?.('load');
+        }
       },
     },
     documentElement: { dataset: {} },
@@ -49,6 +53,7 @@ function runCase({ search, readyState }) {
     write(html) {
       writes.push(html);
       if (html.includes('test-lab-v0111.js')) window.NVSTestLab = { active: true };
+      if (html.includes('test-lab-journey-v0111.js')) window.NVSTestJourney = { active: true };
     },
   };
 
@@ -77,20 +82,25 @@ function runCase({ search, readyState }) {
 const loading = runCase({ search: '?test=1', readyState: 'loading' });
 const coreWrite = loading.writes.findIndex((entry) => entry.includes('test-lab-v0111.js'));
 const journeyWrite = loading.writes.findIndex((entry) => entry.includes('test-lab-journey-v0111.js'));
+const scenarioWrite = loading.writes.findIndex((entry) => entry.includes('test-lab-scenarios-v0111.js'));
 assert(coreWrite >= 0, 'loading bootstrap must inject Test Lab core');
 assert(journeyWrite > coreWrite, 'journey simulator must load after Test Lab core during parser bootstrap');
+assert(scenarioWrite > journeyWrite, 'scenario presets must load after the journey API during parser bootstrap');
 
 const dynamic = runCase({ search: '?test=true', readyState: 'complete' });
 const coreIndex = dynamic.appended.findIndex((node) => node.src === './test-lab-v0111.js');
 const journeyIndex = dynamic.appended.findIndex((node) => node.src === './test-lab-journey-v0111.js');
+const scenarioIndex = dynamic.appended.findIndex((node) => node.src === './test-lab-scenarios-v0111.js');
 assert(coreIndex >= 0, 'dynamic bootstrap must append Test Lab core');
 assert(journeyIndex > coreIndex, 'dynamic journey simulator must wait for the Test Lab core load event');
+assert(scenarioIndex > journeyIndex, 'dynamic scenario presets must wait for the Test Lab journey load event');
 
 const inactive = runCase({ search: '', readyState: 'loading' });
 assert.equal(inactive.writes.length, 0, 'normal mode must not inject any Test Lab assets');
 assert.equal(inactive.appended.length, 0, 'normal mode must not append any Test Lab assets');
 
 assert(source.includes('data-test-lab-journey-v0111'), 'bootstrap should tag the journey simulator for duplicate prevention');
+assert(source.includes('data-test-lab-scenarios-v0111'), 'bootstrap should tag scenario presets for duplicate prevention');
 assert(!/localStorage|sessionStorage/.test(source), 'Test Lab bootstrap must not add persistent simulation state');
 assert(!/getCurrentPosition|watchPosition|geolocation/.test(source), 'Test Lab bootstrap must not add location access');
 
