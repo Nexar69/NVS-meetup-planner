@@ -1,4 +1,4 @@
-const CACHE_NAME = "meet-schwerin-v0.11.1-r12";
+const CACHE_NAME = "meet-schwerin-v0.11.1-r13";
 const NETWORK_TIMEOUT_MS = 5_000;
 
 const APP_SHELL = [
@@ -33,6 +33,7 @@ const APP_SHELL = [
   "./meetup-radar-v0111.css",
   "./what-if-v0111.css",
   "./offline-journey-v0111.css",
+  "./test-lab-v0111.css",
   "./config.js",
   "./transit.js",
   "./vmv-v080.js",
@@ -80,6 +81,7 @@ const APP_SHELL = [
   "./offline-journey-v0111.js",
   "./intelligence-voluntary-sync-v0111.js",
   "./update-safety-v0111.js",
+  "./test-lab-v0111.js",
   "./release-v074.js",
   "./release-v080.js",
   "./release-v090.js",
