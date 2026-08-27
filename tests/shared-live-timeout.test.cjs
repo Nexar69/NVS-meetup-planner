@@ -8,6 +8,7 @@ const calls = [];
 const events = [];
 const listeners = new Map();
 let reconnectHangCalls = 0;
+let hangSucceeds = false;
 
 const originalFetch = (input, init = {}) => {
   calls.push({ input, init });
@@ -20,7 +21,7 @@ const originalFetch = (input, init = {}) => {
     }
     return Promise.resolve({ ok: true, status: 200, input, init });
   }
-  if (String(input).includes("hang")) {
+  if (String(input).includes("hang") && !hangSucceeds) {
     return new Promise((resolve, reject) => {
       init.signal?.addEventListener("abort", () => reject(init.signal.reason || new Error("aborted")), { once: true });
     });
@@ -30,7 +31,7 @@ const originalFetch = (input, init = {}) => {
 
 const window = {
   fetch: originalFetch,
-  location: { href: "https://meet.example/p/ABC234" },
+  location: { href: "https://meet.example/p/hang", pathname: "/p/hang" },
   dispatchEvent(event) { events.push(event); return true; },
   addEventListener(name, handler) { listeners.set(name, handler); },
 };
@@ -82,6 +83,8 @@ assert.equal(api.getBackoffMs(4), 60_000);
 assert.equal(api.getBackoffMs(8), 60_000, "automatic GET backoff must stay bounded");
 
 (async () => {
+  const hangUrl = "https://meet.example/api/live/hang";
+
   await window.fetch("https://meet.example/api/health", { method: "GET" });
   assert.equal(calls.at(-1).init.signal, undefined, "unrelated fetches must stay untouched");
   assert.equal(timers.length, 0, "unrelated fetches must not allocate timeout timers");
@@ -95,7 +98,7 @@ assert.equal(api.getBackoffMs(8), 60_000, "automatic GET backoff must stay bound
   assert.equal(events.length, 0, "successful requests must not emit a timeout event");
 
   const external = new AbortController();
-  const pending = window.fetch("https://meet.example/api/live/hang", { method: "POST", signal: external.signal });
+  const pending = window.fetch(hangUrl, { method: "POST", signal: external.signal });
   const timer = timers.at(-1);
   timer.fn();
   await assert.rejects(pending, /timed out|TimeoutError/i, "stalled Shared Live requests should abort at the deadline");
@@ -107,18 +110,18 @@ assert.equal(api.getBackoffMs(8), 60_000, "automatic GET backoff must stay bound
   assert.equal(api.getConsecutiveGetTimeouts(), 0, "voluntary POST timeouts must never throttle later check-ins");
 
   const external2 = new AbortController();
-  const pending2 = window.fetch("https://meet.example/api/live/hang", { method: "GET", signal: external2.signal });
+  const pending2 = window.fetch(hangUrl, { method: "GET", signal: external2.signal });
   external2.abort(new Error("caller cancelled"));
   await assert.rejects(pending2, /caller cancelled|aborted/i, "caller-provided abort must propagate through the bounded request");
   assert.equal(events.length, 1, "caller cancellation must not masquerade as a transport timeout");
   assert.equal(api.getConsecutiveGetTimeouts(), 0, "caller cancellation must not count as backend instability");
 
-  const firstHang = window.fetch("https://meet.example/api/live/hang", { method: "GET" });
+  const firstHang = window.fetch(hangUrl, { method: "GET" });
   await assert.rejects(fireTimeoutFor(firstHang), /timed out|TimeoutError/i);
   assert.equal(api.getConsecutiveGetTimeouts(), 1);
   assert.equal(api.getBackoffUntil(), 0, "one isolated GET timeout should keep the normal polling cadence");
 
-  const secondHang = window.fetch("https://meet.example/api/live/hang", { method: "GET" });
+  const secondHang = window.fetch(hangUrl, { method: "GET" });
   await assert.rejects(fireTimeoutFor(secondHang), /timed out|TimeoutError/i);
   assert.equal(api.getConsecutiveGetTimeouts(), 2);
   assert.ok(api.getBackoffUntil() > Date.now(), "repeated stalled polling should create a short memory-only backoff window");
@@ -126,23 +129,25 @@ assert.equal(api.getBackoffMs(8), 60_000, "automatic GET backoff must stay bound
   const callsBeforeBackoff = calls.length;
   const timersBeforeBackoff = timers.length;
   await assert.rejects(
-    window.fetch("https://meet.example/api/live/ABC234", { method: "GET" }),
+    window.fetch(hangUrl, { method: "GET" }),
     /temporarily backed off|RetryLaterError/i,
-    "automatic polling inside the backoff window should fail locally instead of hitting the backend again",
+    "automatic polling inside the same session's backoff window should fail locally instead of hitting the backend again",
   );
   assert.equal(calls.length, callsBeforeBackoff, "backed-off automatic polling must not issue a network request");
   assert.equal(timers.length, timersBeforeBackoff, "backed-off automatic polling must not allocate another request timeout");
   assert.equal(events.length, 3, "local backoff suppression must not masquerade as another transport timeout");
 
-  api.allowNextGet();
-  await window.fetch("https://meet.example/api/live/ABC234", { method: "GET" });
-  assert.equal(calls.length, callsBeforeBackoff + 1, "explicit recovery should get one bypass through automatic polling backoff");
-  assert.equal(api.getConsecutiveGetTimeouts(), 0, "a real Shared Live response should reset timeout streak state");
-  assert.equal(api.getBackoffUntil(), 0, "a real response should clear backoff immediately");
+  hangSucceeds = true;
+  api.allowNextGet(hangUrl);
+  await window.fetch(hangUrl, { method: "GET" });
+  hangSucceeds = false;
+  assert.equal(calls.length, callsBeforeBackoff + 1, "explicit recovery should get one bypass through that session's automatic polling backoff");
+  assert.equal(api.getConsecutiveGetTimeouts(), 0, "a real response for the same Shared Live session should reset its timeout streak");
+  assert.equal(api.getBackoffUntil(), 0, "a real same-session response should clear backoff immediately");
 
-  const thirdHang1 = window.fetch("https://meet.example/api/live/hang", { method: "GET" });
+  const thirdHang1 = window.fetch(hangUrl, { method: "GET" });
   await assert.rejects(fireTimeoutFor(thirdHang1), /timed out|TimeoutError/i);
-  const thirdHang2 = window.fetch("https://meet.example/api/live/hang", { method: "GET" });
+  const thirdHang2 = window.fetch(hangUrl, { method: "GET" });
   await assert.rejects(fireTimeoutFor(thirdHang2), /timed out|TimeoutError/i);
   assert.ok(api.getBackoffUntil() > Date.now());
   listeners.get("online")?.();
@@ -171,5 +176,5 @@ assert.equal(api.getBackoffMs(8), 60_000, "automatic GET backoff must stay bound
   assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB|geolocation|watchPosition|getCurrentPosition/,
     "timeout/backoff layer must not add storage or location behavior");
   assert.doesNotMatch(source, /setInterval\s*\(/, "polling backoff must not create another background loop");
-  console.log("shared-live-timeout: bounded GET/POST timeouts, privacy-safe signals, repeated-GET backoff, explicit bypass, reconnect isolation and no-storage/no-GPS boundaries passed");
+  console.log("shared-live-timeout: bounded GET/POST timeouts, privacy-safe signals, per-session repeated-GET backoff, explicit bypass, reconnect isolation and no-storage/no-GPS boundaries passed");
 })().catch((error) => { console.error(error); process.exit(1); });
