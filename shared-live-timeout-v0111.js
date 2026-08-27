@@ -92,7 +92,7 @@
   }
 
   function healthKey(input = null) {
-    return sharedLiveUrl(input) || currentPageLiveUrl();
+    return input == null ? currentPageLiveUrl() : sharedLiveUrl(input);
   }
 
   function getBackoffMs(timeoutCount = 0) {
@@ -102,9 +102,11 @@
   }
 
   function resetGetBackoff(clearBypass = true, input = null) {
-    const key = input == null ? "" : healthKey(input);
-    if (key) getHealthByKey.delete(key);
-    else getHealthByKey.clear();
+    if (input == null) getHealthByKey.clear();
+    else {
+      const key = healthKey(input);
+      if (key) getHealthByKey.delete(key);
+    }
     if (clearBypass) {
       bypassNextGet = false;
       bypassPlanId = "";
@@ -143,12 +145,13 @@
   }
 
   function allowNextGet(input = null) {
-    const scopedPlanId = planIdFromLiveUrl(input) || currentPagePlanId();
+    const scopedPlanId = input == null ? currentPagePlanId() : planIdFromLiveUrl(input);
     if (scopedPlanId) {
       bypassPlanId = scopedPlanId;
       bypassNextGet = false;
       return;
     }
+    if (input != null) return;
     bypassNextGet = true;
     bypassPlanId = "";
   }
