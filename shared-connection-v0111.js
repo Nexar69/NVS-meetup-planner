@@ -124,8 +124,9 @@
     successVersion += 1;
     retryCooldownUntil = 0;
     clearRetryTimer();
-    render(lastSuccessAt);
-    scheduleStale(lastSuccessAt);
+    const currentNow = Date.now();
+    render(currentNow);
+    scheduleStale(currentNow);
     return lastSuccessAt;
   }
 
