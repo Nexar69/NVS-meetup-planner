@@ -147,6 +147,7 @@
     checking = true;
     render(now);
     try {
+      window.NVSSharedLiveTimeout0111?.allowNextGet?.();
       await refresh();
       acknowledged = successVersion > beforeVersion;
       return acknowledged;
