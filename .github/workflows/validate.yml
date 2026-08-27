@@ -74,6 +74,7 @@ jobs:
           node tests/shared-live-scheduler.test.cjs
           node tests/shared-live-timeout.test.cjs
           node tests/shared-live-generation-isolation.test.cjs
+          node tests/shared-live-backoff-isolation.test.cjs
           node tests/shared-live-http-overload.test.cjs
           node tests/shared-live-coalescing.test.cjs
           node tests/shared-live-freshness.test.cjs
