@@ -45,11 +45,20 @@
     }
   }
 
+  function configuredBackendBase() {
+    const configured = window.__NVS_BACKEND_URL__ || window.NVSConfig?.backendUrl || window.location.origin;
+    try {
+      return new URL(String(configured || window.location.origin), window.location.href);
+    } catch {
+      return new URL(window.location.origin, window.location.href);
+    }
+  }
+
   function currentPageLiveUrl() {
     const planId = currentPagePlanId();
     if (!planId) return "";
     try {
-      return new URL(`/api/live/${encodeURIComponent(planId)}`, window.location.href).href;
+      return new URL(`/api/live/${encodeURIComponent(planId)}`, configuredBackendBase()).href;
     } catch {
       return "";
     }
