@@ -26,6 +26,7 @@ vm.runInNewContext(source, {
 
 const api = window.NVSSharedLiveTimeout0111;
 assert.equal(api.DEFAULT_HTTP_BACKOFF_MS, 24_000);
+assert.equal(api.MIN_HTTP_BACKOFF_MS, 1_000);
 assert.equal(api.isTransientStatus(408), true);
 assert.equal(api.isTransientStatus(429), true);
 assert.equal(api.isTransientStatus(503), true);
@@ -58,6 +59,28 @@ assert.equal(api.isTransientStatus(200), false);
   assert.deepEqual({ ...events.at(-1).detail }, { status: 429, retryAfterMs: 2_000 });
 
   api.allowNextGet();
+  nextResponse = new Response("retry immediately", { status: 503, headers: { "retry-after": "0" } });
+  await window.fetch("https://meet.example/api/live/ABC234", { method: "GET" });
+  const zeroRemaining = api.getBackoffUntil() - Date.now();
+  assert.ok(zeroRemaining > 0 && zeroRemaining <= 1_100,
+    `explicit Retry-After: 0 should use only the client anti-spin floor, not the 24s default; got ${zeroRemaining}ms`);
+  assert.deepEqual({ ...events.at(-1).detail }, { status: 503, retryAfterMs: 1_000 });
+
+  api.allowNextGet();
+  nextResponse = new Response("retry now", { status: 503, headers: { "retry-after": new Date(Date.now() - 60_000).toUTCString() } });
+  await window.fetch("https://meet.example/api/live/ABC234", { method: "GET" });
+  const pastDateRemaining = api.getBackoffUntil() - Date.now();
+  assert.ok(pastDateRemaining > 0 && pastDateRemaining <= 1_100,
+    `past HTTP-date Retry-After should use only the anti-spin floor; got ${pastDateRemaining}ms`);
+
+  api.allowNextGet();
+  nextResponse = new Response("bad header", { status: 503, headers: { "retry-after": "not-a-date" } });
+  await window.fetch("https://meet.example/api/live/ABC234", { method: "GET" });
+  const invalidRemaining = api.getBackoffUntil() - Date.now();
+  assert.ok(invalidRemaining > 23_000 && invalidRemaining <= 24_100,
+    `invalid Retry-After should retain the safe default backoff; got ${invalidRemaining}ms`);
+
+  api.allowNextGet();
   nextResponse = new Response("ok", { status: 200 });
   await window.fetch("https://meet.example/api/live/ABC234", { method: "GET" });
   assert.equal(api.getBackoffUntil(), 0, "healthy backend response should release transient HTTP backoff immediately");
@@ -74,9 +97,13 @@ assert.equal(api.isTransientStatus(200), false);
   const dateRetry = new Response("busy", { status: 503, headers: { "retry-after": new Date(Date.now() + 5_000).toUTCString() } });
   const parsedDateRetry = api.retryAfterMs(dateRetry);
   assert.ok(parsedDateRetry >= 3_500 && parsedDateRetry <= 5_500, "HTTP-date Retry-After should be accepted");
+  assert.equal(api.retryAfterMs(new Response("busy", { status: 503, headers: { "retry-after": "0" } })), 0,
+    "explicit zero Retry-After must remain distinguishable from a missing/invalid header");
+  assert.equal(api.retryAfterMs(new Response("busy", { status: 503, headers: { "retry-after": "garbage" } })), null,
+    "invalid Retry-After should be distinguishable from an explicit immediate retry");
 
   assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB|geolocation|watchPosition|getCurrentPosition/,
     "HTTP overload guard must remain memory-only and no-GPS");
   assert.doesNotMatch(source, /setInterval\s*\(/, "HTTP overload handling must not add another polling loop");
-  console.log("shared-live-http-overload: transient GET backoff, Retry-After, manual bypass, recovery reset, POST independence and privacy passed");
+  console.log("shared-live-http-overload: transient GET backoff, zero/past Retry-After handling, manual bypass, recovery reset, POST independence and privacy passed");
 })().catch((error) => { console.error(error); process.exit(1); });
