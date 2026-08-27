@@ -7,16 +7,21 @@
   let consecutiveGetTimeouts = 0;
   let getBackoffUntil = 0;
   let bypassNextGet = false;
+  const pendingGets = new Map();
 
-  function isSharedLiveRequest(input) {
+  function sharedLiveUrl(input) {
     try {
       const raw = typeof input === "string" ? input : input?.url;
-      if (!raw) return false;
+      if (!raw) return "";
       const url = new URL(raw, window.location.href);
-      return /\/api\/live\/[^/]+\/?$/.test(url.pathname);
+      return /\/api\/live\/[^/]+\/?$/.test(url.pathname) ? url.href : "";
     } catch {
-      return false;
+      return "";
     }
+  }
+
+  function isSharedLiveRequest(input) {
+    return Boolean(sharedLiveUrl(input));
   }
 
   function requestMethod(init = {}) {
@@ -66,6 +71,20 @@
     return () => existingSignal.removeEventListener?.("abort", abort);
   }
 
+  function consumerView(sharedPromise, signal) {
+    const clone = (response) => response?.clone ? response.clone() : response;
+    if (!signal) return sharedPromise.then(clone);
+    if (signal.aborted) return Promise.reject(signal.reason || new DOMException("Aborted", "AbortError"));
+    return new Promise((resolve, reject) => {
+      const abort = () => reject(signal.reason || new DOMException("Aborted", "AbortError"));
+      signal.addEventListener?.("abort", abort, { once: true });
+      sharedPromise.then(
+        (response) => resolve(clone(response)),
+        reject,
+      ).finally(() => signal.removeEventListener?.("abort", abort));
+    });
+  }
+
   function announceTimeout(init = {}) {
     try {
       window.dispatchEvent?.(new CustomEvent("nvs-shared-live-timeout", {
@@ -77,13 +96,8 @@
     } catch {}
   }
 
-  async function boundedFetch(input, init = {}) {
-    if (!isSharedLiveRequest(input)) return originalFetch(input, init);
+  async function performBoundedFetch(input, init = {}) {
     const method = requestMethod(init);
-    if (method === "GET" && shouldBackOffGet()) {
-      throw new DOMException("Shared Live polling is temporarily backed off", "RetryLaterError");
-    }
-
     const controller = new AbortController();
     const detach = mergeAbortSignal(init?.signal, controller);
     let timedOut = false;
@@ -107,6 +121,30 @@
     }
   }
 
+  function sharedGet(input, init = {}) {
+    if (shouldBackOffGet()) {
+      return Promise.reject(new DOMException("Shared Live polling is temporarily backed off", "RetryLaterError"));
+    }
+    const key = sharedLiveUrl(input);
+    let pending = pendingGets.get(key);
+    if (!pending) {
+      const sharedInit = { ...init };
+      delete sharedInit.signal;
+      pending = performBoundedFetch(input, sharedInit).finally(() => {
+        if (pendingGets.get(key) === pending) pendingGets.delete(key);
+      });
+      pendingGets.set(key, pending);
+    }
+    return consumerView(pending, init?.signal);
+  }
+
+  function boundedFetch(input, init = {}) {
+    if (!isSharedLiveRequest(input)) return originalFetch(input, init);
+    const method = requestMethod(init);
+    if (method === "GET") return sharedGet(input, init);
+    return performBoundedFetch(input, init);
+  }
+
   window.addEventListener?.("online", resetGetBackoff);
   window.fetch = boundedFetch;
   window.NVSSharedLiveTimeout0111 = Object.freeze({
@@ -118,5 +156,6 @@
     resetGetBackoff,
     getConsecutiveGetTimeouts: () => consecutiveGetTimeouts,
     getBackoffUntil: () => getBackoffUntil,
+    getPendingGetCount: () => pendingGets.size,
   });
 })();
