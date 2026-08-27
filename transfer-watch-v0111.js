@@ -64,11 +64,18 @@
     return String(text || "").replace(/\s+/g, " ").trim().slice(0, 180);
   }
 
-  function transferGapMinutes(current, next) {
+  function transferGapMs(current, next) {
     const arrival = asDate(current?.arrival)?.getTime();
     const departure = asDate(next?.departure)?.getTime();
     if (!Number.isFinite(arrival) || !Number.isFinite(departure)) return null;
-    return Math.round((departure - arrival) / 60_000);
+    return departure - arrival;
+  }
+
+  function transferGapMinutes(current, next) {
+    const gapMs = transferGapMs(current, next);
+    if (!Number.isFinite(gapMs)) return null;
+    if (gapMs < 0) return -Math.max(1, Math.ceil(Math.abs(gapMs) / 60_000));
+    return Math.floor(gapMs / 60_000);
   }
 
   function transferCandidates(route, now = Date.now()) {
@@ -83,9 +90,10 @@
       if (!arrival || !departure || departure.getTime() <= now) continue;
       const leadMinutes = (departure.getTime() - now) / 60_000;
       if (leadMinutes > MAX_LEAD_MIN) continue;
+      const gapMs = transferGapMs(current, next);
+      if (!Number.isFinite(gapMs) || gapMs > MAX_WATCH_MIN * 60_000) continue;
       const gap = transferGapMinutes(current, next);
-      if (gap == null || gap > MAX_WATCH_MIN) continue;
-      candidates.push({ index, current, next, gap, arrival, departure, leadMinutes });
+      candidates.push({ index, current, next, gap, gapMs, arrival, departure, leadMinutes });
     }
     return candidates.sort((a, b) => a.departure - b.departure);
   }
@@ -116,6 +124,7 @@
         title: `${affected} is cancelled`,
         detail: `${nextCancelled ? `The planned onward service from ${stop}` : "The service feeding this transfer"} is marked cancelled in realtime data.${platformCopy}${remark ? ` Provider note: ${remark}.` : ""} Use Recovery Desk or replan instead of relying on this connection.`,
         gap: transfer.gap,
+        gapMs: transfer.gapMs,
         stop,
         segmentIndex: nextCancelled ? transfer.index + 1 : transfer.index,
         platformChanged: Boolean(platformDrift),
@@ -123,19 +132,20 @@
       };
     }
 
-    if (transfer.gap < 0) {
+    if (transfer.gapMs < 0) {
       return {
         tone: "critical",
         eyebrow: "Connection protection",
         title: "This planned connection no longer fits",
-        detail: `${nextVehicle} is due to leave ${stop} about ${Math.max(1, Math.abs(transfer.gap))} min before the previous leg arrives.${platformCopy} Use Recovery Desk or replan instead of relying on this transfer.`,
+        detail: `${nextVehicle} is due to leave ${stop} about ${Math.max(1, Math.ceil(Math.abs(transfer.gapMs) / 60_000))} min before the previous leg arrives.${platformCopy} Use Recovery Desk or replan instead of relying on this transfer.`,
         gap: transfer.gap,
+        gapMs: transfer.gapMs,
         stop,
         segmentIndex: transfer.index + 1,
         platformChanged: Boolean(platformDrift),
       };
     }
-    const tight = transfer.gap <= 3;
+    const tight = transfer.gapMs <= 3 * 60_000;
     const tone = tight || platformDrift ? "warn" : "info";
     const eyebrow = platformDrift
       ? "Connection protection · platform changed"
@@ -148,6 +158,7 @@
       title: `${Math.max(0, transfer.gap)} min transfer at ${stop}`,
       detail: `Next: ${nextVehicle}${departure ? ` · around ${departure}` : ""}${untilDeparture <= 10 ? ` · departs in about ${Math.max(1, untilDeparture)} min` : ""}.${platformCopy} ${platformDrift ? "Allow a little extra attention for the changed boarding point." : tight ? "Keep the next leg in mind and be ready to change promptly." : "This is worth watching, but no action is needed yet."}`,
       gap: transfer.gap,
+      gapMs: transfer.gapMs,
       stop,
       segmentIndex: transfer.index + 1,
       platformChanged: Boolean(platformDrift),
@@ -252,6 +263,6 @@
     else refresh();
   });
 
-  window.NVSTransferWatch0111 = Object.freeze({ transferGapMinutes, transferCandidates, transferModel, platformChange, disruptionSummary, focusedFreshEntry, blockingVoluntaryState, freshMissed, render, refresh });
+  window.NVSTransferWatch0111 = Object.freeze({ transferGapMs, transferGapMinutes, transferCandidates, transferModel, platformChange, disruptionSummary, focusedFreshEntry, blockingVoluntaryState, freshMissed, render, refresh });
   refresh();
 })();
