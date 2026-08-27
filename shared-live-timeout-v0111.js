@@ -1,7 +1,12 @@
 (() => {
   const REQUEST_TIMEOUT_MS = 8_000;
+  const MAX_GET_BACKOFF_MS = 60_000;
   const originalFetch = window.fetch?.bind(window);
   if (typeof originalFetch !== "function") return;
+
+  let consecutiveGetTimeouts = 0;
+  let getBackoffUntil = 0;
+  let bypassNextGet = false;
 
   function isSharedLiveRequest(input) {
     try {
@@ -12,6 +17,42 @@
     } catch {
       return false;
     }
+  }
+
+  function requestMethod(init = {}) {
+    return String(init?.method || "GET").toUpperCase();
+  }
+
+  function getBackoffMs(timeoutCount = consecutiveGetTimeouts) {
+    const count = Math.max(0, Number(timeoutCount) || 0);
+    if (count <= 1) return 0;
+    return Math.min(MAX_GET_BACKOFF_MS, 24_000 * (2 ** (count - 2)));
+  }
+
+  function resetGetBackoff() {
+    consecutiveGetTimeouts = 0;
+    getBackoffUntil = 0;
+    bypassNextGet = false;
+  }
+
+  function noteGetTimeout(now = Date.now()) {
+    consecutiveGetTimeouts += 1;
+    const backoffMs = getBackoffMs();
+    getBackoffUntil = backoffMs > 0 ? now + backoffMs : 0;
+    return backoffMs;
+  }
+
+  function allowNextGet() {
+    bypassNextGet = true;
+  }
+
+  function shouldBackOffGet(now = Date.now()) {
+    if (!(getBackoffUntil > now)) return false;
+    if (bypassNextGet) {
+      bypassNextGet = false;
+      return false;
+    }
+    return true;
   }
 
   function mergeAbortSignal(existingSignal, controller) {
@@ -29,7 +70,7 @@
     try {
       window.dispatchEvent?.(new CustomEvent("nvs-shared-live-timeout", {
         detail: {
-          method: String(init?.method || "GET").toUpperCase(),
+          method: requestMethod(init),
           timeoutMs: REQUEST_TIMEOUT_MS,
         },
       }));
@@ -38,6 +79,11 @@
 
   async function boundedFetch(input, init = {}) {
     if (!isSharedLiveRequest(input)) return originalFetch(input, init);
+    const method = requestMethod(init);
+    if (method === "GET" && shouldBackOffGet()) {
+      throw new DOMException("Shared Live polling is temporarily backed off", "RetryLaterError");
+    }
+
     const controller = new AbortController();
     const detach = mergeAbortSignal(init?.signal, controller);
     let timedOut = false;
@@ -46,9 +92,14 @@
       controller.abort(new DOMException("Shared Live request timed out", "TimeoutError"));
     }, REQUEST_TIMEOUT_MS);
     try {
-      return await originalFetch(input, { ...init, signal: controller.signal });
+      const response = await originalFetch(input, { ...init, signal: controller.signal });
+      if (method === "GET") resetGetBackoff();
+      return response;
     } catch (error) {
-      if (timedOut) announceTimeout(init);
+      if (timedOut) {
+        if (method === "GET") noteGetTimeout();
+        announceTimeout(init);
+      }
       throw error;
     } finally {
       clearTimeout(timeout);
@@ -56,9 +107,16 @@
     }
   }
 
+  window.addEventListener?.("online", resetGetBackoff);
   window.fetch = boundedFetch;
   window.NVSSharedLiveTimeout0111 = Object.freeze({
     REQUEST_TIMEOUT_MS,
+    MAX_GET_BACKOFF_MS,
     isSharedLiveRequest,
+    getBackoffMs,
+    allowNextGet,
+    resetGetBackoff,
+    getConsecutiveGetTimeouts: () => consecutiveGetTimeouts,
+    getBackoffUntil: () => getBackoffUntil,
   });
 })();
