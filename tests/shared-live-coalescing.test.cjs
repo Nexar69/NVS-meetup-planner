@@ -8,7 +8,8 @@ const source = fs.readFileSync(path.resolve(__dirname, "../shared-live-timeout-v
 function makeRuntime(fetchImpl) {
   const listeners = {};
   const window = {
-    location: { href: "https://app.example/p/ABC234?me=0", pathname: "/p/ABC234" },
+    location: { href: "https://app.example/p/ABC234?me=0", pathname: "/p/ABC234", origin: "https://app.example" },
+    __NVS_BACKEND_URL__: "https://backend.example",
     fetch: fetchImpl,
     addEventListener(name, fn) { listeners[name] = fn; },
     dispatchEvent() {},
