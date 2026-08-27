@@ -2,9 +2,12 @@
   if (!window.NVSTestLab?.active || !window.NVSTestJourney?.active || window.NVSTestScenarios?.active) return;
 
   const PRESETS = Object.freeze([
-    { id: "tight-transfer", label: "Tight transfer", detail: "+5 min · jump near next transfer" },
+    { id: "transfer-window", label: "Transfer window", detail: "jump 3 min before next transfer" },
+    { id: "delayed-rider", label: "Delayed rider", detail: "+5 min whole route · convergence stress" },
     { id: "missed-transfer", label: "Missed transfer", detail: "jump past transfer · mark missed" },
     { id: "all-arrived", label: "Everyone arrived", detail: "jump past arrival · confirm all here" },
+    { id: "routing-fallback", label: "VMV fallback", detail: "VMV fails · refresh to test Transitous" },
+    { id: "api-offline", label: "API outage", detail: "backend + transit APIs offline" },
   ]);
   let applying = false;
 
@@ -37,6 +40,15 @@
     return null;
   }
 
+  function firstArrival() {
+    const list = assignments();
+    for (let index = 0; index < list.length; index += 1) {
+      const time = asTime(list[index]?.route?.arrival);
+      if (Number.isFinite(time)) return { time, memberIndex: index };
+    }
+    return null;
+  }
+
   function liveReady() {
     return Boolean(window.NVSSharedLive?.getState?.()?.members);
   }
@@ -44,6 +56,7 @@
   function snapshot() {
     return {
       now: window.NVSTestLab.now(),
+      network: window.NVSTestLab.getNetwork?.() || "normal",
       statuses: window.NVSTestJourney.getOverrides(),
       delays: window.NVSTestJourney.getRouteDelays(),
     };
@@ -56,6 +69,7 @@
 
   function restore(state) {
     clearOverlays();
+    window.NVSTestLab.setNetwork?.(state.network || "normal");
     Object.entries(state.delays || {}).forEach(([index, minutes]) => {
       window.NVSTestJourney.setRouteDelay(Number(index), Number(minutes));
     });
@@ -67,10 +81,14 @@
 
   function preflight(preset) {
     const list = assignments();
-    if (!list.length) return null;
 
-    if (preset === "tight-transfer") {
+    if (preset === "transfer-window") {
       const target = firstTransfer();
+      return target ? { list, target } : null;
+    }
+
+    if (preset === "delayed-rider") {
+      const target = firstArrival();
       return target ? { list, target } : null;
     }
 
@@ -80,9 +98,17 @@
     }
 
     if (preset === "all-arrived") {
-      if (!liveReady()) return null;
+      if (!liveReady() || !list.length) return null;
       const arrivals = list.map((item) => asTime(item.route?.arrival)).filter(Number.isFinite);
       return arrivals.length ? { list, arrivals } : null;
+    }
+
+    if (preset === "routing-fallback") {
+      return typeof window.NVSTestLab.setNetwork === "function" ? { list } : null;
+    }
+
+    if (preset === "api-offline") {
+      return typeof window.NVSTestLab.setNetwork === "function" ? { list } : null;
     }
 
     return null;
@@ -101,10 +127,15 @@
     let ok = false;
     try {
       clearOverlays();
+      window.NVSTestLab.setNetwork?.("normal");
 
-      if (preset === "tight-transfer") {
+      if (preset === "transfer-window") {
+        ok = window.NVSTestLab.setNow(plan.target.time - 3 * 60_000);
+      }
+
+      if (preset === "delayed-rider") {
         ok = window.NVSTestJourney.setRouteDelay(plan.target.memberIndex, 5)
-          && window.NVSTestLab.setNow(plan.target.time - 3 * 60_000);
+          && window.NVSTestLab.setNow(plan.target.time - 5 * 60_000);
       }
 
       if (preset === "missed-transfer") {
@@ -115,6 +146,14 @@
       if (preset === "all-arrived") {
         const statusOk = plan.list.every((_, index) => window.NVSTestJourney.setMemberStatus(index, "arrived"));
         ok = statusOk && window.NVSTestLab.setNow(Math.max(...plan.arrivals) + 60_000);
+      }
+
+      if (preset === "routing-fallback") {
+        ok = window.NVSTestLab.setNetwork("vmv-fail");
+      }
+
+      if (preset === "api-offline") {
+        ok = window.NVSTestLab.setNetwork("offline-api");
       }
 
       if (!ok) return false;
@@ -129,6 +168,7 @@
 
   function resetScenario() {
     clearOverlays();
+    window.NVSTestLab.setNetwork?.("normal");
     window.dispatchEvent(new CustomEvent("nvs-test-scenario-change", { detail: { scenario: "real" } }));
     render();
     return true;
@@ -158,12 +198,12 @@
     if (!section) return;
     const buttons = section.querySelector("#nvsTestScenarioButtons");
     if (buttons) {
-      buttons.innerHTML = `${PRESETS.map((preset) => `<button type="button" data-test-scenario="${preset.id}"><span>${preset.label}</span><small>${preset.detail}</small></button>`).join("")}<button type="button" data-test-scenario="real"><span>Clear scenario</span><small>restore real/timetable overlays</small></button>`;
+      buttons.innerHTML = `${PRESETS.map((preset) => `<button type="button" data-test-scenario="${preset.id}"><span>${preset.label}</span><small>${preset.detail}</small></button>`).join("")}<button type="button" data-test-scenario="real"><span>Clear scenario</span><small>clear local overlays · normal network</small></button>`;
     }
     const note = section.querySelector("#nvsTestScenarioNote");
     if (note) note.textContent = liveReady()
-      ? "Presets replace current local overlays. If a preset cannot apply, the previous simulation is restored."
-      : "Tight transfer works with loaded routes. Missed transfer and everyone-arrived unlock after read-only Shared Live state loads.";
+      ? "Presets replace current local overlays/network mode. If a preset cannot apply, the previous simulation is restored."
+      : "Transfer/delay presets work with loaded routes. Missed transfer and everyone-arrived unlock after read-only Shared Live state loads; network presets work anytime.";
   }
 
   window.NVSTestScenarios = Object.freeze({
