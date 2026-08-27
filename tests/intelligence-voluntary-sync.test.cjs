@@ -144,9 +144,10 @@ listeners.get("nvs-live-plan-synced")();
 assert.equal(timers.length, beforeHiddenEvent, "hidden pages should not arm reconciliation work");
 
 assert.match(release, /intelligence-voluntary-sync-v0111\.js/, "release loader must include voluntary intelligence synchronization");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r13/, "PWA shell should retain the current validated cache identity");
+assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r14/, "PWA shell should retain the current validated cache identity");
 assert.match(serviceWorker, /intelligence-voluntary-sync-v0111\.js/, "runtime must remain available to installed/offline PWA copies");
 assert.match(serviceWorker, /test-lab-v0111\.js/, "hardened Test Lab should remain available in the current PWA shell");
+assert.match(serviceWorker, /test-lab-journey-v0111\.js/, "journey simulation should remain available in the current offline Test Lab shell");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "status precedence must not introduce location tracking");
 assert.match(source, /15 \* 60_000/, "fallback freshness must preserve the 15-minute policy");
 assert.match(source, /document\.hidden/, "periodic reconciliation should pause while hidden");
@@ -156,4 +157,4 @@ assert.match(source, /cancelScheduledSync/, "new events should replace obsolete 
 assert.doesNotMatch(source, /MutationObserver/, "voluntary intelligence reconciliation should no longer observe DOM mutations");
 assert.doesNotMatch(source, /observer\.observe/, "the removed DOM observer must not quietly return");
 
-console.log("intelligence-voluntary-sync: voluntary state wins via lifecycle events without GPS or DOM observation on r13");
+console.log("intelligence-voluntary-sync: voluntary state wins via lifecycle events without GPS or DOM observation on r14");
