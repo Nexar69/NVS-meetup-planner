@@ -194,10 +194,12 @@
 
   function handleOnline() {
     // Invalidate every pre-reconnect GET so late timeout/503 results cannot
-    // downgrade newer healthy connections, while keeping generations isolated
-    // between distinct shared sessions during ordinary operation.
+    // downgrade newer healthy connections. Drop only the coalescing references;
+    // the old bounded requests may settle for their original consumers, but every
+    // shared session can start a genuinely fresh GET after reconnect.
     getGenerationEpoch += 1;
     getGenerationByKey.clear();
+    pendingGets.clear();
     resetGetBackoff();
     allowNextGet();
   }
