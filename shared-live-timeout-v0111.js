@@ -59,11 +59,13 @@
     return Math.min(MAX_GET_BACKOFF_MS, 24_000 * (2 ** (count - 2)));
   }
 
-  function resetGetBackoff() {
+  function resetGetBackoff(clearBypass = true) {
     consecutiveGetTimeouts = 0;
     getBackoffUntil = 0;
-    bypassNextGet = false;
-    bypassPlanId = "";
+    if (clearBypass) {
+      bypassNextGet = false;
+      bypassPlanId = "";
+    }
   }
 
   function noteGetTimeout(now = Date.now()) {
@@ -187,7 +189,7 @@
           const retryMs = noteTransientResponse(response);
           announceTransient(response, retryMs);
         } else {
-          resetGetBackoff();
+          resetGetBackoff(false);
         }
       }
       return response;
