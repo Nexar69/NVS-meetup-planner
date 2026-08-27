@@ -50,7 +50,7 @@
   }
 
   function cancelled(segment) {
-    return segment?.cancelled === true;
+    return segment?.cancelled === true || segment?.isCancelled === true;
   }
 
   function disruptionSummary(segment) {
