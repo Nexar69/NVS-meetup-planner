@@ -97,12 +97,17 @@ assert.strictEqual(originalRoute.segments[1].cancelled, undefined, 'cancellation
 assert(api.setSegmentDisruption(0, 1, 'delay-10'));
 assert.strictEqual(assignment.route.segments[1].departureDelay, 10);
 assert.strictEqual(assignment.route.segments[1].arrivalDelay, 10);
+assert.strictEqual(assignment.route.segments[1].departure, '2026-08-27T12:30:00.000Z', 'realtime delay should shift the active segment timestamp after the whole-route overlay');
+assert.strictEqual(assignment.route.segments[1].arrival, '2026-08-27T12:50:00.000Z');
+assert.strictEqual(assignment.route.arrival, '2026-08-27T12:50:00.000Z', 'delaying the final leg should update route arrival for production guidance');
+assert.strictEqual(originalRoute.segments[1].departure, '2026-08-27T12:10:00Z', 'realtime delay must not mutate provider baseline');
 assert.strictEqual(api.setSegmentDisruption(0, 1, 'bogus'), false, 'unapproved disruption must be rejected');
 
 // Ordinary UI rerenders must not stack timing or disruption overlays.
 window.dispatchEvent(new FakeEvent('nvs-group-recommendations-rendered'));
 assert.strictEqual(assignment.route.departure, '2026-08-27T12:10:00.000Z', 'rerender must not double-apply delay');
-assert.strictEqual(assignment.route.segments[1].departureDelay, 10, 'rerender must not stack realtime delay');
+assert.strictEqual(assignment.route.segments[1].departure, '2026-08-27T12:30:00.000Z', 'rerender must not double-shift realtime timestamps');
+assert.strictEqual(assignment.route.segments[1].departureDelay, 10, 'rerender must not stack realtime delay metadata');
 
 // Fresh route data becomes the new baseline while overlays stay visible.
 assignment.route = {
@@ -114,16 +119,29 @@ assignment.route = {
 };
 window.dispatchEvent(new FakeEvent('nvs-group-recommendations-rendered'));
 assert.strictEqual(assignment.route.departure, '2026-08-27T12:15:00.000Z');
-assert.strictEqual(assignment.route.arrival, '2026-08-27T12:45:00.000Z');
+assert.strictEqual(assignment.route.arrival, '2026-08-27T12:55:00.000Z');
+assert.strictEqual(assignment.route.segments[1].departure, '2026-08-27T12:36:00.000Z');
 assert.strictEqual(assignment.route.segments[1].departureDelay, 10, 'disruption should rebase over fresh provider route');
 
 assert(api.clearSegmentDisruption(0, 1));
 assert.strictEqual(assignment.route.segments[1].departureDelay, undefined, 'clearing disruption should reveal fresh provider values beneath it');
 assert.strictEqual(assignment.route.segments[1].platformFrom, 'C');
+assert.strictEqual(assignment.route.arrival, '2026-08-27T12:45:00.000Z', 'clearing realtime disruption should retain the independent whole-route delay');
 assert(api.clearRouteDelay(0));
 assert.strictEqual(assignment.route.departure, '2026-08-27T12:05:00Z', 'clearing delay should reveal the newest real route baseline');
 assert.strictEqual(assignment.route.arrival, '2026-08-27T12:35:00Z');
 assert.strictEqual(api.setRouteDelay(0, 7), false, 'unapproved delay should be rejected');
+
+// A realtime delay on the incoming leg must shrink the direct transfer window used by Connection Protection.
+assert(api.setSegmentDisruption(0, 0, 'delay-5'));
+assert.strictEqual(assignment.route.departure, '2026-08-27T12:10:00.000Z', 'first-leg realtime delay should move the route departure boundary');
+assert.strictEqual(assignment.route.segments[0].arrival, '2026-08-27T12:20:00.000Z');
+assert.strictEqual(assignment.route.segments[1].departure, '2026-08-27T12:16:00Z', 'onward service should stay at its real departure');
+assert.strictEqual((Date.parse(assignment.route.segments[1].departure) - Date.parse(assignment.route.segments[0].arrival)) / 60000, -4, 'incoming +5 should turn the original one-minute connection into a missed connection');
+assert.strictEqual(assignment.route.arrival, '2026-08-27T12:35:00Z', 'incoming-leg delay should not invent a final arrival shift before downstream replanning');
+assert(api.clearSegmentDisruption(0, 0));
+assert.strictEqual(assignment.route.departure, '2026-08-27T12:05:00Z');
+assert.strictEqual(assignment.route.segments[0].arrival, '2026-08-27T12:15:00Z');
 
 assert(!/localStorage|sessionStorage/.test(source), 'journey simulation must remain memory-only');
 assert(!/geolocation|getCurrentPosition|watchPosition/.test(source), 'journey simulation must not use location APIs');
