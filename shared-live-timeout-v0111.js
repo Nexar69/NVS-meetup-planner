@@ -24,8 +24,8 @@
     return Boolean(sharedLiveUrl(input));
   }
 
-  function requestMethod(init = {}) {
-    return String(init?.method || "GET").toUpperCase();
+  function requestMethod(input, init = {}) {
+    return String(init?.method || input?.method || "GET").toUpperCase();
   }
 
   function getBackoffMs(timeoutCount = consecutiveGetTimeouts) {
@@ -86,11 +86,11 @@
     });
   }
 
-  function announceTimeout(init = {}) {
+  function announceTimeout(input, init = {}) {
     try {
       window.dispatchEvent?.(new CustomEvent("nvs-shared-live-timeout", {
         detail: {
-          method: requestMethod(init),
+          method: requestMethod(input, init),
           timeoutMs: REQUEST_TIMEOUT_MS,
         },
       }));
@@ -98,7 +98,7 @@
   }
 
   async function performBoundedFetch(input, init = {}) {
-    const method = requestMethod(init);
+    const method = requestMethod(input, init);
     const controller = new AbortController();
     const detach = mergeAbortSignal(init?.signal, controller);
     let timedOut = false;
@@ -113,7 +113,7 @@
     } catch (error) {
       if (timedOut) {
         if (method === "GET") noteGetTimeout();
-        announceTimeout(init);
+        announceTimeout(input, init);
       }
       throw error;
     } finally {
@@ -144,7 +144,7 @@
 
   function boundedFetch(input, init = {}) {
     if (!isSharedLiveRequest(input)) return originalFetch(input, init);
-    const method = requestMethod(init);
+    const method = requestMethod(input, init);
     if (method === "GET") return sharedGet(input, init);
     return performBoundedFetch(input, init);
   }
