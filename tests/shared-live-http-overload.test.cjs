@@ -9,7 +9,7 @@ const events = [];
 let nextResponse = null;
 
 const window = {
-  location: { href: "https://meet.example/p/ABC234" },
+  location: { href: "https://meet.example/p/ABC234", pathname: "/p/ABC234" },
   fetch(input, init = {}) {
     calls.push({ input, init });
     return Promise.resolve(nextResponse || new Response("ok", { status: 200 }));
