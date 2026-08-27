@@ -2,6 +2,7 @@
   const REQUEST_TIMEOUT_MS = 8_000;
   const MAX_GET_BACKOFF_MS = 60_000;
   const DEFAULT_HTTP_BACKOFF_MS = 24_000;
+  const MIN_HTTP_BACKOFF_MS = 1_000;
   const originalFetch = window.fetch?.bind(window);
   if (typeof originalFetch !== "function") return;
 
@@ -54,17 +55,18 @@
 
   function retryAfterMs(response, now = Date.now()) {
     const raw = String(response?.headers?.get?.("retry-after") || "").trim();
-    if (!raw) return 0;
+    if (!raw) return null;
     const seconds = Number(raw);
     if (Number.isFinite(seconds) && seconds >= 0) return Math.min(MAX_GET_BACKOFF_MS, Math.round(seconds * 1000));
     const date = Date.parse(raw);
-    if (!Number.isFinite(date)) return 0;
+    if (!Number.isFinite(date)) return null;
     return Math.min(MAX_GET_BACKOFF_MS, Math.max(0, date - now));
   }
 
   function noteTransientResponse(response, now = Date.now()) {
-    const retryMs = retryAfterMs(response, now) || DEFAULT_HTTP_BACKOFF_MS;
-    getBackoffUntil = now + Math.min(MAX_GET_BACKOFF_MS, Math.max(1_000, retryMs));
+    const serverRetryMs = retryAfterMs(response, now);
+    const retryMs = serverRetryMs == null ? DEFAULT_HTTP_BACKOFF_MS : serverRetryMs;
+    getBackoffUntil = now + Math.min(MAX_GET_BACKOFF_MS, Math.max(MIN_HTTP_BACKOFF_MS, retryMs));
     return getBackoffUntil - now;
   }
 
@@ -180,6 +182,7 @@
     REQUEST_TIMEOUT_MS,
     MAX_GET_BACKOFF_MS,
     DEFAULT_HTTP_BACKOFF_MS,
+    MIN_HTTP_BACKOFF_MS,
     isSharedLiveRequest,
     isTransientStatus,
     retryAfterMs,
