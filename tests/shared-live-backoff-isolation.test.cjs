@@ -29,7 +29,12 @@ function originalFetch(input, init = {}) {
 
 const window = {
   fetch: originalFetch,
-  location: { href: "https://meet.example/p/SESSION_A", pathname: "/p/SESSION_A" },
+  location: {
+    href: "https://meet.example/p/SESSION_A",
+    pathname: "/p/SESSION_A",
+    origin: "https://meet.example",
+  },
+  __NVS_BACKEND_URL__: "https://worker.example",
   dispatchEvent(event) { events.push(event); return true; },
   addEventListener() {},
 };
@@ -62,12 +67,16 @@ vm.runInNewContext(source, {
 
 (async () => {
   const api = window.NVSSharedLiveTimeout0111;
-  const sessionA = "https://meet.example/api/live/SESSION_A";
-  const sessionB = "https://meet.example/api/live/SESSION_B";
-  const sessionC = "https://meet.example/api/live/SESSION_C";
+  const sessionA = "https://worker.example/api/live/SESSION_A";
+  const sessionB = "https://worker.example/api/live/SESSION_B";
+  const sessionC = "https://worker.example/api/live/SESSION_C";
 
   await window.fetch(sessionA, { method: "GET" });
   assert.ok(api.getBackoffUntil(sessionA) > Date.now(), "503 should back off only session A");
+  assert.equal(api.getBackoffUntil(), api.getBackoffUntil(sessionA),
+    "default current-session health lookup must honor the configured cross-origin backend");
+  assert.equal(api.getConsecutiveGetTimeouts(), 0,
+    "default current-session timeout lookup must use the configured backend bucket too");
   assert.equal(api.getBackoffUntil(sessionB), 0, "session B must not inherit session A backoff");
   await assert.rejects(window.fetch(sessionA, { method: "GET" }), /backed off|RetryLaterError/i);
   assert.equal(calls.get(sessionA), 1, "backed-off session A should be suppressed locally");
@@ -90,6 +99,7 @@ vm.runInNewContext(source, {
 
   api.resetGetBackoff(false, sessionA);
   assert.equal(api.getBackoffUntil(sessionA), 0, "scoped reset should clear A");
+  assert.equal(api.getBackoffUntil(), 0, "default cross-origin current-session lookup should reflect the scoped reset");
   assert.ok(api.getBackoffUntil(sessionC) > Date.now(), "scoped reset must preserve C");
   api.resetGetBackoff();
   assert.equal(api.getBackoffUntil(sessionC), 0, "global reconnect-style reset should clear all sessions");
@@ -98,5 +108,5 @@ vm.runInNewContext(source, {
     "per-session backoff must remain memory-only and location-free");
   assert.doesNotMatch(source, /setInterval\s*\(/, "per-session isolation must not add background polling");
 
-  console.log("shared-live-backoff-isolation: per-session overload/backoff state and current-session UI isolation passed");
+  console.log("shared-live-backoff-isolation: per-session overload/backoff state, cross-origin backend keying, and current-session UI isolation passed");
 })().catch((error) => { console.error(error); process.exit(1); });
