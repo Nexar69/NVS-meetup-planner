@@ -28,6 +28,11 @@
     return String(init?.method || input?.method || "GET").toUpperCase();
   }
 
+  function requestSignal(input, init = {}) {
+    if (Object.prototype.hasOwnProperty.call(init || {}, "signal")) return init.signal || null;
+    return input?.signal || null;
+  }
+
   function getBackoffMs(timeoutCount = consecutiveGetTimeouts) {
     const count = Math.max(0, Number(timeoutCount) || 0);
     if (count <= 1) return 0;
@@ -97,10 +102,11 @@
     } catch {}
   }
 
-  async function performBoundedFetch(input, init = {}) {
+  async function performBoundedFetch(input, init = {}, options = {}) {
     const method = requestMethod(input, init);
     const controller = new AbortController();
-    const detach = mergeAbortSignal(init?.signal, controller);
+    const callerSignal = options.ignoreInputSignal ? (init?.signal || null) : requestSignal(input, init);
+    const detach = mergeAbortSignal(callerSignal, controller);
     let timedOut = false;
     const timeout = setTimeout(() => {
       timedOut = true;
@@ -124,10 +130,11 @@
 
   function sharedGet(input, init = {}) {
     const key = sharedLiveUrl(input);
+    const consumerSignal = requestSignal(input, init);
     const forceFresh = consumeGetBypass();
     if (!forceFresh) {
       const pending = pendingGets.get(key);
-      if (pending) return consumerView(pending, init?.signal);
+      if (pending) return consumerView(pending, consumerSignal);
       if (shouldBackOffGet()) {
         return Promise.reject(new DOMException("Shared Live polling is temporarily backed off", "RetryLaterError"));
       }
@@ -135,11 +142,11 @@
 
     const sharedInit = { ...init };
     delete sharedInit.signal;
-    const pending = performBoundedFetch(input, sharedInit).finally(() => {
+    const pending = performBoundedFetch(input, sharedInit, { ignoreInputSignal: true }).finally(() => {
       if (pendingGets.get(key) === pending) pendingGets.delete(key);
     });
     pendingGets.set(key, pending);
-    return consumerView(pending, init?.signal);
+    return consumerView(pending, consumerSignal);
   }
 
   function boundedFetch(input, init = {}) {
