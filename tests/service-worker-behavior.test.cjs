@@ -41,7 +41,7 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
         const normalized = typeof key === "string" ? key : key.url;
         return cacheEntries.get(normalized) || null;
       },
-      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r12"]; },
+      async keys() { return ["old-cache", "meet-schwerin-v0.11.1-r13"]; },
       async delete(key) { deleted.push(key); return true; },
     },
     self: {
@@ -112,6 +112,8 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     assert.ok(rt.addedShells[0].includes("./trip-guidance-v0111.js"));
     assert.ok(rt.addedShells[0].includes("./trip-guidance-v0111.css"));
     assert.ok(rt.addedShells[0].includes("./intelligence-voluntary-sync-v0111.js"));
+    assert.ok(rt.addedShells[0].includes("./test-lab-v0111.js"), "hardened Test Lab runtime should be available offline");
+    assert.ok(rt.addedShells[0].includes("./test-lab-v0111.css"), "hardened Test Lab styles should be available offline");
   }
   {
     const rt = runtime();
@@ -223,10 +225,11 @@ function runtime(fetchImpl = async () => new Response("network", { status: 200 }
     await rt.dispatch("notificationclick", { notification: { close() { closed += 1; } } });
     assert.equal(closed, 1, "notification lifecycle should resolve safely even when browser window APIs fail");
   }
+  assert.match(originalSource, /meet-schwerin-v0\.11\.1-r13/, "service-worker behavior suite should exercise the current cache revision");
   assert.match(originalSource, /NETWORK_TIMEOUT_MS = 5_000/, "network-first routes should have a bounded slow-network wait");
   assert.match(originalSource, /AbortController/, "slow network-first requests should be cancellable");
   assert.match(originalSource, /response\.status === 408 \|\| response\.status === 429 \|\| response\.status >= 500/, "transient HTTP failures should prefer a healthy cached app-shell response");
   assert.match(originalSource, /currentShellReady/, "activation should verify the new shell before deleting older offline caches");
   assert.match(originalSource, /async function reopenFromNotification/, "notification taps should isolate browser client/window failures");
-  console.log("service-worker-behavior: privacy, offline, guarded install/activation, slow-network/transient-server fallback, resilient notification taps and r12 app-shell behavior passed");
+  console.log("service-worker-behavior: privacy, offline, guarded install/activation, slow-network/transient-server fallback, resilient notification taps and r13 app-shell behavior passed");
 })().catch((error) => { console.error(error); process.exit(1); });
