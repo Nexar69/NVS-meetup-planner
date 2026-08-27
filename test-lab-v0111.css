@@ -1,0 +1,20 @@
+html[data-nvs-test-mode="true"] .app-shell { padding-top: 2.5rem; }
+.nvs-test-lab { position: fixed; right: 1rem; bottom: 1rem; z-index: 9999; width: min(23rem, calc(100vw - 2rem)); font: inherit; color: var(--text, #101828); }
+.nvs-test-banner { position: fixed; inset: 0 0 auto 0; min-height: 2.25rem; display: flex; align-items: center; justify-content: center; padding: .45rem 1rem; background: #7a2e0e; color: white; font-size: .8rem; font-weight: 800; letter-spacing: .06em; text-align: center; }
+.nvs-test-lab details { border: 1px solid rgba(122,46,14,.28); border-radius: 1rem; background: rgba(255,255,255,.98); box-shadow: 0 12px 36px rgba(16,24,40,.16); overflow: hidden; }
+.nvs-test-lab summary { cursor: pointer; padding: .85rem 1rem; font-weight: 800; min-height: 44px; }
+.nvs-test-body { display: grid; gap: .75rem; padding: 0 1rem 1rem; }
+.nvs-test-readout { display: grid; gap: .1rem; }
+.nvs-test-readout small, .nvs-test-note { color: #667085; font-size: .78rem; }
+.nvs-test-field { display: grid; gap: .3rem; font-size: .8rem; font-weight: 700; min-width: 0; }
+.nvs-test-field input, .nvs-test-field select { min-height: 44px; width: 100%; box-sizing: border-box; border: 1px solid #d0d5dd; border-radius: .7rem; background: white; color: inherit; padding: .55rem .65rem; font: inherit; }
+.nvs-test-actions { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: .35rem; }
+.nvs-test-actions button, .nvs-test-row button, .nvs-test-reset { min-height: 44px; border: 1px solid #d0d5dd; border-radius: .7rem; background: #fff; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+.nvs-test-actions button { padding: .35rem .15rem; font-size: .75rem; }
+.nvs-test-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(6rem,.45fr); gap: .6rem; align-items: end; }
+.nvs-test-reset { width: 100%; padding: .55rem .75rem; }
+.nvs-test-note { margin: 0; line-height: 1.45; }
+.nvs-test-lab button:focus-visible, .nvs-test-lab input:focus-visible, .nvs-test-lab select:focus-visible, .nvs-test-lab summary:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+@media (max-width: 520px) { .nvs-test-lab { right: .6rem; bottom: .6rem; width: calc(100vw - 1.2rem); } .nvs-test-actions { grid-template-columns: repeat(3,1fr); } }
+@media (prefers-reduced-motion: reduce) { .nvs-test-lab * { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
+@media (forced-colors: active) { .nvs-test-lab details, .nvs-test-actions button, .nvs-test-row button, .nvs-test-reset, .nvs-test-field input, .nvs-test-field select { border: 1px solid CanvasText; } .nvs-test-banner { forced-color-adjust: none; } }
