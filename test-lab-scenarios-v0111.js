@@ -114,6 +114,17 @@
     return null;
   }
 
+  function availability(id) {
+    const preset = String(id || "");
+    if (!PRESETS.some((item) => item.id === preset)) return { available: false, reason: "Unknown scenario." };
+    if (preflight(preset)) return { available: true, reason: "" };
+    if (preset === "transfer-window") return { available: false, reason: "Load a route with a transfer first." };
+    if (preset === "delayed-rider") return { available: false, reason: "Load a timed route first." };
+    if (preset === "missed-transfer") return { available: false, reason: liveReady() ? "Load a route with a transfer first." : "Wait for read-only Shared Live state and a transfer route." };
+    if (preset === "all-arrived") return { available: false, reason: liveReady() ? "Load a timed group route first." : "Wait for read-only Shared Live state." };
+    return { available: false, reason: "This Test Lab capability is unavailable." };
+  }
+
   function applyPreset(id) {
     if (applying) return false;
     const preset = String(id || "");
@@ -181,11 +192,11 @@
     if (section) return section;
     section = document.createElement("section");
     section.id = "nvsTestScenarios";
-    section.innerHTML = `<div class="nvs-test-diagnostics"><strong>Scenario presets</strong><span>Atomic local stress tests · never shared</span></div><div class="nvs-test-actions" id="nvsTestScenarioButtons"></div><p class="nvs-test-note" id="nvsTestScenarioNote"></p>`;
+    section.innerHTML = `<div class="nvs-test-diagnostics"><strong>Scenario presets</strong><span>Atomic local stress tests · never shared</span></div><div class="nvs-test-actions" id="nvsTestScenarioButtons"></div><p class="nvs-test-note" id="nvsTestScenarioNote" aria-live="polite"></p>`;
     journey.insertAdjacentElement("afterend", section);
     section.addEventListener("click", (event) => {
       const button = event.target.closest?.("[data-test-scenario]");
-      if (!button) return;
+      if (!button || button.disabled) return;
       const id = button.dataset.testScenario;
       if (id === "real") resetScenario(); else applyPreset(id);
     });
@@ -198,17 +209,23 @@
     if (!section) return;
     const buttons = section.querySelector("#nvsTestScenarioButtons");
     if (buttons) {
-      buttons.innerHTML = `${PRESETS.map((preset) => `<button type="button" data-test-scenario="${preset.id}"><span>${preset.label}</span><small>${preset.detail}</small></button>`).join("")}<button type="button" data-test-scenario="real"><span>Clear scenario</span><small>clear local overlays · normal network</small></button>`;
+      buttons.innerHTML = `${PRESETS.map((preset) => {
+        const state = availability(preset.id);
+        const disabled = state.available ? "" : " disabled aria-disabled=\"true\"";
+        const title = state.reason ? ` title="${state.reason}"` : "";
+        return `<button type="button" data-test-scenario="${preset.id}"${disabled}${title}><span>${preset.label}</span><small>${state.available ? preset.detail : state.reason}</small></button>`;
+      }).join("")}<button type="button" data-test-scenario="real"><span>Clear scenario</span><small>clear local overlays · normal network</small></button>`;
     }
     const note = section.querySelector("#nvsTestScenarioNote");
     if (note) note.textContent = liveReady()
       ? "Presets replace current local overlays/network mode. If a preset cannot apply, the previous simulation is restored."
-      : "Transfer/delay presets work with loaded routes. Missed transfer and everyone-arrived unlock after read-only Shared Live state loads; network presets work anytime.";
+      : "Unavailable route/live presets stay disabled until their prerequisites load; network presets work anytime.";
   }
 
   window.NVSTestScenarios = Object.freeze({
     active: true,
     presets: PRESETS.map((item) => ({ ...item })),
+    availability,
     applyPreset,
     resetScenario,
   });
