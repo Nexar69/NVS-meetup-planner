@@ -1,4 +1,5 @@
 const CACHE_NAME = "meet-schwerin-v0.11.1-r15";
+// Previous shell: meet-schwerin-v0.11.1-r14. r15 adds offline Test Lab scenario presets.
 const NETWORK_TIMEOUT_MS = 5_000;
 
 const APP_SHELL = [
