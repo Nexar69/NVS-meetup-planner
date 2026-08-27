@@ -145,6 +145,26 @@ function makeRuntime(fetchImpl) {
 
   {
     let calls = 0;
+    let release;
+    const underlying = new Promise((resolve) => { release = resolve; });
+    const rt = makeRuntime(async () => {
+      calls += 1;
+      return underlying;
+    });
+    const controller = new AbortController();
+    const url = "https://backend.example/api/live/ABC234";
+    const request = new Request(url, { method: "GET", signal: controller.signal });
+    const cancelled = rt.window.fetch(request);
+    const survivor = rt.window.fetch(url, { method: "GET" });
+    controller.abort(new DOMException("request consumer cancelled", "AbortError"));
+    await assert.rejects(cancelled, (error) => error?.name === "AbortError");
+    assert.equal(calls, 1, "a Request-carried abort signal must cancel only that consumer, not the shared underlying GET");
+    release(new Response("{}", { status: 200 }));
+    assert.equal((await survivor).status, 200, "another coalesced consumer must survive Request-signal cancellation");
+  }
+
+  {
+    let calls = 0;
     let releaseHung;
     const hung = new Promise((resolve) => { releaseHung = resolve; });
     const rt = makeRuntime(async () => {
@@ -167,7 +187,9 @@ function makeRuntime(fetchImpl) {
 
   assert.match(source, /forceFresh = consumeGetBypass\(\)/, "manual bypass should explicitly force one fresh Shared Live GET");
   assert.match(source, /init\?\.method \|\| input\?\.method \|\| "GET"/, "request classification must honor methods carried by Request objects");
+  assert.match(source, /function requestSignal\(input, init/, "Request-carried abort signals should be normalized explicitly");
+  assert.match(source, /ignoreInputSignal: true/, "coalesced underlying GETs must stay independent of the first Request consumer's signal");
   assert.doesNotMatch(source, /localStorage|sessionStorage/, "GET coalescing state must remain memory-only");
   assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "Shared Live coalescing must not introduce location access");
-  console.log("shared-live-coalescing: duplicate GET suppression, response isolation, POST independence including Request objects, retry cleanup, consumer cancellation and manual fresh-retry escape passed");
+  console.log("shared-live-coalescing: duplicate GET suppression, response isolation, POST independence including Request objects, retry cleanup, init/Request consumer cancellation and manual fresh-retry escape passed");
 })().catch((error) => { console.error(error); process.exit(1); });
