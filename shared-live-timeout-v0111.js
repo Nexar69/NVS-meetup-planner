@@ -122,19 +122,18 @@
   }
 
   function sharedGet(input, init = {}) {
+    const key = sharedLiveUrl(input);
+    let pending = pendingGets.get(key);
+    if (pending) return consumerView(pending, init?.signal);
     if (shouldBackOffGet()) {
       return Promise.reject(new DOMException("Shared Live polling is temporarily backed off", "RetryLaterError"));
     }
-    const key = sharedLiveUrl(input);
-    let pending = pendingGets.get(key);
-    if (!pending) {
-      const sharedInit = { ...init };
-      delete sharedInit.signal;
-      pending = performBoundedFetch(input, sharedInit).finally(() => {
-        if (pendingGets.get(key) === pending) pendingGets.delete(key);
-      });
-      pendingGets.set(key, pending);
-    }
+    const sharedInit = { ...init };
+    delete sharedInit.signal;
+    pending = performBoundedFetch(input, sharedInit).finally(() => {
+      if (pendingGets.get(key) === pending) pendingGets.delete(key);
+    });
+    pendingGets.set(key, pending);
     return consumerView(pending, init?.signal);
   }
 
