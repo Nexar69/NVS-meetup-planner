@@ -128,7 +128,30 @@ function makeRuntime(fetchImpl) {
     assert.equal((await survivor).status, 200, "another consumer should still receive the shared response after one consumer cancels");
   }
 
+  {
+    let calls = 0;
+    let releaseHung;
+    const hung = new Promise((resolve) => { releaseHung = resolve; });
+    const rt = makeRuntime(async () => {
+      calls += 1;
+      if (calls === 1) return hung;
+      return new Response(JSON.stringify({ revision: 9 }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    const url = "https://backend.example/api/live/ABC234";
+    const automatic = rt.window.fetch(url, { method: "GET" });
+    assert.equal(calls, 1);
+    rt.window.NVSSharedLiveTimeout0111.allowNextGet();
+    const manual = rt.window.fetch(url, { method: "GET" });
+    assert.equal(calls, 2, "manual Check now bypass must start a fresh GET instead of joining an already-hung coalesced poll");
+    assert.deepEqual(await (await manual).json(), { revision: 9 }, "manual retry should receive the fresh request response independently");
+    releaseHung(new Response(JSON.stringify({ revision: 8 }), { status: 200, headers: { "content-type": "application/json" } }));
+    assert.deepEqual(await (await automatic).json(), { revision: 8 }, "the older automatic consumer should still be allowed to finish independently");
+    await Promise.resolve();
+    assert.equal(rt.window.NVSSharedLiveTimeout0111.getPendingGetCount(), 0, "manual replacement and older poll cleanup must leave no poisoned pending entry");
+  }
+
+  assert.match(source, /forceFresh = consumeGetBypass\(\)/, "manual bypass should explicitly force one fresh Shared Live GET");
   assert.doesNotMatch(source, /localStorage|sessionStorage/, "GET coalescing state must remain memory-only");
   assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "Shared Live coalescing must not introduce location access");
-  console.log("shared-live-coalescing: duplicate GET suppression, response isolation, POST independence, retry cleanup and consumer cancellation passed");
+  console.log("shared-live-coalescing: duplicate GET suppression, response isolation, POST independence, retry cleanup, consumer cancellation and manual fresh-retry escape passed");
 })().catch((error) => { console.error(error); process.exit(1); });
