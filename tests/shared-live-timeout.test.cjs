@@ -7,15 +7,25 @@ const source = fs.readFileSync(path.resolve(__dirname, "../shared-live-timeout-v
 const calls = [];
 const events = [];
 const listeners = new Map();
+let reconnectHangCalls = 0;
 
 const originalFetch = (input, init = {}) => {
   calls.push({ input, init });
+  if (String(input).includes("reconnect-hang")) {
+    reconnectHangCalls += 1;
+    if (reconnectHangCalls === 1) {
+      return new Promise((resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(init.signal.reason || new Error("aborted")), { once: true });
+      });
+    }
+    return Promise.resolve({ ok: true, status: 200, input, init });
+  }
   if (String(input).includes("hang")) {
     return new Promise((resolve, reject) => {
       init.signal?.addEventListener("abort", () => reject(init.signal.reason || new Error("aborted")), { once: true });
     });
   }
-  return Promise.resolve({ ok: true, input, init });
+  return Promise.resolve({ ok: true, status: 200, input, init });
 };
 
 const window = {
@@ -139,8 +149,27 @@ assert.equal(api.getBackoffMs(8), 60_000, "automatic GET backoff must stay bound
   assert.equal(api.getConsecutiveGetTimeouts(), 0, "a browser reconnect signal should immediately release old polling backoff");
   assert.equal(api.getBackoffUntil(), 0);
 
+  const reconnectUrl = "https://meet.example/api/live/reconnect-hang";
+  const oldReconnectGet = window.fetch(reconnectUrl, { method: "GET" });
+  const oldReconnectTimer = timers.at(-1);
+  const callsBeforeReconnect = calls.length;
+  const eventsBeforeReconnect = events.length;
+  listeners.get("online")?.();
+  await window.fetch(reconnectUrl, { method: "GET" });
+  assert.equal(calls.length, callsBeforeReconnect + 1,
+    "first refresh after reconnect must start a fresh GET instead of joining the pre-reconnect hung request");
+  assert.equal(api.getConsecutiveGetTimeouts(), 0);
+  assert.equal(api.getBackoffUntil(), 0);
+  oldReconnectTimer.fn();
+  await assert.rejects(oldReconnectGet, /timed out|TimeoutError/i);
+  assert.equal(events.length, eventsBeforeReconnect,
+    "a stale pre-reconnect GET timing out later must not downgrade the recovered Shared Live connection");
+  assert.equal(api.getConsecutiveGetTimeouts(), 0,
+    "a stale pre-reconnect timeout must not restart automatic polling backoff after recovery");
+  assert.equal(api.getBackoffUntil(), 0);
+
   assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB|geolocation|watchPosition|getCurrentPosition/,
     "timeout/backoff layer must not add storage or location behavior");
   assert.doesNotMatch(source, /setInterval\s*\(/, "polling backoff must not create another background loop");
-  console.log("shared-live-timeout: bounded GET/POST timeouts, privacy-safe signals, repeated-GET backoff, explicit bypass, reconnect reset and no-storage/no-GPS boundaries passed");
+  console.log("shared-live-timeout: bounded GET/POST timeouts, privacy-safe signals, repeated-GET backoff, explicit bypass, reconnect isolation and no-storage/no-GPS boundaries passed");
 })().catch((error) => { console.error(error); process.exit(1); });
