@@ -94,6 +94,7 @@ jobs:
           node tests/service-worker-behavior.test.cjs
           node tests/service-worker-cache-failure.test.cjs
           node tests/service-worker-static-timeout.test.cjs
+          node tests/service-worker-notification-scope.test.cjs
           node tests/share-expiry-cache.test.cjs
           node tests/trip-guidance.test.cjs
           node tests/trip-guidance-transfer-window.test.cjs
