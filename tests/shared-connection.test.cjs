@@ -56,6 +56,13 @@ function setTimeoutFake(handler, delay) {
   return id;
 }
 function clearTimeoutFake(id) { timers.delete(id); }
+function fireOnlyTimer() {
+  assert.equal(timers.size, 1, "expected exactly one timer to fire");
+  const [id, timer] = [...timers.entries()][0];
+  timers.delete(id);
+  timer.handler();
+  return timer.delay;
+}
 
 vm.runInNewContext(source, {
   window,
@@ -129,6 +136,21 @@ assert.equal(retry.textContent, "Check now");
   assert.equal(refreshCalls, 1, "manual retry should reuse the existing Shared Live refresh path exactly once");
   assert.equal(noAck, false, "a refresh attempt without a new successful-response event must not claim recovery");
   assert.equal(sync.dataset.connection, "delayed");
+  assert.equal(retry.disabled, true, "a failed manual check should temporarily disable repeat requests");
+  assert.match(retry.textContent, /^Try again in \d+s$/, "manual retry cooldown should be visible instead of silently ignoring taps");
+  assert.ok(api.getRetryCooldownUntil() > Date.now(), "failed manual checks should create a bounded cooldown deadline");
+  assert.equal(timers.size, 1, "manual retry cooldown should use one one-shot timer, not a polling loop");
+  assert.ok([...timers.values()][0].delay >= 9_900 && [...timers.values()][0].delay <= 10_100);
+
+  const blockedRetry = await api.retryNow();
+  assert.equal(blockedRetry, false, "repeat taps during cooldown must not issue another Shared Live refresh");
+  assert.equal(refreshCalls, 1, "cooldown must prevent manual retry hammering");
+
+  api.markSuccess(Date.now() - 31_000);
+  assert.equal(api.getRetryCooldownUntil(), 0, "any genuine acknowledgement should immediately clear the retry cooldown");
+  assert.equal(retry.disabled, false);
+  assert.equal(retry.textContent, "Check now");
+  assert.equal(timers.size, 0, "stale successful timestamps should not leave a stale or cooldown timer armed");
 
   const sameTimestamp = Date.now();
   api.markSuccess(sameTimestamp);
@@ -142,6 +164,7 @@ assert.equal(retry.textContent, "Check now");
   const acknowledged = await api.retryNow();
   assert.equal(acknowledged, true, "manual retry must recognize a fresh acknowledgement even when the timestamp has the same millisecond value");
   assert.equal(api.getSuccessVersion(), versionBeforeRetry + 1);
+  assert.equal(api.getRetryCooldownUntil(), 0, "successful manual recovery must not impose a cooldown");
   assert.equal(sync.dataset.connection, "current");
   assert.equal(retry.hidden, true, "successful acknowledgement should remove the delayed recovery action");
 
@@ -162,13 +185,24 @@ assert.equal(retry.textContent, "Check now");
 
   hidden = true;
   listeners.get("document:visibilitychange")();
-  assert.equal(timers.size, 0, "hidden pages should suspend the one-shot connection timer");
+  assert.equal(timers.size, 0, "hidden pages should suspend all connection timers");
   const hiddenRetry = await api.retryNow();
   assert.equal(hiddenRetry, false);
   assert.equal(refreshCalls, 2, "hidden page must not start a manual refresh");
   hidden = false;
   listeners.get("document:visibilitychange")();
   assert.equal(timers.size, 1, "visible pages should re-arm the stale boundary");
+
+  api.markSuccess(Date.now() - 31_000);
+  await api.retryNow();
+  assert.equal(retry.disabled, true);
+  hidden = true;
+  listeners.get("document:visibilitychange")();
+  assert.equal(timers.size, 0, "backgrounding Safari should suspend the cooldown timer too");
+  hidden = false;
+  listeners.get("document:visibilitychange")();
+  assert.equal(timers.size, 1, "foregrounding before cooldown expiry should re-arm only the remaining cooldown");
+  assert.match(retry.textContent, /^Try again in \d+s$/);
 
   assert.match(css, /data-connection="delayed"/);
   assert.match(css, /v0111-shared-connection-retry/);
@@ -182,12 +216,15 @@ assert.equal(retry.textContent, "Check now");
   assert.match(sw, /shared-connection-v0111\.css/, "connection freshness styles should be available offline");
   assert.match(source, /nvs-shared-live-timeout/, "connection freshness should react to bounded transport timeouts immediately");
   assert.match(source, /successVersion/, "fresh acknowledgement detection should not depend only on millisecond timestamp ordering");
+  assert.match(source, /RETRY_COOLDOWN_MS = 10_000/, "manual delayed-sync recovery should use a bounded retry cooldown");
+  assert.match(source, /scheduleRetryReady/, "manual retry cooldown should resume through a one-shot lifecycle timer");
+  assert.doesNotMatch(source, /setInterval\s*\(/, "connection freshness must not introduce a retry polling loop");
   assert.match(source, /NVSSharedLive\?\.refresh/, "manual recovery should reuse the existing shared-live refresh path");
   assert.doesNotMatch(source, /fetch\s*\(|XMLHttpRequest|sendBeacon/, "connection freshness must not add another direct network path");
   assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/, "connection freshness should remain memory-only");
   assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "connection freshness must not introduce location tracking");
 
-  console.log("shared-connection: immediate timeout-delayed state, race-safe acknowledgement sequencing, retry, visibility lifecycle and privacy boundaries passed");
+  console.log("shared-connection: immediate timeout-delayed state, race-safe acknowledgement sequencing, throttled manual retry, visibility lifecycle and privacy boundaries passed");
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
