@@ -147,15 +147,35 @@
       }
     }
 
+    const loadScenarioPresets = () => {
+      if (!window.NVSTestJourney?.active || document.querySelector('script[data-test-lab-scenarios-v0111="true"]')) return;
+      if (document.readyState === "loading") {
+        document.write('<script src="./test-lab-scenarios-v0111.js" data-test-lab-scenarios-v0111="true"><\/script>');
+      } else {
+        const scenarios = document.createElement("script");
+        scenarios.src = "./test-lab-scenarios-v0111.js";
+        scenarios.async = false;
+        scenarios.dataset.testLabScenariosV0111 = "true";
+        document.body.appendChild(scenarios);
+      }
+    };
+
     const loadJourneySimulator = () => {
-      if (!window.NVSTestLab?.active || document.querySelector('script[data-test-lab-journey-v0111="true"]')) return;
+      if (!window.NVSTestLab?.active) return;
+      if (window.NVSTestJourney?.active) {
+        loadScenarioPresets();
+        return;
+      }
+      if (document.querySelector('script[data-test-lab-journey-v0111="true"]')) return;
       if (document.readyState === "loading") {
         document.write('<script src="./test-lab-journey-v0111.js" data-test-lab-journey-v0111="true"><\/script>');
+        loadScenarioPresets();
       } else {
         const journey = document.createElement("script");
         journey.src = "./test-lab-journey-v0111.js";
         journey.async = false;
         journey.dataset.testLabJourneyV0111 = "true";
+        journey.addEventListener("load", loadScenarioPresets, { once: true });
         document.body.appendChild(journey);
       }
     };
