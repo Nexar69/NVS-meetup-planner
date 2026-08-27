@@ -70,6 +70,7 @@ jobs:
           node tests/test-lab.test.cjs
           node tests/test-lab-bootstrap.test.cjs
           node tests/test-lab-journey.test.cjs
+          node tests/test-lab-scenarios.test.cjs
           node tests/recovery-ownership.test.cjs
           node tests/recovery-reload-safari.test.cjs
           node tests/accessibility-smoke.test.cjs
