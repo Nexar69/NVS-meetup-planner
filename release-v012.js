@@ -3,6 +3,15 @@
   window.NVSRelease012 = true;
   document.documentElement.dataset.nvsRelease = "012";
 
+  function loadTestGuard() {
+    if (document.querySelector('script[data-test-lab-patch-v012="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "./test-lab-patch-v012.js";
+    script.async = false;
+    script.dataset.testLabPatchV012 = "true";
+    document.body.appendChild(script);
+  }
+
   function applyReleaseCopy() {
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = VERSION;
@@ -13,9 +22,11 @@
     document.title = "Meet Schwerin · Test Lab";
   }
 
+  loadTestGuard();
   applyReleaseCopy();
   setTimeout(applyReleaseCopy, 520);
   window.addEventListener("load", () => {
+    loadTestGuard();
     applyReleaseCopy();
     setTimeout(applyReleaseCopy, 260);
   });
