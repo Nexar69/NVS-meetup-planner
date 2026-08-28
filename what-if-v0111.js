@@ -270,7 +270,7 @@
     render();
   });
 
-  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-group-change", "nvs-timing-change", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, () => render()));
+  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-recommendations-cleared", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-group-change", "nvs-timing-change", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, () => render()));
 
   window.NVSWhatIf0111 = Object.freeze({ simulate, delayedGroup, shiftRoute, recoveryActive, meetupConfirmed, render });
   render();
