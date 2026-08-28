@@ -131,6 +131,11 @@
     return labels[normalized] || (normalized ? normalized[0] + normalized.slice(1).toLowerCase() : "Transit");
   }
 
+  function isTransitMode(mode) {
+    const normalized = String(mode || "").toUpperCase();
+    return Boolean(normalized) && !["WALK", "BIKE", "BICYCLE", "CAR"].includes(normalized);
+  }
+
   function legDurationMinutes(leg) {
     if (typeof leg.duration === "number" && Number.isFinite(leg.duration)) return Math.max(1, Math.round(leg.duration / 60));
     const departure = legDeparture(leg);
@@ -333,7 +338,7 @@
       : Math.max(1, Math.round((arrival - departure) / 60_000));
 
     const descriptionParts = legs.map(describeLeg).filter(Boolean).filter((part, i, parts) => part !== parts[i - 1]);
-    const transitLegs = legs.filter((leg) => String(leg.mode || "").toUpperCase() !== "WALK");
+    const transitLegs = legs.filter((leg) => isTransitMode(leg.mode));
     const transfersRaw = Number(itinerary.transfers);
     const transfers = Number.isFinite(transfersRaw) ? Math.max(0, transfersRaw) : Math.max(0, transitLegs.length - 1);
     const realtime = legs.some((leg) => leg.realTime === true);
