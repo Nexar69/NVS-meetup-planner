@@ -169,7 +169,7 @@
     tools.querySelectorAll("[data-v0111-status]").forEach((button) => { button.disabled = sendingStatus; });
 
     const age = tools.querySelector("#v0111RouteAge");
-    if (age) age.textContent = `Routes ${relativeAge(lastRouteUpdate)}`;
+    if (age) age.textContent = lastRouteUpdate > 0 ? `Routes ${relativeAge(lastRouteUpdate)}` : "No active route";
 
     const wake = tools.querySelector("#v0111WakeToggle");
     const wakeDetail = tools.querySelector("#v0111WakeDetail");
@@ -223,9 +223,11 @@
   window.addEventListener("nvs-group-recommendations-rendered", () => {
     lastRouteUpdate = Date.now();
     render();
+    scheduleRender();
   });
   window.addEventListener("nvs-recommendations-cleared", () => {
     clearTimeout(timer);
+    timer = null;
     wakeWanted = false;
     lastRouteUpdate = 0;
     releaseWakeLock();
