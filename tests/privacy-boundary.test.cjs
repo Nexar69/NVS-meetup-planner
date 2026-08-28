@@ -59,6 +59,10 @@ assert.doesNotMatch(whatIf, /fetch\(|XMLHttpRequest|sendBeacon|localStorage|sess
 const tripTools = fs.readFileSync(path.join(root, "trip-tools-v0111.js"), "utf8");
 assert.match(tripTools, /addEventListener\("nvs-recommendations-cleared"[\s\S]*wakeWanted\s*=\s*false[\s\S]*releaseWakeLock\(\)/, "recommendation clearing must immediately drop Trip Tools wake-lock intent and release any screen wake lock");
 assert.match(tripTools, /addEventListener\("nvs-recommendations-cleared"[\s\S]*lastRouteUpdate\s*=\s*0/, "recommendation clearing must invalidate stale Trip Tools route-age state");
+assert.match(tripTools, /let wakeRequestGeneration\s*=\s*0/, "Trip Tools must generation-track asynchronous wake-lock acquisition");
+assert.match(tripTools, /const generation\s*=\s*\+\+wakeRequestGeneration[\s\S]*await navigator\.wakeLock\.request\("screen"\)[\s\S]*generation\s*!==\s*wakeRequestGeneration/, "late wake-lock resolutions must be rejected when their acquisition generation is stale");
+assert.match(tripTools, /generation\s*!==\s*wakeRequestGeneration[\s\S]*!wakeWanted[\s\S]*document\.hidden[\s\S]*!tripDialog\(\)\?\.open[\s\S]*await lock\?\.release\?\.\(\)/, "a late wake lock must be released instead of adopted after clear, backgrounding, or dialog close");
+assert.match(tripTools, /async function releaseWakeLock\(\)[\s\S]*wakeRequestGeneration\s*\+=\s*1/, "every release must invalidate an in-flight wake-lock request before touching the active lock");
 assert.doesNotMatch(tripTools, /geolocation|getCurrentPosition|watchPosition/i, "Trip Tools must remain voluntary and GPS-free");
 
-console.log(`privacy-boundary: scanned ${runtimeFiles.length} app/Worker scripts; browser networking stays on fetch, Trip Tools clears wake intent with recommendation state, and only explicit one-shot My location access is allowed, with no background GPS, API caching, persistent capability storage or What-if network/storage writes`);
+console.log(`privacy-boundary: scanned ${runtimeFiles.length} app/Worker scripts; browser networking stays on fetch, Trip Tools invalidates stale wake-lock requests and clears wake intent with recommendation state, and only explicit one-shot My location access is allowed, with no background GPS, API caching, persistent capability storage or What-if network/storage writes`);
