@@ -19,6 +19,8 @@ function node(overrides = {}) {
   };
 }
 
+let tripCloseCount = 0;
+const dispatched = [];
 const nodes = {
   results: node({ innerHTML: '<article>stale result</article>' }),
   summary: node({ innerHTML: '<strong>old summary</strong>' }),
@@ -28,6 +30,7 @@ const nodes = {
   versionLabel: node(),
   'results-title': node(),
   plannerForm: node(),
+  v011TripDialog: node({ open: true, close() { this.open = false; tripCloseCount += 1; } }),
 };
 
 const recommendation = {
@@ -38,6 +41,10 @@ const recommendation = {
   pairs: [],
 };
 
+class CustomEvent {
+  constructor(type, init = {}) { this.type = type; this.detail = init.detail; }
+}
+
 const context = {
   console,
   Date,
@@ -46,7 +53,7 @@ const context = {
   String,
   Math,
   Object,
-  CustomEvent: class CustomEvent {},
+  CustomEvent,
   setTimeout(callback) { callback(); return 1; },
   document: {
     getElementById(id) { return nodes[id] || null; },
@@ -57,7 +64,7 @@ const context = {
       recommend() { return recommendation; },
       explain() { return ''; },
     },
-    dispatchEvent() {},
+    dispatchEvent(event) { dispatched.push(event); },
     __NVS_LAST_RECOMMENDATIONS__: { stale: true },
   },
 };
@@ -71,11 +78,14 @@ assert.ok(nodes.results.innerHTML.includes('No fresh ASAP connection found'), 's
 assert.ok(nodes.results.innerHTML.includes('already arrived'), 'empty state should explain why stale provider journeys were rejected');
 assert.ok(!nodes.results.innerHTML.includes('stale result'), 'previous recommendation cards must not linger after all ASAP candidates go stale');
 assert.strictEqual(context.window.__NVS_LAST_RECOMMENDATIONS__, null, 'stale recommendation state must be cleared when no fresh ASAP pair exists');
+assert.strictEqual(tripCloseCount, 1, 'an open Trip Mode dialog must close when its backing recommendation disappears');
+assert.strictEqual(nodes.v011TripDialog.open, false, 'Trip Mode must not remain visibly backed by a stale journey');
+assert.ok(dispatched.some((event) => event.type === 'nvs-recommendations-cleared' && event.detail?.timingMode === 'asap'), 'downstream surfaces should receive an explicit recommendation-cleared lifecycle event');
 assert.ok(nodes.summary.innerHTML.includes('<strong>ASAP</strong> · no fresh connection yet'), 'summary should remain in ASAP semantics instead of falling back to the hidden anchor time');
 assert.ok(nodes.summary.innerHTML.includes('Lankow &lt;A&gt;'), 'summary labels must remain HTML-escaped');
 assert.ok(nodes.summary.innerHTML.includes('Friend &amp; B'), 'friend label must remain HTML-escaped');
 assert.ok(nodes.summary.innerHTML.includes('Dreescher &gt; Markt'), 'destination label must remain HTML-escaped');
-assert.match(serviceWorker, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r17";/, 'the installed PWA shell must advance to r17 with the cached recommendation empty-state fix');
+assert.match(serviceWorker, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r18";/, 'the installed PWA shell must advance to r18 with the recommendation transition fix');
 assert.ok(!source.includes('watchPosition'), 'ASAP empty-state rendering must not introduce continuous location tracking');
 
 console.log('ASAP empty-state regression tests passed.');
