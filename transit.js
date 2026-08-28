@@ -154,9 +154,28 @@
     return firstText(value.name, value.displayName, value.label, value.stopName, valueAt(value, ["stop.name"]), valueAt(value, ["station.name"]), fallback);
   }
 
+  function scheduledPlatformName(value) {
+    if (!value || typeof value !== "object") return "";
+    return firstText(
+      value.scheduledTrack,
+      value.scheduledPlatform,
+      value.scheduledPlatformCode,
+      valueAt(value, ["stop.scheduledTrack"]),
+      valueAt(value, ["stop.scheduledPlatform"]),
+      valueAt(value, ["stop.scheduledPlatformCode"]),
+    );
+  }
+
   function platformName(value) {
     if (!value || typeof value !== "object") return "";
-    return firstText(value.track, value.platform, value.platformCode, value.scheduledTrack, valueAt(value, ["stop.platformCode"]), valueAt(value, ["stop.track"]));
+    return firstText(
+      value.track,
+      value.platform,
+      value.platformCode,
+      valueAt(value, ["stop.platformCode"]),
+      valueAt(value, ["stop.track"]),
+      scheduledPlatformName(value),
+    );
   }
 
   function delayMinutes(real, scheduled) {
@@ -173,8 +192,9 @@
       arrival: firstDate(place.arrival, place.scheduledArrival),
       departure: firstDate(place.departure, place.scheduledDeparture),
       track: platformName(place),
+      plannedTrack: scheduledPlatformName(place),
       point: placePoint(place),
-      cancelled: place.cancelled === true,
+      cancelled: place.cancelled === true || place.isCancelled === true,
     };
   }
 
@@ -275,7 +295,9 @@
       arrival,
       duration: legDurationMinutes(leg),
       platformFrom: platformName(fromObject),
+      plannedPlatformFrom: scheduledPlatformName(fromObject),
       platformTo: platformName(toObject),
+      plannedPlatformTo: scheduledPlatformName(toObject),
       headsign,
       tripId: firstText(leg.tripId),
       intermediateStops,
@@ -440,7 +462,7 @@
           index: 0, mode: "WALK", modeLabel: "Walk", line: "", title: "Walk",
           from: LOCATIONS[origin]?.label || origin, to: LOCATIONS[destination]?.label || destination,
           fromPoint: exactPoint, toPoint: exactPoint,
-          departure, arrival: target, duration: 5, platformFrom: "", platformTo: "", headsign: "",
+          departure, arrival: target, duration: 5, platformFrom: "", plannedPlatformFrom: "", platformTo: "", plannedPlatformTo: "", headsign: "",
           intermediateStops: [], instructions: [], geometry: exactPoint ? [exactPoint, exactPoint] : [],
           departureDelay: 0, arrivalDelay: 0, realtime: false,
         }],
