@@ -183,7 +183,7 @@
     }
   });
 
-  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
+  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-recommendations-cleared", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
 
   window.NVSStopAwareness0111 = Object.freeze({ stopAwarenessForSegment, activeSegment, modelForRoute, focusedFreshEntry, blockingVoluntaryState, refresh });
   refresh();
