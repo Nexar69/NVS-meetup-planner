@@ -37,8 +37,22 @@ function itineraryWith(overrides = {}) {
   };
 }
 
-async function normalizedSegment(legOverrides = {}) {
-  const responseBody = { itineraries: [itineraryWith(legOverrides)] };
+function timedLeg(mode, startMinute, endMinute, displayName = "") {
+  const iso = (minute) => `2026-08-28T10:${String(minute).padStart(2, "0")}:00Z`;
+  return {
+    mode,
+    displayName,
+    startTime: iso(startMinute),
+    scheduledStartTime: iso(startMinute),
+    endTime: iso(endMinute),
+    scheduledEndTime: iso(endMinute),
+    from: { name: `Stop ${startMinute}` },
+    to: { name: `Stop ${endMinute}` },
+  };
+}
+
+async function normalizedRoute(responseItinerary) {
+  const responseBody = { itineraries: [responseItinerary] };
   const sandbox = {
     window: {},
     console,
@@ -57,7 +71,25 @@ async function normalizedSegment(legOverrides = {}) {
   vm.runInContext(source, sandbox, { filename: "transit.js" });
   const routes = await sandbox.window.NVSTransit.fetchRoutes("Lankow-Siedlung", "Marienplatz", new Date("2026-08-28T10:30:00Z"));
   assert.equal(routes.length, 1);
-  return routes[0].segments[0];
+  return routes[0];
+}
+
+async function normalizedSegment(legOverrides = {}) {
+  const route = await normalizedRoute(itineraryWith(legOverrides));
+  return route.segments[0];
+}
+
+function mixedModeItinerary(modes, overrides = {}) {
+  const legs = modes.map((mode, index) => timedLeg(mode, index * 5, index * 5 + 4, mode && `${index + 1}`));
+  return {
+    startTime: legs[0].startTime,
+    scheduledStartTime: legs[0].scheduledStartTime,
+    endTime: legs[legs.length - 1].endTime,
+    scheduledEndTime: legs[legs.length - 1].scheduledEndTime,
+    duration: (modes.length * 5 - 1) * 60,
+    legs,
+    ...overrides,
+  };
 }
 
 (async () => {
@@ -92,8 +124,29 @@ async function normalizedSegment(legOverrides = {}) {
   });
   assert.equal(cancelledFalse.intermediateStops[0].cancelled, false);
 
+  const bikeRoute = await normalizedRoute(mixedModeItinerary(["TRAM", "BIKE", "BUS"]));
+  assert.equal(bikeRoute.transfers, 1, "bike legs must not inflate fallback public-transport transfer counts");
+
+  const bicycleRoute = await normalizedRoute(mixedModeItinerary(["TRAM", "BICYCLE", "BUS"]));
+  assert.equal(bicycleRoute.transfers, 1, "BICYCLE aliases must remain non-transit for fallback transfer counting");
+
+  const carRoute = await normalizedRoute(mixedModeItinerary(["TRAM", "CAR", "BUS"]));
+  assert.equal(carRoute.transfers, 1, "car legs must not inflate fallback public-transport transfer counts");
+
+  const walkRoute = await normalizedRoute(mixedModeItinerary(["TRAM", "WALK", "BUS"]));
+  assert.equal(walkRoute.transfers, 1, "walk legs must remain excluded from fallback transfer counting");
+
+  const missingModeRoute = await normalizedRoute(mixedModeItinerary(["TRAM", "", "BUS"]));
+  assert.equal(missingModeRoute.transfers, 1, "missing/unknown-empty mode data must not be assumed to be a transit ride");
+
+  const futureTransitRoute = await normalizedRoute(mixedModeItinerary(["TRAM", "FUTURE_RAIL", "BUS"]));
+  assert.equal(futureTransitRoute.transfers, 2, "named future transit modes should remain forward-compatible instead of being rejected by a brittle allowlist");
+
+  const explicitTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BIKE", "BUS"], { transfers: 4 }));
+  assert.equal(explicitTransfers.transfers, 4, "provider-supplied transfer counts must remain authoritative when present");
+
   assert.ok(!/watchPosition\s*\(/.test(source), "normalization must not introduce continuous location tracking");
-  console.log("Transitous realtime normalization regression passed.");
+  console.log("Transitous realtime and mixed-mode transfer normalization regression passed.");
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
