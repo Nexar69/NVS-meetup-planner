@@ -209,7 +209,7 @@ const now = new Date('2026-08-28T08:30:00+02:00');
   const result = recommend.recommend([stale], [stale], target, 'together', 'asap', now);
   assert.strictEqual(result.primary, null, 'an all-past route set must not masquerade as an immediate ASAP recommendation');
   assert.strictEqual(result.backup, null, 'an all-past route set must not expose a stale backup recommendation either');
-  assert.deepStrictEqual(result.pairs, [], 'all-past ASAP candidates should be discarded rather than ranked at zero minutes');
+  assert.strictEqual(result.pairs.length, 0, 'all-past ASAP candidates should be discarded rather than ranked at zero minutes');
 }
 
 assert.ok(!source.includes('watchPosition'), 'recommendation normalization must not introduce continuous location tracking');
