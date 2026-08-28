@@ -327,6 +327,14 @@
     return combined;
   }
 
+  function providerTransferCount(rawValue) {
+    if (rawValue === null || rawValue === undefined) return null;
+    if (typeof rawValue !== "number" && typeof rawValue !== "string") return null;
+    if (typeof rawValue === "string" && !rawValue.trim()) return null;
+    const value = Number(rawValue);
+    return Number.isInteger(value) && value >= 0 ? value : null;
+  }
+
   function normalizeItinerary(itinerary, index, origin, destination) {
     const legs = Array.isArray(itinerary.legs) ? itinerary.legs : [];
     const { departure, arrival } = itineraryTimes(itinerary);
@@ -339,11 +347,8 @@
 
     const descriptionParts = legs.map(describeLeg).filter(Boolean).filter((part, i, parts) => part !== parts[i - 1]);
     const transitLegs = legs.filter((leg) => isTransitMode(leg.mode));
-    const rawTransfers = itinerary.transfers;
-    const transfersRaw = rawTransfers === null || rawTransfers === undefined || (typeof rawTransfers === "string" && !rawTransfers.trim())
-      ? Number.NaN
-      : Number(rawTransfers);
-    const transfers = Number.isFinite(transfersRaw) ? Math.max(0, transfersRaw) : Math.max(0, transitLegs.length - 1);
+    const providerTransfers = providerTransferCount(itinerary.transfers);
+    const transfers = providerTransfers ?? Math.max(0, transitLegs.length - 1);
     const realtime = legs.some((leg) => leg.realTime === true);
 
     return {

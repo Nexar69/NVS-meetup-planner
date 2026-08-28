@@ -143,7 +143,7 @@ function mixedModeItinerary(modes, overrides = {}) {
   assert.equal(futureTransitRoute.transfers, 2, "named future transit modes should remain forward-compatible instead of being rejected by a brittle allowlist");
 
   const explicitTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BIKE", "BUS"], { transfers: 4 }));
-  assert.equal(explicitTransfers.transfers, 4, "provider-supplied transfer counts must remain authoritative when present");
+  assert.equal(explicitTransfers.transfers, 4, "provider-supplied integer transfer counts must remain authoritative when present");
 
   const explicitZeroTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BUS"], { transfers: 0 }));
   assert.equal(explicitZeroTransfers.transfers, 0, "a real numeric provider transfer count of zero must remain authoritative");
@@ -158,7 +158,22 @@ function mixedModeItinerary(modes, overrides = {}) {
   assert.equal(whitespaceTransfers.transfers, 1, "whitespace-only provider transfer counts must use the fallback count");
 
   const numericStringTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BUS", "TRAM"], { transfers: "2" }));
-  assert.equal(numericStringTransfers.transfers, 2, "numeric-string provider transfer counts should stay accepted for API compatibility");
+  assert.equal(numericStringTransfers.transfers, 2, "numeric-string integer transfer counts should stay accepted for API compatibility");
+
+  const negativeTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BUS"], { transfers: -1 }));
+  assert.equal(negativeTransfers.transfers, 1, "negative provider transfer counts are invalid and must use the normalized fallback");
+
+  const negativeStringTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BUS"], { transfers: "-2" }));
+  assert.equal(negativeStringTransfers.transfers, 1, "negative numeric-string transfer counts must not become authoritative");
+
+  const fractionalTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BUS", "TRAM"], { transfers: 1.5 }));
+  assert.equal(fractionalTransfers.transfers, 2, "fractional provider transfer counts are malformed and must use the integer fallback");
+
+  const fractionalStringTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BUS", "TRAM"], { transfers: "1.5" }));
+  assert.equal(fractionalStringTransfers.transfers, 2, "fractional numeric strings must not silently distort transfer scoring");
+
+  const booleanTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BUS", "TRAM"], { transfers: true }));
+  assert.equal(booleanTransfers.transfers, 2, "boolean provider values must not be coerced into a transfer count");
 
   assert.ok(!/watchPosition\s*\(/.test(source), "normalization must not introduce continuous location tracking");
   console.log("Transitous realtime and mixed-mode transfer normalization regression passed.");
