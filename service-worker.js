@@ -1,5 +1,5 @@
-const CACHE_NAME = "meet-schwerin-v0.11.1-r18";
-// Cache lineage: r14 -> r15 -> r16 -> r17 -> r18. r18 clears stale recommendation-dependent Trip Mode state when routing becomes empty.
+const CACHE_NAME = "meet-schwerin-v0.11.1-r17";
+// Cache lineage: r14 -> r15 -> r16 -> r17. r17 refreshes recommendation empty states for target-time searches.
 const NETWORK_TIMEOUT_MS = 5_000;
 
 const APP_SHELL = [
