@@ -8,6 +8,8 @@ const css = fs.readFileSync(path.resolve(__dirname, "../meetup-radar-v0111.css")
 const release = fs.readFileSync(path.resolve(__dirname, "../release-v011.js"), "utf8");
 const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf8");
 
+const listeners = new Map();
+let radarCard = null;
 const window = {
   NVSIntelligenceCore: {
     checkinFreshness(entry, at) {
@@ -15,12 +17,12 @@ const window = {
       return { fresh: age >= 0 && age <= 15 * 60_000 };
     },
   },
-  addEventListener() {},
+  addEventListener(name, handler) { listeners.set(name, handler); },
 };
 const document = {
   hidden: true,
   addEventListener() {},
-  getElementById() { return null; },
+  getElementById(id) { return id === "v0111MeetupRadar" ? radarCard : null; },
 };
 
 vm.runInNewContext(source, {
@@ -106,10 +108,19 @@ assert.match(allArrived.title, /Everyone has checked in at the meetup/);
 assert.match(allArrived.detail, /fresh voluntary arrival confirmations/);
 
 assert.equal(radarModel({ assignments: [group.assignments[0]] }, null, null, now), null, "radar should stay hidden for a one-person journey");
+
+let removed = false;
+radarCard = { remove() { removed = true; radarCard = null; } };
+window.__NVS_LAST_RECOMMENDATIONS__ = null;
+assert.equal(typeof listeners.get("nvs-recommendations-cleared"), "function", "Meetup Radar must react immediately when recommendations are cleared");
+listeners.get("nvs-recommendations-cleared")();
+assert.equal(removed, true, "clearing recommendations must remove a stale Meetup Radar card immediately");
+
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "Meetup Radar must not introduce location tracking");
 assert.match(source, /15 \* 60_000/, "Radar must retain the shared 15-minute voluntary freshness fallback");
 assert.match(source, /document\.hidden/, "Radar periodic work should suspend while hidden");
 assert.match(source, /nvs-shared-view-resumed/, "Safari shared-view resume should refresh the Radar");
+assert.match(source, /nvs-recommendations-cleared/, "Radar must consume the empty-recommendation lifecycle");
 assert.match(css, /prefers-reduced-motion/);
 assert.match(css, /forced-colors/);
 assert.match(release, /meetup-radar-v0111\.js/, "release owner must load Meetup Radar runtime");
@@ -117,4 +128,4 @@ assert.match(release, /meetup-radar-v0111\.css/, "release owner must load Meetup
 assert.match(sw, /meetup-radar-v0111\.js/, "Meetup Radar runtime should be available offline");
 assert.match(sw, /meetup-radar-v0111\.css/, "Meetup Radar styles should be available offline");
 
-console.log("meetup-radar: convergence, recovery precedence, stale fallback, accessibility and no-GPS behavior passed");
+console.log("meetup-radar: convergence, recovery precedence, empty lifecycle, stale fallback, accessibility and no-GPS behavior passed");
