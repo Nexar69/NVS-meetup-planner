@@ -62,7 +62,8 @@ assert.ok(nodes.results.innerHTML.includes('No connection found for this target 
 assert.ok(nodes.results.innerHTML.includes('adjust the target time'), 'empty state should provide a useful recovery action');
 assert.ok(!nodes.results.innerHTML.includes('old target recommendation'), 'previous recommendation cards must not survive an empty target search');
 assert.strictEqual(context.window.__NVS_LAST_RECOMMENDATIONS__, null, 'downstream recommendation state must clear with the cards');
-assert.ok(nodes.summary.innerHTML.includes('target <strong>16:30</strong> · no connection yet'), 'summary should preserve target-time semantics');
+const formattedTarget = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(target);
+assert.ok(nodes.summary.innerHTML.includes(`target <strong>${formattedTarget}</strong> · no connection yet`), 'summary should preserve target-time semantics in the runtime timezone');
 assert.ok(nodes.summary.innerHTML.includes('Weststadt &lt;A&gt;'), 'person label must remain HTML-escaped');
 assert.ok(nodes.summary.innerHTML.includes('Friend &amp; B'), 'friend label must remain HTML-escaped');
 assert.ok(nodes.summary.innerHTML.includes('Marienplatz &gt; Mitte'), 'destination label must remain HTML-escaped');
