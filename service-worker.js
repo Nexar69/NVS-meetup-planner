@@ -1,5 +1,5 @@
 const CACHE_NAME = "meet-schwerin-v0.11.1-r16";
-// Previous shell: meet-schwerin-v0.11.1-r15. r16 refreshes the ASAP stale-result empty-state UI.
+// Cache lineage: r14 -> r15 -> r16. r16 refreshes the ASAP stale-result empty-state UI.
 const NETWORK_TIMEOUT_MS = 5_000;
 
 const APP_SHELL = [
