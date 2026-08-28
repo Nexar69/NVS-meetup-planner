@@ -258,7 +258,7 @@
     schedule();
   }
 
-  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
+  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-recommendations-cleared", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) clearTimeout(timer);
     else refresh();
