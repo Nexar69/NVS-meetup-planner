@@ -282,6 +282,7 @@
 
   [
     "nvs-group-recommendations-rendered",
+    "nvs-recommendations-cleared",
     "nvs-shared-live-change",
     "nvs-routing-provider",
     "online",
