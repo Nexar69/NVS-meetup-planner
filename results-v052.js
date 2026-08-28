@@ -123,6 +123,15 @@
     }, 0);
   }
 
+  function clearRecommendationDependentSurfaces(recommendations) {
+    window.__NVS_LAST_RECOMMENDATIONS__ = null;
+    const tripDialog = document.getElementById("v011TripDialog");
+    if (tripDialog?.open && typeof tripDialog.close === "function") tripDialog.close();
+    window.dispatchEvent(new CustomEvent("nvs-recommendations-cleared", {
+      detail: { timingMode: recommendations?.timingMode || "target" },
+    }));
+  }
+
   function renderNoRecommendedRoutes(results, recommendations, target) {
     if (!results) return false;
     const asap = recommendations?.timingMode === "asap";
@@ -146,7 +155,7 @@
           </div>
         </div>
       `;
-    window.__NVS_LAST_RECOMMENDATIONS__ = null;
+    clearRecommendationDependentSurfaces(recommendations);
     setTimeout(() => {
       const summary = document.getElementById("summary");
       const { personA, personB, destination } = plannerLabelsSafe();
