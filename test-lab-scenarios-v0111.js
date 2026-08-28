@@ -23,7 +23,10 @@
     const time = value instanceof Date ? value.getTime() : new Date(value).getTime();
     return Number.isFinite(time) ? time : NaN;
   };
-  const isTransit = (segment) => String(segment?.mode || "").toUpperCase() !== "WALK";
+  const isTransit = (segment) => {
+    const mode = String(segment?.mode || "").toUpperCase();
+    return Boolean(mode) && !["WALK", "BIKE", "BICYCLE", "CAR"].includes(mode);
+  };
 
   function transferFor(index) {
     const route = assignments()[index]?.route;
