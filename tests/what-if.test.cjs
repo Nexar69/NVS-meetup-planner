@@ -10,10 +10,11 @@ const release = fs.readFileSync(path.resolve(__dirname, "../release-v011.js"), "
 const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf8");
 
 const listeners = {};
+let whatIfCard = null;
 const window = { addEventListener(name, fn) { listeners[name] = fn; } };
 const document = {
   addEventListener() {},
-  getElementById() { return null; },
+  getElementById(id) { return id === "v0111WhatIf" ? whatIfCard : null; },
 };
 vm.runInNewContext(convergenceSource, { window, Date, Math, Number, String, Array, Object, Map, Set });
 vm.runInNewContext(source, { window, document, Date, Math, Number, String, Array, Object, Intl, Map, Set });
@@ -24,6 +25,7 @@ assert.equal(typeof api?.delayedGroup, "function");
 assert.equal(typeof api?.shiftRoute, "function");
 assert.equal(typeof api?.recoveryActive, "function");
 assert.equal(typeof api?.meetupConfirmed, "function");
+assert.equal(typeof listeners["nvs-recommendations-cleared"], "function", "authoritative empty recommendation state must tear down What-if immediately");
 
 const at = (minute) => new Date(Date.UTC(2026, 7, 25, 8, minute, 0));
 const group = {
@@ -89,6 +91,14 @@ assert.equal(api.meetupConfirmed(group, { members: { "0": { status: "arrived", a
 assert.equal(api.meetupConfirmed(group, { members: { "0": { status: "arrived", at: liveNow }, "1": { status: "arrived", at: liveNow - 16 * 60_000 } } }, liveNow), false, "a stale arrival must not keep the simulator paused forever");
 assert.equal(api.meetupConfirmed(group, { members: { "0": { status: "arrived", at: liveNow } } }, liveNow), false, "partial arrival confirmation is not meetup completion");
 
+let removeCount = 0;
+whatIfCard = { remove() { removeCount += 1; } };
+window.__NVS_LAST_RECOMMENDATIONS__ = undefined;
+listeners["nvs-recommendations-cleared"]();
+assert.equal(removeCount, 1, "clearing recommendations must synchronously remove a stale What-if card");
+listeners["nvs-recommendations-cleared"]();
+assert.equal(removeCount, 2, "repeated clear events must stay safe and idempotent from the UI perspective");
+
 assert.doesNotMatch(source, /fetch\(|XMLHttpRequest|sendBeacon|localStorage|sessionStorage/, "what-if preview must stay local and ephemeral");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "what-if preview must never add location tracking");
 assert.match(source, /does not change, save, or share the real meetup plan/i);
@@ -96,6 +106,7 @@ assert.match(source, /does not fetch an alternative route/i, "simulator must dis
 assert.match(source, /Recovery takes priority/);
 assert.match(source, /Meetup complete/);
 assert.match(source, /nvs-shared-live-change/, "fresh shared state changes should immediately refresh the simulator");
+assert.match(source, /nvs-recommendations-cleared/, "empty recommendation transitions must immediately refresh the simulator");
 assert.match(source, /Simulation only/);
 assert.match(css, /min-height:44px/, "mobile simulator controls should meet touch-target guidance");
 assert.match(css, /prefers-reduced-motion/);
@@ -106,4 +117,4 @@ assert.match(release, /what-if-v0111\.css/);
 assert.match(sw, /what-if-v0111\.js/, "what-if runtime should be available to installed/offline PWA copies");
 assert.match(sw, /what-if-v0111\.css/);
 
-console.log("what-if: local-only +5/+10 timing stress test, recovery/completion quiet states, immutable routes, mobile accessibility, offline wiring and no-GPS behavior passed");
+console.log("what-if: local-only +5/+10 timing stress test, recommendation-clear teardown, recovery/completion quiet states, immutable routes, mobile accessibility, offline wiring and no-GPS behavior passed");
