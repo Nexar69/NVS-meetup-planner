@@ -2,6 +2,8 @@
   const STORAGE_KEY = "meet-schwerin-optimization-v2";
   const TIMING_KEY = "meet-schwerin-timing-v1";
   const NON_TRANSIT_MODES = new Set(["WALK", "BIKE", "BICYCLE", "CAR"]);
+  const ASAP_PAST_TOLERANCE_MS = 2 * 60_000;
+  const ASAP_SOON_HORIZON_MINUTES = 180;
 
   const MODES = Object.freeze({
     together: {
@@ -129,9 +131,9 @@
     return Math.max(1, timetable);
   }
 
-  function createPairs(routesA, routesB, target) {
+  function createPairs(routesA, routesB, target, nowValue) {
     const pairs = [];
-    const now = new Date();
+    const now = validDate(nowValue) ? nowValue : new Date();
     const hasValidTarget = validDate(target);
 
     for (const routeA of routesA || []) {
@@ -153,7 +155,9 @@
         const walkB = walkingMinutes(routeB);
         const totalWalk = walkA + walkB;
         const totalTransfers = transfers(routeA) + transfers(routeB);
-        const asapMinutes = Math.max(0, Math.round((latestArrival - now) / 60_000));
+        const asapDeltaMs = latestArrival.getTime() - now.getTime();
+        const asapEligible = asapDeltaMs >= -ASAP_PAST_TOLERANCE_MS;
+        const asapMinutes = Math.max(0, Math.round(asapDeltaMs / 60_000));
 
         pairs.push({
           routeA,
@@ -171,6 +175,7 @@
           walkB,
           totalWalk,
           totalTransfers,
+          asapEligible,
           asapMinutes,
         });
       }
@@ -241,8 +246,8 @@
     return `${timingLead} You arrive only ${pair.waitingDifference} min apart, so neither person waits long.`;
   }
 
-  function recommend(routesA, routesB, target, selectedMode = mode, selectedTiming = timingMode) {
-    const allPairs = createPairs(routesA, routesB, target);
+  function recommend(routesA, routesB, target, selectedMode = mode, selectedTiming = timingMode, nowValue) {
+    const allPairs = createPairs(routesA, routesB, target, nowValue);
     if (!allPairs.length) return { primary: null, backup: null, mode: selectedMode, timingMode: selectedTiming, pairs: [] };
 
     let candidates = allPairs;
@@ -250,8 +255,10 @@
       const nearTarget = allPairs.filter((pair) => Number.isFinite(pair.targetDifference) && pair.targetDifference >= -25 && pair.targetDifference <= 20);
       candidates = nearTarget.length ? nearTarget : allPairs;
     } else {
-      const soon = allPairs.filter((pair) => pair.asapMinutes >= 0 && pair.asapMinutes <= 180);
-      candidates = soon.length ? soon : allPairs;
+      const fresh = allPairs.filter((pair) => pair.asapEligible);
+      if (!fresh.length) return { primary: null, backup: null, mode: selectedMode, timingMode: selectedTiming, pairs: [] };
+      const soon = fresh.filter((pair) => pair.asapMinutes <= ASAP_SOON_HORIZON_MINUTES);
+      candidates = soon.length ? soon : fresh;
     }
 
     const ranked = [...candidates]

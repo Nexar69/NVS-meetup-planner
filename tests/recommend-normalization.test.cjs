@@ -63,6 +63,7 @@ function route(overrides = {}) {
 
 const recommend = makeContext();
 const target = new Date('2026-08-28T08:30:00+02:00');
+const now = new Date('2026-08-28T08:30:00+02:00');
 
 {
   const pair = recommend.createPairs(
@@ -165,9 +166,50 @@ const target = new Date('2026-08-28T08:30:00+02:00');
     transfers: 0,
     description: 'later',
   });
-  const result = recommend.recommend([earlier, later], [earlier], invalidTarget, 'fastest', 'asap');
+  const result = recommend.recommend([earlier, later], [earlier], invalidTarget, 'fastest', 'asap', now);
   assert.ok(result.primary, 'ASAP mode should remain usable even when target metadata is invalid');
   assert.ok(Number.isFinite(result.primary.recommendationScore), 'ASAP scoring must be independent of target validity');
+  assert.strictEqual(result.primary.latestArrival.getTime(), later.arrival.getTime(), 'stale earlier arrivals must not outrank a still-arriving option');
+}
+
+{
+  const slightlyPast = route({
+    departure: new Date('2026-08-28T08:00:00+02:00'),
+    arrival: new Date('2026-08-28T08:28:30+02:00'),
+    description: 'clock-skew-tolerance',
+  });
+  const result = recommend.recommend([slightlyPast], [slightlyPast], target, 'together', 'asap', now);
+  assert.ok(result.primary, 'ASAP should tolerate a tiny past-arrival skew instead of flickering to no route');
+  assert.strictEqual(result.primary.asapMinutes, 0, 'tiny tolerated clock skew should display as immediate, not negative time');
+}
+
+{
+  const inProgress = route({
+    departure: new Date('2026-08-28T08:20:00+02:00'),
+    arrival: new Date('2026-08-28T08:42:00+02:00'),
+    description: 'in-progress',
+  });
+  const stale = route({
+    departure: new Date('2026-08-28T07:40:00+02:00'),
+    arrival: new Date('2026-08-28T08:10:00+02:00'),
+    description: 'already-arrived',
+  });
+  const result = recommend.recommend([stale, inProgress], [inProgress], target, 'fastest', 'asap', now);
+  assert.ok(result.primary, 'already-departed journeys with future arrival must remain eligible for ASAP/recovery use');
+  assert.strictEqual(result.primary.routeA.description, 'in-progress', 'already-arrived stale routes must not beat an in-progress route');
+  assert.strictEqual(result.primary.asapMinutes, 12, 'in-progress future arrival should retain its real remaining ASAP time');
+}
+
+{
+  const stale = route({
+    departure: new Date('2026-08-28T07:30:00+02:00'),
+    arrival: new Date('2026-08-28T08:20:00+02:00'),
+    description: 'stale-only',
+  });
+  const result = recommend.recommend([stale], [stale], target, 'together', 'asap', now);
+  assert.strictEqual(result.primary, null, 'an all-past route set must not masquerade as an immediate ASAP recommendation');
+  assert.strictEqual(result.backup, null, 'an all-past route set must not expose a stale backup recommendation either');
+  assert.deepStrictEqual(result.pairs, [], 'all-past ASAP candidates should be discarded rather than ranked at zero minutes');
 }
 
 assert.ok(!source.includes('watchPosition'), 'recommendation normalization must not introduce continuous location tracking');
