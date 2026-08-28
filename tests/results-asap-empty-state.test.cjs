@@ -3,6 +3,7 @@ const fs = require('fs');
 const vm = require('vm');
 
 const source = fs.readFileSync('results-v052.js', 'utf8');
+const serviceWorker = fs.readFileSync('service-worker.js', 'utf8');
 
 function node(overrides = {}) {
   return {
@@ -74,6 +75,7 @@ assert.ok(nodes.summary.innerHTML.includes('<strong>ASAP</strong> · no fresh co
 assert.ok(nodes.summary.innerHTML.includes('Lankow &lt;A&gt;'), 'summary labels must remain HTML-escaped');
 assert.ok(nodes.summary.innerHTML.includes('Friend &amp; B'), 'friend label must remain HTML-escaped');
 assert.ok(nodes.summary.innerHTML.includes('Dreescher &gt; Markt'), 'destination label must remain HTML-escaped');
+assert.match(serviceWorker, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r16";/, 'the installed PWA shell must advance to r16 with the cached ASAP renderer fix');
 assert.ok(!source.includes('watchPosition'), 'ASAP empty-state rendering must not introduce continuous location tracking');
 
 console.log('ASAP empty-state regression tests passed.');
