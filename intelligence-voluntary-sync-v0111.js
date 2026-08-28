@@ -141,6 +141,14 @@
     reconcileTimer = null;
   }
 
+  function clearRecommendationSurfaces() {
+    cancelScheduledSync();
+    const panel = document.getElementById("v011CommandCenter");
+    panel?.classList?.remove?.("visible");
+    const dialog = document.getElementById("v011TripDialog");
+    if (dialog?.open && typeof dialog.close === "function") dialog.close();
+  }
+
   function schedule(delay = SETTLE_MS) {
     if (document.hidden) return;
     cancelScheduledSync();
@@ -168,6 +176,7 @@
   ].forEach((name) => {
     window.addEventListener(name, () => schedule());
   });
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendationSurfaces);
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
@@ -180,7 +189,7 @@
   });
 
   loadCheckinQueueAssets();
-  window.NVSIntelligenceVoluntarySync0111 = Object.freeze({ modelForEntry, sync, freshEntry, schedule });
+  window.NVSIntelligenceVoluntarySync0111 = Object.freeze({ modelForEntry, sync, freshEntry, schedule, clearRecommendationSurfaces });
   schedule(0);
   arm();
 })();
