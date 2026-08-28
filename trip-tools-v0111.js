@@ -9,6 +9,7 @@
 
   let wakeLock = null;
   let wakeWanted = false;
+  let wakeRequestGeneration = 0;
   let sendingStatus = false;
   let lastRouteUpdate = Date.now();
   let timer = null;
@@ -126,19 +127,26 @@
 
   async function acquireWakeLock() {
     if (!wakeWanted || document.hidden || !tripDialog()?.open || !navigator.wakeLock?.request || wakeLock) return;
+    const generation = ++wakeRequestGeneration;
     try {
-      wakeLock = await navigator.wakeLock.request("screen");
+      const lock = await navigator.wakeLock.request("screen");
+      if (generation !== wakeRequestGeneration || !wakeWanted || document.hidden || !tripDialog()?.open) {
+        try { await lock?.release?.(); } catch {}
+        return;
+      }
+      wakeLock = lock;
       wakeLock.addEventListener("release", () => {
         wakeLock = null;
         render();
       }, { once: true });
     } catch {
-      wakeLock = null;
+      if (generation === wakeRequestGeneration) wakeLock = null;
     }
     render();
   }
 
   async function releaseWakeLock() {
+    wakeRequestGeneration += 1;
     const lock = wakeLock;
     wakeLock = null;
     try { await lock?.release?.(); } catch {}
