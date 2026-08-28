@@ -11,6 +11,7 @@
 
   let refreshTimer = null;
   let clockTimer = null;
+  let refreshGeneration = 0;
   let currentRecommendations = null;
   let currentContext = null;
 
@@ -152,6 +153,15 @@
     }
   }
 
+  function clearJourneyState() {
+    refreshGeneration += 1;
+    clearTimeout(refreshTimer);
+    currentRecommendations = null;
+    currentContext = null;
+    results?.querySelectorAll(".journey-v05").forEach((details) => details.remove());
+    updateDepartureBoard();
+  }
+
   function delayLabel(segment) {
     const delay = Number(segment?.departureDelay || segment?.arrivalDelay || 0);
     if (!Number.isFinite(delay) || delay === 0) return "";
@@ -267,29 +277,42 @@
   }
 
   async function refreshJourneyData() {
+    const generation = ++refreshGeneration;
     if (!dataBadge?.classList.contains("live") || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommendGroup) {
-      currentRecommendations = null;
-      currentContext = null;
-      updateDepartureBoard();
+      if (generation === refreshGeneration) clearJourneyState();
       return;
     }
 
     const context = currentContextFromForm();
-    if (!context.target || !context.destination || context.members.some((member) => !member.originKey)) return;
+    if (!context.target || !context.destination || context.members.some((member) => !member.originKey)) {
+      if (generation === refreshGeneration) clearJourneyState();
+      return;
+    }
 
     try {
       const routeSets = await Promise.all(
         context.members.map((member) => window.NVSTransit.fetchRoutes(member.originKey, context.destination, context.target)),
       );
-      if (routeSets.some((routes) => !routes.length)) return;
-      currentRecommendations = window.NVSRecommend.recommendGroup(routeSets, context.members, context.target, {
+      if (generation !== refreshGeneration) return;
+      if (routeSets.some((routes) => !routes.length)) {
+        clearJourneyState();
+        return;
+      }
+      const recommendations = window.NVSRecommend.recommendGroup(routeSets, context.members, context.target, {
         priorityIds: window.NVSGroup?.getPriorityIds?.() || [],
       });
-      if (!currentRecommendations?.primary) return;
+      if (generation !== refreshGeneration) return;
+      if (!recommendations?.primary) {
+        clearJourneyState();
+        return;
+      }
+      currentRecommendations = recommendations;
       currentContext = context;
       updateDepartureBoard();
       enrichResultCards();
     } catch (error) {
+      if (generation !== refreshGeneration) return;
+      clearJourneyState();
       console.warn("v0.7 journey enrichment failed:", error);
     }
   }
@@ -325,9 +348,11 @@
   window.addEventListener("nvs-priority-change", () => scheduleRefresh(30));
   window.addEventListener("nvs-timing-change", () => scheduleRefresh(30));
   window.addEventListener("nvs-group-change", () => scheduleRefresh(30));
+  window.addEventListener("nvs-recommendations-cleared", clearJourneyState);
   window.addEventListener("nvs-group-recommendations-rendered", (event) => {
     const detail = event.detail || {};
     if (!detail.recommendations) return;
+    refreshGeneration += 1;
     currentRecommendations = detail.recommendations;
     currentContext = {
       members: detail.members || groupMembers(),
@@ -341,6 +366,7 @@
     if (document.hidden) {
       clearTimeout(clockTimer);
       clearTimeout(refreshTimer);
+      refreshGeneration += 1;
       return;
     }
     resumeJourney();
