@@ -16,6 +16,10 @@ assert.match(source, /const refreshId = \+\+state\.refreshGeneration/,
   "each live map refresh should have a generation token");
 assert.match(source, /document\.hidden \|\| refreshId !== state\.refreshGeneration/,
   "in-flight route responses must not repaint a hidden or superseded map");
+assert.match(source, /function clearRecommendationState[\s\S]*clearTimeout\(state\.refreshTimer\)[\s\S]*refreshGeneration \+= 1[\s\S]*state\.recommendations = null[\s\S]*state\.context = null[\s\S]*state\.selectedType = "primary"[\s\S]*updateTabs\(\)[\s\S]*renderPreview\(\)/,
+  "recommendation clearing must invalidate stale async work, drop cached map recommendations/context, reset selection and return to preview");
+assert.match(source, /addEventListener\("nvs-recommendations-cleared", clearRecommendationState\)/,
+  "map lifecycle must consume the explicit recommendation-cleared boundary");
 assert.match(source, /visibilitychange/,
   "map scheduler should react to foreground/background transitions");
 assert.match(source, /pageshow/,
@@ -26,5 +30,7 @@ assert.match(source, /invalidateSize/,
   "foreground resume should refresh Leaflet sizing before route redraw");
 assert.doesNotMatch(source, /setInterval\(/,
   "map lifecycle must remain one-shot/debounced rather than fixed polling");
+assert.doesNotMatch(source, /watchPosition/,
+  "map recommendation lifecycle must not add continuous location tracking");
 
-console.log("map-scheduler: hidden-tab suspension, stale-response invalidation and Safari resume contracts passed");
+console.log("map-scheduler: hidden-tab suspension, stale-response invalidation, recommendation cleanup and Safari resume contracts passed");
