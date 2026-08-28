@@ -113,10 +113,10 @@ assert.equal(intelligenceRefreshes, 1, "journey intelligence should refresh afte
 assert.equal(resumedEvents, 1, "other runtime layers should receive one resume signal");
 
 assert.match(release, /shared-reload-v0111\.js/, "release loader must include the reload guard");
-assert.match(serviceWorker, /meet-schwerin-v0\.11\.1-r14/, "Safari reload guard should ride the current validated PWA shell revision");
+assert.match(serviceWorker, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r16";/, "Safari reload guard should ride the current validated PWA shell revision");
 assert.match(serviceWorker, /shared-reload-v0111\.js/, "reload guard must be available to installed\/offline copies");
 assert.match(serviceWorker, /test-lab-v0111\.js/, "hardened Test Lab should remain available in the current PWA shell");
 assert.match(serviceWorker, /test-lab-journey-v0111\.js/, "journey simulation should remain available in the current offline Test Lab shell");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "reload hardening must not introduce location access");
 
-console.log("shared-reload-safari: delegated reload is single-shot, fallback-safe, bfcache-aware and aligned with r14");
+console.log("shared-reload-safari: delegated reload is single-shot, fallback-safe, bfcache-aware and aligned with r16");
