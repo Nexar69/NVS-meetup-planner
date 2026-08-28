@@ -117,15 +117,43 @@
     }, 0);
   }
 
+  function renderNoFreshAsapRoutes(results) {
+    if (!results) return false;
+    results.classList.remove("v052-recommendations");
+    results.innerHTML = `
+      <div class="loading-card no-routes-card" role="status">
+        <span aria-hidden="true">↻</span>
+        <div>
+          <strong>No fresh ASAP connection found</strong>
+          <p>The returned journeys have already arrived. Check again for a newer connection instead of using stale timetable results.</p>
+        </div>
+      </div>
+    `;
+    window.__NVS_LAST_RECOMMENDATIONS__ = null;
+    setTimeout(() => {
+      const summary = document.getElementById("summary");
+      const personA = document.getElementById("personA")?.selectedOptions?.[0]?.textContent || "You";
+      const personB = document.getElementById("personB")?.selectedOptions?.[0]?.textContent || "Friend";
+      const destination = document.getElementById("destination")?.selectedOptions?.[0]?.textContent || "meetup";
+      if (!summary) return;
+      summary.innerHTML = `<strong>${escapeHtmlSafe(personA)}</strong> + <strong>${escapeHtmlSafe(personB)}</strong> → ${escapeHtmlSafe(destination)} · <strong>ASAP</strong> · no fresh connection yet`;
+    }, 0);
+    return true;
+  }
+
   function renderRecommendedConnections(routesA, routesB, target) {
     const engine = window.NVSRecommend;
     if (!engine?.recommend) return false;
 
     const recommendations = engine.recommend(routesA, routesB, target);
-    if (!recommendations.primary) return false;
-
     const results = document.getElementById("results");
     if (!results) return false;
+
+    if (!recommendations.primary) {
+      if (recommendations.timingMode === "asap") return renderNoFreshAsapRoutes(results);
+      window.__NVS_LAST_RECOMMENDATIONS__ = null;
+      return false;
+    }
 
     results.classList.add("v052-recommendations");
     results.innerHTML =
