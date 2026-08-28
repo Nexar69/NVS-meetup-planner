@@ -85,6 +85,10 @@
     return Math.round((date.getTime() - target.getTime()) / 60_000);
   }
 
+  function validDate(value) {
+    return value instanceof Date && Number.isFinite(value.getTime());
+  }
+
   function numericValue(value) {
     if (typeof value === "number") return Number.isFinite(value) ? value : null;
     if (typeof value !== "string" || !value.trim()) return null;
@@ -128,20 +132,19 @@
   function createPairs(routesA, routesB, target) {
     const pairs = [];
     const now = new Date();
+    const hasValidTarget = validDate(target);
 
     for (const routeA of routesA || []) {
       for (const routeB of routesB || []) {
-        if (!(routeA?.arrival instanceof Date) || !(routeB?.arrival instanceof Date)) continue;
-        if (!(routeA?.departure instanceof Date) || !(routeB?.departure instanceof Date)) continue;
-        if (!Number.isFinite(routeA.arrival.getTime()) || !Number.isFinite(routeB.arrival.getTime())) continue;
-        if (!Number.isFinite(routeA.departure.getTime()) || !Number.isFinite(routeB.departure.getTime())) continue;
+        if (!validDate(routeA?.arrival) || !validDate(routeB?.arrival)) continue;
+        if (!validDate(routeA?.departure) || !validDate(routeB?.departure)) continue;
         if (routeA.arrival < routeA.departure || routeB.arrival < routeB.departure) continue;
 
         const latestArrival = routeA.arrival > routeB.arrival ? routeA.arrival : routeB.arrival;
         const earliestArrival = routeA.arrival < routeB.arrival ? routeA.arrival : routeB.arrival;
         const waitingDifference = minutesBetween(routeA.arrival, routeB.arrival);
-        const targetDifference = signedMinutesBetween(latestArrival, target);
-        const targetDistance = Math.abs(targetDifference);
+        const targetDifference = hasValidTarget ? signedMinutesBetween(latestArrival, target) : null;
+        const targetDistance = targetDifference === null ? null : Math.abs(targetDifference);
         const travelA = travelMinutes(routeA);
         const travelB = travelMinutes(routeB);
         const totalTravel = travelA + travelB;
@@ -203,7 +206,7 @@
       return pair.asapMinutes * 5.5 + preference;
     }
 
-    return preference + pair.targetDistance * 1.2;
+    return preference + (Number.isFinite(pair.targetDistance) ? pair.targetDistance * 1.2 : 0);
   }
 
   function distinctEnough(a, b) {
@@ -219,9 +222,11 @@
 
     const timingLead = selectedTiming === "asap"
       ? `Both can be there in about ${pair.asapMinutes} min.`
-      : pair.targetDifference === 0
-        ? "It lands exactly on your target time."
-        : `It stays ${pair.targetDistance} min from your target.`;
+      : !Number.isFinite(pair.targetDistance)
+        ? "The target time is unavailable, so route quality decides this recommendation."
+        : pair.targetDifference === 0
+          ? "It lands exactly on your target time."
+          : `It stays ${pair.targetDistance} min from your target.`;
 
     if (selectedMode === "fastest") {
       return `${timingLead} ${pair.totalTravel} min combined travel, with a ${pair.waitingDifference} min arrival gap.`;
@@ -242,7 +247,7 @@
 
     let candidates = allPairs;
     if (selectedTiming === "target") {
-      const nearTarget = allPairs.filter((pair) => pair.targetDifference >= -25 && pair.targetDifference <= 20);
+      const nearTarget = allPairs.filter((pair) => Number.isFinite(pair.targetDifference) && pair.targetDifference >= -25 && pair.targetDifference <= 20);
       candidates = nearTarget.length ? nearTarget : allPairs;
     } else {
       const soon = allPairs.filter((pair) => pair.asapMinutes >= 0 && pair.asapMinutes <= 180);
@@ -253,7 +258,9 @@
       .map((pair) => ({ ...pair, recommendationScore: pairScore(pair, selectedMode, selectedTiming) }))
       .sort((a, b) =>
         a.recommendationScore - b.recommendationScore ||
-        (selectedTiming === "asap" ? a.asapMinutes - b.asapMinutes : a.targetDistance - b.targetDistance) ||
+        (selectedTiming === "asap"
+          ? a.asapMinutes - b.asapMinutes
+          : (Number.isFinite(a.targetDistance) ? a.targetDistance : Infinity) - (Number.isFinite(b.targetDistance) ? b.targetDistance : Infinity)) ||
         a.waitingDifference - b.waitingDifference,
       );
 
