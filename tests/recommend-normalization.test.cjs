@@ -134,5 +134,41 @@ const target = new Date('2026-08-28T08:30:00+02:00');
   assert.strictEqual(pair.totalTransfers, 1, 'fallback transfer counting should exclude known non-transit and missing modes');
 }
 
+{
+  const invalidTarget = new Date('invalid');
+  const pair = recommend.createPairs([route()], [route()], invalidTarget)[0];
+  assert.strictEqual(pair.targetDifference, null, 'invalid target should not produce a NaN target difference');
+  assert.strictEqual(pair.targetDistance, null, 'invalid target should not produce a NaN target distance');
+
+  const result = recommend.recommend([route()], [route()], invalidTarget, 'together', 'target');
+  assert.ok(result.primary, 'target mode should still return a deterministic recommendation when target metadata is invalid');
+  assert.ok(Number.isFinite(result.primary.recommendationScore), 'invalid target should never propagate NaN into recommendation score');
+  assert.ok(
+    recommend.explain(result.primary, 'together', 'target').includes('target time is unavailable'),
+    'target-mode explanation should disclose the route-quality fallback instead of claiming an exact target match',
+  );
+}
+
+{
+  const invalidTarget = new Date('invalid');
+  const earlier = route({
+    departure: new Date('2026-08-28T08:00:00+02:00'),
+    arrival: new Date('2026-08-28T08:20:00+02:00'),
+    duration: 20,
+    transfers: 0,
+    description: 'earlier',
+  });
+  const later = route({
+    departure: new Date('2026-08-28T08:10:00+02:00'),
+    arrival: new Date('2026-08-28T08:40:00+02:00'),
+    duration: 30,
+    transfers: 0,
+    description: 'later',
+  });
+  const result = recommend.recommend([earlier, later], [earlier], invalidTarget, 'fastest', 'asap');
+  assert.ok(result.primary, 'ASAP mode should remain usable even when target metadata is invalid');
+  assert.ok(Number.isFinite(result.primary.recommendationScore), 'ASAP scoring must be independent of target validity');
+}
+
 assert.ok(!source.includes('watchPosition'), 'recommendation normalization must not introduce continuous location tracking');
 console.log('Recommendation normalization regression tests passed.');
