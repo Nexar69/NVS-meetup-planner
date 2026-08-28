@@ -56,4 +56,9 @@ assert.match(diagnostics, /No names, coordinates, route geometry, capability key
 const whatIf = fs.readFileSync(path.join(root, "what-if-v0111.js"), "utf8");
 assert.doesNotMatch(whatIf, /fetch\(|XMLHttpRequest|sendBeacon|localStorage|sessionStorage/, "What if? must remain ephemeral and local-only");
 
-console.log(`privacy-boundary: scanned ${runtimeFiles.length} app/Worker scripts; browser networking stays on fetch, and only explicit one-shot My location access is allowed, with no background GPS, API caching, persistent capability storage or What-if network/storage writes`);
+const tripTools = fs.readFileSync(path.join(root, "trip-tools-v0111.js"), "utf8");
+assert.match(tripTools, /addEventListener\("nvs-recommendations-cleared"[\s\S]*wakeWanted\s*=\s*false[\s\S]*releaseWakeLock\(\)/, "recommendation clearing must immediately drop Trip Tools wake-lock intent and release any screen wake lock");
+assert.match(tripTools, /addEventListener\("nvs-recommendations-cleared"[\s\S]*lastRouteUpdate\s*=\s*0/, "recommendation clearing must invalidate stale Trip Tools route-age state");
+assert.doesNotMatch(tripTools, /geolocation|getCurrentPosition|watchPosition/i, "Trip Tools must remain voluntary and GPS-free");
+
+console.log(`privacy-boundary: scanned ${runtimeFiles.length} app/Worker scripts; browser networking stays on fetch, Trip Tools clears wake intent with recommendation state, and only explicit one-shot My location access is allowed, with no background GPS, API caching, persistent capability storage or What-if network/storage writes`);
