@@ -339,7 +339,10 @@
 
     const descriptionParts = legs.map(describeLeg).filter(Boolean).filter((part, i, parts) => part !== parts[i - 1]);
     const transitLegs = legs.filter((leg) => isTransitMode(leg.mode));
-    const transfersRaw = Number(itinerary.transfers);
+    const rawTransfers = itinerary.transfers;
+    const transfersRaw = rawTransfers === null || rawTransfers === undefined || (typeof rawTransfers === "string" && !rawTransfers.trim())
+      ? Number.NaN
+      : Number(rawTransfers);
     const transfers = Number.isFinite(transfersRaw) ? Math.max(0, transfersRaw) : Math.max(0, transitLegs.length - 1);
     const realtime = legs.some((leg) => leg.realTime === true);
 
