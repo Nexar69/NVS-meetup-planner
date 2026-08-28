@@ -203,6 +203,11 @@
     setTimeout(() => { mutationRefreshQueued = false; if (document.getElementById("personalSharedPlan") || document.getElementById("sharedLiveV010") || document.getElementById("v0111TripGuidance")) renderGuidance(); observeGuidanceSurfaces(); }, 0);
   }
   function stopObserving() { observer?.disconnect?.(); }
+  function clearRecommendationGuidance() {
+    clearTimeout(timer);
+    stopObserving();
+    removeGuidance();
+  }
   function observeGuidanceSurfaces() {
     if (document.hidden || !("MutationObserver" in window)) return;
     if (!observer) observer = new MutationObserver(queueMutationRefresh);
@@ -219,7 +224,8 @@
     else refresh();
   });
   ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
-  window.NVSTripGuidance0111 = Object.freeze({ guidanceForRoute, refresh, observeGuidanceSurfaces });
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendationGuidance);
+  window.NVSTripGuidance0111 = Object.freeze({ guidanceForRoute, refresh, observeGuidanceSurfaces, clearRecommendationGuidance });
   observeGuidanceSurfaces();
   refresh();
 })();
