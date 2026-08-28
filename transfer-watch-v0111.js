@@ -26,8 +26,9 @@
     return date ? new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(date) : "";
   }
 
-  function isWalk(segment) {
-    return String(segment?.mode || "").toUpperCase() === "WALK";
+  function isTransit(segment) {
+    const mode = String(segment?.mode || "").toUpperCase();
+    return Boolean(mode) && !["WALK", "BIKE", "BICYCLE", "CAR"].includes(mode);
   }
 
   function vehicleLabel(segment) {
@@ -84,7 +85,7 @@
     for (let index = 0; index < segments.length - 1; index += 1) {
       const current = segments[index];
       const next = segments[index + 1];
-      if (isWalk(current) || isWalk(next)) continue;
+      if (!isTransit(current) || !isTransit(next)) continue;
       const arrival = asDate(current.arrival);
       const departure = asDate(next.departure);
       if (!arrival || !departure || departure.getTime() <= now) continue;
