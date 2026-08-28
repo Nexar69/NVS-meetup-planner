@@ -15,6 +15,12 @@ function node(overrides = {}) {
   };
 }
 
+let tripDialogClosed = 0;
+const tripDialog = node({
+  open: true,
+  close() { this.open = false; tripDialogClosed += 1; },
+});
+
 const nodes = {
   results: node({ innerHTML: '<article>old target recommendation</article>' }),
   summary: node({ innerHTML: '<strong>old summary</strong>' }),
@@ -24,6 +30,7 @@ const nodes = {
   versionLabel: node(),
   'results-title': node(),
   plannerForm: node(),
+  v011TripDialog: tripDialog,
 };
 
 const recommendation = {
@@ -34,9 +41,14 @@ const recommendation = {
   pairs: [],
 };
 
+const dispatched = [];
+class FakeCustomEvent {
+  constructor(type, init = {}) { this.type = type; this.detail = init.detail; }
+}
+
 const context = {
   console, Date, Intl, Number, String, Math, Object,
-  CustomEvent: class CustomEvent {},
+  CustomEvent: FakeCustomEvent,
   setTimeout(callback) { callback(); return 1; },
   document: {
     getElementById(id) { return nodes[id] || null; },
@@ -47,7 +59,7 @@ const context = {
       recommend() { return recommendation; },
       explain() { return ''; },
     },
-    dispatchEvent() {},
+    dispatchEvent(event) { dispatched.push(event); },
     __NVS_LAST_RECOMMENDATIONS__: { stale: true },
   },
 };
@@ -62,6 +74,10 @@ assert.ok(nodes.results.innerHTML.includes('No connection found for this target 
 assert.ok(nodes.results.innerHTML.includes('adjust the target time'), 'empty state should provide a useful recovery action');
 assert.ok(!nodes.results.innerHTML.includes('old target recommendation'), 'previous recommendation cards must not survive an empty target search');
 assert.strictEqual(context.window.__NVS_LAST_RECOMMENDATIONS__, null, 'downstream recommendation state must clear with the cards');
+assert.strictEqual(tripDialogClosed, 1, 'an open Trip Mode dialog must close when target-time recommendations disappear');
+const cleared = dispatched.find((event) => event.type === 'nvs-recommendations-cleared');
+assert.ok(cleared, 'target-time empty transitions must emit the recommendation-cleared lifecycle event');
+assert.strictEqual(cleared.detail?.timingMode, 'target', 'recommendation-cleared event should retain target timing semantics');
 const formattedTarget = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(target);
 assert.ok(nodes.summary.innerHTML.includes(`target <strong>${formattedTarget}</strong> · no connection yet`), 'summary should preserve target-time semantics in the runtime timezone');
 assert.ok(nodes.summary.innerHTML.includes('Weststadt &lt;A&gt;'), 'person label must remain HTML-escaped');
