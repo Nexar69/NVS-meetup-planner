@@ -216,6 +216,12 @@
     lastRouteUpdate = Date.now();
     render();
   });
+  window.addEventListener("nvs-recommendations-cleared", () => {
+    clearTimeout(timer);
+    wakeWanted = false;
+    lastRouteUpdate = 0;
+    releaseWakeLock();
+  });
   window.addEventListener("nvs-shared-live-change", render);
   window.addEventListener("online", render);
   window.addEventListener("offline", render);
