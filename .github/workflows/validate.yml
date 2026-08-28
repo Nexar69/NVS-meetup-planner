@@ -94,6 +94,7 @@ jobs:
           node tests/routing-coalescer.test.cjs
           node tests/transit-realtime-normalization.test.cjs
           node tests/vmv-route-normalization.test.cjs
+          node tests/recommend-normalization.test.cjs
           node tests/provider-health.test.cjs
           node tests/live-meetup-scheduler.test.cjs
           node tests/journey-scheduler.test.cjs
