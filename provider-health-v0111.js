@@ -73,7 +73,16 @@
     if (body) {
       const routing = provider.fallback ? `${provider.provider} fallback active` : `${provider.provider} active`;
       const release = state.health?.release ? `Worker ${state.health.release}` : "Worker version unavailable";
-      body.innerHTML = `<p><strong>${routing}</strong></p><p>${state.detail}</p><p class="v0111-health-meta">${release} · checked ${formatAge(state.checkedAt)} · no location data is sent by this check.</p>`;
+      const routingLine = document.createElement("p");
+      const strong = document.createElement("strong");
+      const detailLine = document.createElement("p");
+      const meta = document.createElement("p");
+      strong.textContent = routing;
+      detailLine.textContent = state.detail;
+      meta.className = "v0111-health-meta";
+      meta.textContent = `${release} · checked ${formatAge(state.checkedAt)} · no location data is sent by this check.`;
+      routingLine.appendChild(strong);
+      body.replaceChildren(routingLine, detailLine, meta);
     }
   }
 
