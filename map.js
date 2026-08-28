@@ -484,6 +484,19 @@
     if (state.refreshPending) scheduleRefresh(60);
   }
 
+  function clearRecommendationState() {
+    clearTimeout(state.refreshTimer);
+    state.refreshTimer = null;
+    state.refreshGeneration += 1;
+    state.refreshPending = false;
+    state.recommendations = null;
+    state.context = null;
+    state.selectedType = "primary";
+    updateTabs();
+    tagResultCards();
+    renderPreview();
+  }
+
   document.querySelectorAll(".map-tabs [data-map-pair]").forEach((button) => button.addEventListener("click", () => selectPair(button.dataset.mapPair)));
   document.getElementById("mapFitButton")?.addEventListener("click", () => state.recommendations?.[state.selectedType] ? drawSelectedPair() : renderPreview());
   results?.addEventListener("click", (event) => {
@@ -495,6 +508,7 @@
   window.addEventListener("nvs-priority-change", () => { state.selectedType = "primary"; scheduleRefresh(20); });
   window.addEventListener("nvs-timing-change", () => { state.selectedType = "primary"; scheduleRefresh(20); });
   window.addEventListener("nvs-group-change", () => { state.selectedType = "primary"; state.recommendations = null; renderPreview(); scheduleRefresh(40); });
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendationState);
   window.addEventListener("nvs-group-recommendations-rendered", (event) => {
     const detail = event.detail || {};
     if (!detail.recommendations) return;
