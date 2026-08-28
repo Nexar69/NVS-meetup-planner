@@ -3,8 +3,9 @@ const fs = require('fs');
 const vm = require('vm');
 
 const source = fs.readFileSync('transfer-watch-v0111.js', 'utf8');
+const listeners = new Map();
 const window = {
-  addEventListener() {},
+  addEventListener(name, handler) { listeners.set(name, handler); },
   NVSInstructions: { instructionFor: (segment) => ({ title: `${segment.mode || 'Transit'} ${segment.line || ''}`.trim() }) },
   NVSShare: { getFocusIndex: () => -1 },
 };
@@ -23,6 +24,9 @@ vm.runInContext(source, context, { filename: 'transfer-watch-v0111.js' });
 
 const api = window.NVSTransferWatch0111;
 assert(api, 'Connection Protection API should initialize');
+assert.strictEqual(typeof listeners.get('nvs-recommendations-cleared'), 'function', 'Connection Protection must react immediately when recommendations are cleared');
+listeners.get('nvs-recommendations-cleared')();
+
 const now = Date.parse('2026-08-28T10:00:00Z');
 const segment = (mode, departure, arrival) => ({ mode, departure, arrival, from: 'A', to: 'B' });
 
@@ -59,4 +63,4 @@ assert.strictEqual(api.transferCandidates(futureTransit, now).length, 1, 'named 
 
 assert(!/getCurrentPosition|watchPosition|geolocation/.test(source));
 assert(!/localStorage|sessionStorage/.test(source));
-console.log('Connection Protection transfer-mode classification tests passed.');
+console.log('Connection Protection transfer-mode and empty-recommendation lifecycle tests passed.');
