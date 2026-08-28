@@ -145,6 +145,21 @@ function mixedModeItinerary(modes, overrides = {}) {
   const explicitTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BIKE", "BUS"], { transfers: 4 }));
   assert.equal(explicitTransfers.transfers, 4, "provider-supplied transfer counts must remain authoritative when present");
 
+  const explicitZeroTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BUS"], { transfers: 0 }));
+  assert.equal(explicitZeroTransfers.transfers, 0, "a real numeric provider transfer count of zero must remain authoritative");
+
+  const nullTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BUS"], { transfers: null }));
+  assert.equal(nullTransfers.transfers, 1, "null provider transfer counts must fall back to the normalized transit-leg count");
+
+  const blankTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BUS"], { transfers: "" }));
+  assert.equal(blankTransfers.transfers, 1, "blank provider transfer counts must not be coerced into an authoritative zero");
+
+  const whitespaceTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BUS"], { transfers: "   " }));
+  assert.equal(whitespaceTransfers.transfers, 1, "whitespace-only provider transfer counts must use the fallback count");
+
+  const numericStringTransfers = await normalizedRoute(mixedModeItinerary(["TRAM", "BUS", "TRAM"], { transfers: "2" }));
+  assert.equal(numericStringTransfers.transfers, 2, "numeric-string provider transfer counts should stay accepted for API compatibility");
+
   assert.ok(!/watchPosition\s*\(/.test(source), "normalization must not introduce continuous location tracking");
   console.log("Transitous realtime and mixed-mode transfer normalization regression passed.");
 })().catch((error) => {
