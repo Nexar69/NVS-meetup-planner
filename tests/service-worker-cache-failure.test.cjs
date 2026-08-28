@@ -41,7 +41,7 @@ function runtime({ fetchImpl, openFails = false, addAllFails = false, putFails =
       },
       async keys() {
         if (keysFail) throw new Error("CACHE_KEYS_FAILED");
-        return ["stale-cache", "meet-schwerin-v0.11.1-r14", "meet-schwerin-v0.11.1-r15", "meet-schwerin-v0.11.1-r16"];
+        return ["stale-cache", "meet-schwerin-v0.11.1-r14", "meet-schwerin-v0.11.1-r15", "meet-schwerin-v0.11.1-r16", "meet-schwerin-v0.11.1-r17"];
       },
       async delete(key) {
         if (deleteFails) throw new Error("CACHE_DELETE_FAILED");
@@ -124,7 +124,7 @@ function runtime({ fetchImpl, openFails = false, addAllFails = false, putFails =
     assert.equal(rt.claimed, 1, "failure enumerating caches must not prevent service-worker activation");
   }
 
-  assert.match(source, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r16";/, "cache failure suite should exercise the current cache revision");
+  assert.match(source, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r17";/, "cache failure suite should exercise the current cache revision");
   assert.match(source, /async function precacheAppShell/, "install should isolate app-shell precache failures");
   assert.match(source, /async function currentShellReady/, "activation should verify the current shell before stale-cache cleanup");
   assert.match(source, /if \(await currentShellReady\(\)\) await cleanupOldCaches\(\)/, "older caches should survive until the new shell is known usable");
@@ -134,5 +134,5 @@ function runtime({ fetchImpl, openFails = false, addAllFails = false, putFails =
   assert.match(source, /async function cacheFirstWithRefresh/, "non-app-shell static requests should share the safe cache-read path");
   assert.match(source, /pathname\.startsWith\("\/api\/"\)/, "API traffic must remain outside service-worker caching");
 
-  console.log("service-worker-cache-failure: r16 install, online loads and activation survive CacheStorage failures without sacrificing older offline fallback or API privacy");
+  console.log("service-worker-cache-failure: r17 install, online loads and activation survive CacheStorage failures without sacrificing older offline fallback or API privacy");
 })().catch((error) => { console.error(error); process.exit(1); });
