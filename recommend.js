@@ -1,6 +1,7 @@
 (() => {
   const STORAGE_KEY = "meet-schwerin-optimization-v2";
   const TIMING_KEY = "meet-schwerin-timing-v1";
+  const NON_TRANSIT_MODES = new Set(["WALK", "BIKE", "BICYCLE", "CAR"]);
 
   const MODES = Object.freeze({
     together: {
@@ -84,15 +85,44 @@
     return Math.round((date.getTime() - target.getTime()) / 60_000);
   }
 
+  function numericValue(value) {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value !== "string" || !value.trim()) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function positiveMinutes(value) {
+    const parsed = numericValue(value);
+    return parsed !== null && parsed > 0 ? parsed : null;
+  }
+
+  function fallbackTransfers(route) {
+    const segments = Array.isArray(route?.segments) ? route.segments : [];
+    const transitLegs = segments.filter((segment) => {
+      const modeName = String(segment?.mode || "").trim().toUpperCase();
+      return Boolean(modeName) && !NON_TRANSIT_MODES.has(modeName);
+    }).length;
+    return Math.max(0, transitLegs - 1);
+  }
+
   function walkingMinutes(route) {
     const segments = Array.isArray(route?.segments) ? route.segments : [];
     return segments
       .filter((segment) => String(segment?.mode || "").toUpperCase() === "WALK")
-      .reduce((sum, segment) => sum + (Number(segment?.duration) || 0), 0);
+      .reduce((sum, segment) => sum + (positiveMinutes(segment?.duration) || 0), 0);
   }
 
   function transfers(route) {
-    return Math.max(0, Number(route?.transfers) || 0);
+    const parsed = numericValue(route?.transfers);
+    return parsed !== null && Number.isInteger(parsed) && parsed >= 0 ? parsed : fallbackTransfers(route);
+  }
+
+  function travelMinutes(route) {
+    const explicit = positiveMinutes(route?.duration);
+    if (explicit !== null) return explicit;
+    const timetable = Math.round((route.arrival.getTime() - route.departure.getTime()) / 60_000);
+    return Math.max(1, timetable);
   }
 
   function createPairs(routesA, routesB, target) {
@@ -103,14 +133,17 @@
       for (const routeB of routesB || []) {
         if (!(routeA?.arrival instanceof Date) || !(routeB?.arrival instanceof Date)) continue;
         if (!(routeA?.departure instanceof Date) || !(routeB?.departure instanceof Date)) continue;
+        if (!Number.isFinite(routeA.arrival.getTime()) || !Number.isFinite(routeB.arrival.getTime())) continue;
+        if (!Number.isFinite(routeA.departure.getTime()) || !Number.isFinite(routeB.departure.getTime())) continue;
+        if (routeA.arrival < routeA.departure || routeB.arrival < routeB.departure) continue;
 
         const latestArrival = routeA.arrival > routeB.arrival ? routeA.arrival : routeB.arrival;
         const earliestArrival = routeA.arrival < routeB.arrival ? routeA.arrival : routeB.arrival;
         const waitingDifference = minutesBetween(routeA.arrival, routeB.arrival);
         const targetDifference = signedMinutesBetween(latestArrival, target);
         const targetDistance = Math.abs(targetDifference);
-        const travelA = Number(routeA.duration) || Math.max(1, minutesBetween(routeA.departure, routeA.arrival));
-        const travelB = Number(routeB.duration) || Math.max(1, minutesBetween(routeB.departure, routeB.arrival));
+        const travelA = travelMinutes(routeA);
+        const travelB = travelMinutes(routeB);
         const totalTravel = travelA + travelB;
         const maxTravel = Math.max(travelA, travelB);
         const walkA = walkingMinutes(routeA);
