@@ -107,6 +107,7 @@ jobs:
           node tests/transfer-watch.test.cjs
           node tests/transfer-watch-boundaries.test.cjs
           node tests/transfer-watch-cancellation-shapes.test.cjs
+          node tests/transfer-watch-modes.test.cjs
           node tests/stop-awareness.test.cjs
           node tests/ancillary-voluntary-precedence.test.cjs
           node tests/journey-contradictions.test.cjs
