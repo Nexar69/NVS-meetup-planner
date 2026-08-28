@@ -85,7 +85,7 @@ assert.ok(nodes.summary.innerHTML.includes('<strong>ASAP</strong> · no fresh co
 assert.ok(nodes.summary.innerHTML.includes('Lankow &lt;A&gt;'), 'summary labels must remain HTML-escaped');
 assert.ok(nodes.summary.innerHTML.includes('Friend &amp; B'), 'friend label must remain HTML-escaped');
 assert.ok(nodes.summary.innerHTML.includes('Dreescher &gt; Markt'), 'destination label must remain HTML-escaped');
-assert.match(serviceWorker, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r18";/, 'the installed PWA shell must advance to r18 with the recommendation transition fix');
+assert.match(serviceWorker, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r17";/, 'runtime-only empty-state cleanup should retain the validated r17 shell identity');
 assert.ok(!source.includes('watchPosition'), 'ASAP empty-state rendering must not introduce continuous location tracking');
 
 console.log('ASAP empty-state regression tests passed.');
