@@ -15,7 +15,10 @@ const nextBox = { innerHTML: "" };
 const tripPill = { textContent: "LIVE" };
 const tripAction = { textContent: "Timetable says riding" };
 const tripDetail = { textContent: "Old timetable detail" };
+let tripDialogCloseCount = 0;
 const tripDialog = {
+  open: true,
+  close() { this.open = false; tripDialogCloseCount += 1; },
   querySelector(selector) {
     return {
       "#v011TripPill": tripPill,
@@ -23,6 +26,12 @@ const tripDialog = {
       "#v011TripDetail": tripDetail,
       "#v011TripNext": nextBox,
     }[selector] || null;
+  },
+};
+let commandCenterVisible = true;
+const commandCenter = {
+  classList: {
+    remove(name) { if (name === "visible") commandCenterVisible = false; },
   },
 };
 
@@ -60,7 +69,7 @@ const document = {
   body: null,
   addEventListener(name, handler) { listeners.set(`document:${name}`, handler); },
   getElementById(id) {
-    return { v011CurrentAction: currentAction, v011TripDialog: tripDialog }[id] || null;
+    return { v011CurrentAction: currentAction, v011TripDialog: tripDialog, v011CommandCenter: commandCenter }[id] || null;
   },
 };
 
@@ -84,6 +93,7 @@ assert.equal(typeof api.modelForEntry, "function");
 assert.equal(typeof api.sync, "function");
 assert.equal(typeof api.freshEntry, "function");
 assert.equal(typeof api.schedule, "function");
+assert.equal(typeof api.clearRecommendationSurfaces, "function");
 
 assert.equal(api.freshEntry(now)?.status, "missed", "fresh voluntary status should be accepted");
 assert.equal(api.sync(now), true, "fresh override should update command and Trip Mode surfaces");
@@ -127,6 +137,7 @@ assert.ok(listeners.has("nvs-shared-live-change"), "shared-live changes should s
 assert.ok(listeners.has("nvs-group-recommendations-rendered"), "fresh route renders should schedule reconciliation");
 assert.ok(listeners.has("nvs-live-plan-synced"), "live plan synchronization should schedule reconciliation");
 assert.ok(listeners.has("nvs-shared-view-resumed"), "Safari shared-view resume should schedule reconciliation");
+assert.ok(listeners.has("nvs-recommendations-cleared"), "empty recommendation transitions should synchronously clear command-center surfaces");
 assert.ok(listeners.has("pageshow"), "bfcache restores should schedule reconciliation");
 
 const initialTimerCount = timers.length;
@@ -138,6 +149,14 @@ const firstScheduledId = timers.length;
 listeners.get("nvs-group-recommendations-rendered")();
 assert.equal(timers.at(-1).delay, 60, "a newer route event should schedule a fresh settle window");
 assert.ok(clearedTimers.includes(firstScheduledId), "a newer event should cancel the obsolete pending reconciliation timer");
+const clearPendingId = timers.length;
+listeners.get("nvs-recommendations-cleared")();
+assert.equal(commandCenterVisible, false, "clearing recommendations should immediately hide the stale Journey Command Center");
+assert.equal(tripDialog.open, false, "clearing recommendations should immediately close stale Trip Mode");
+assert.equal(tripDialogCloseCount, 1, "the open Trip Mode dialog should be closed exactly once");
+assert.ok(clearedTimers.includes(clearPendingId), "clearing recommendations should cancel pending voluntary reconciliation work");
+listeners.get("nvs-recommendations-cleared")();
+assert.equal(tripDialogCloseCount, 1, "repeated clear events should remain idempotent once Trip Mode is closed");
 const beforeHiddenEvent = timers.length;
 document.hidden = true;
 listeners.get("nvs-live-plan-synced")();
@@ -154,7 +173,8 @@ assert.match(source, /document\.hidden/, "periodic reconciliation should pause w
 assert.match(source, /const SYNC_MS = 30_000/, "periodic safety reconciliation should remain relaxed");
 assert.match(source, /const SETTLE_MS = 60/, "event-driven reconciliation should settle after the base intelligence renderer's short debounce");
 assert.match(source, /cancelScheduledSync/, "new events should replace obsolete pending reconciliations rather than stacking timers");
+assert.match(source, /clearRecommendationSurfaces/, "empty recommendation transitions should have an explicit command-center teardown path");
 assert.doesNotMatch(source, /MutationObserver/, "voluntary intelligence reconciliation should no longer observe DOM mutations");
 assert.doesNotMatch(source, /observer\.observe/, "the removed DOM observer must not quietly return");
 
-console.log("intelligence-voluntary-sync: voluntary state wins via lifecycle events without GPS or DOM observation on r18");
+console.log("intelligence-voluntary-sync: voluntary state and command-center lifecycle stay authoritative without GPS or DOM observation on r18");
