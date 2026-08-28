@@ -1,5 +1,5 @@
-const CACHE_NAME = "meet-schwerin-v0.11.1-r18";
-// Cache lineage: r14 -> r15 -> r16 -> r17 -> r18. r18 refreshes map recommendation lifecycle cleanup after empty results.
+const CACHE_NAME = "meet-schwerin-v0.11.1-r19";
+// Cache lineage: r14 -> r15 -> r16 -> r17 -> r18 -> r19. r19 refreshes Meetup Radar cleanup when recommendations become empty.
 const NETWORK_TIMEOUT_MS = 5_000;
 
 const APP_SHELL = [
