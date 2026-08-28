@@ -92,6 +92,7 @@ jobs:
           node tests/shared-plan-update.test.cjs
           node tests/shared-reload-safari.test.cjs
           node tests/routing-coalescer.test.cjs
+          node tests/transit-realtime-normalization.test.cjs
           node tests/provider-health.test.cjs
           node tests/live-meetup-scheduler.test.cjs
           node tests/journey-scheduler.test.cjs
