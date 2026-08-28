@@ -8,14 +8,16 @@ const css = fs.readFileSync(path.resolve(__dirname, "../stop-awareness-v0111.css
 const release = fs.readFileSync(path.resolve(__dirname, "../release-v011.js"), "utf8");
 const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf8");
 
+const listeners = new Map();
+let stopRow = null;
 const window = {
   NVSShare: { getSharedPlan: () => null, getFocusIndex: () => -1 },
-  addEventListener() {},
+  addEventListener(name, handler) { listeners.set(name, handler); },
 };
 const document = {
   hidden: true,
   addEventListener() {},
-  getElementById() { return null; },
+  getElementById(id) { return id === "v0111StopAwareness" ? stopRow : null; },
 };
 class MutationObserver {
   observe() {}
@@ -93,9 +95,18 @@ assert.equal(api.blockingVoluntaryState(at(10).getTime()), null, "an on-board co
 liveEntry = { status: "at-stop", at: at(10).getTime() };
 assert.equal(api.blockingVoluntaryState(at(26).getTime()), null, "stale at-stop reports should stop suppressing timetable stop awareness");
 
+let removed = false;
+window.NVSShare.getSharedPlan = () => ({ id: "shared" });
+window.__NVS_LAST_RECOMMENDATIONS__ = null;
+stopRow = { remove() { removed = true; stopRow = null; } };
+assert.equal(typeof listeners.get("nvs-recommendations-cleared"), "function", "Stop Awareness must react immediately when recommendations are cleared");
+listeners.get("nvs-recommendations-cleared")();
+assert.equal(removed, true, "clearing recommendations must remove stale Stop Awareness immediately");
+
 assert.match(source, /BLOCKING_VOLUNTARY/);
 assert.match(source, /at-stop/, "stop awareness should explicitly respect at-stop voluntary state");
 assert.match(source, /15 \* 60_000/, "stop awareness should share the 15-minute voluntary freshness fallback");
+assert.match(source, /nvs-recommendations-cleared/, "Stop Awareness must consume the empty-recommendation lifecycle");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "stop awareness must stay timetable-only");
 assert.match(css, /v0111-stop-awareness/);
 assert.match(release, /stop-awareness-v0111\.js/);
@@ -103,4 +114,4 @@ assert.match(release, /stop-awareness-v0111\.css/);
 assert.match(sw, /stop-awareness-v0111\.js/);
 assert.match(sw, /stop-awareness-v0111\.css/);
 
-console.log("stop-awareness: timetable-only next-stop guidance and voluntary-state precedence passed");
+console.log("stop-awareness: timetable-only next-stop guidance, empty lifecycle and voluntary-state precedence passed");
