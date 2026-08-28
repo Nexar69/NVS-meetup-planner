@@ -18,8 +18,10 @@ assert.match(recovery, /does not edit the organizer's shared meetup/, "viewer re
 assert.match(recovery, /function relevantForContext\(/, "member-scoped recovery alerts should be filtered by viewer ownership");
 assert.match(recovery, /item\.memberIndex === context\.focus/, "personal viewers should only receive another member-index alert when it is their own");
 assert.match(recovery, /String\(item\.memberId\) === context\.memberId/, "personal viewers should only receive member-id alerts for their own route");
+assert.match(recovery, /"nvs-recommendations-cleared"/, "Recovery Desk should immediately re-render when recommendation state is cleared");
+assert.match(recovery, /hasPendingPlanUpdate/, "recommendation clearing must preserve authoritative pending shared-plan recovery state");
 assert.match(recovery, /getViewContext:\s*viewContext/, "ownership context should remain inspectable for regression testing");
 assert.match(recovery, /isRelevantForView:\s*relevantForContext/, "recovery relevance should remain inspectable for regression testing");
 assert.doesNotMatch(recovery, /navigator\.geolocation|watchPosition|getCurrentPosition/, "ownership-aware recovery must not introduce location tracking");
 
-console.log("recovery-ownership: organizer, group-view and personal-view contracts passed");
+console.log("recovery-ownership: organizer, group-view, personal-view and cleared-recommendation contracts passed");
