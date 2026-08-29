@@ -25,6 +25,22 @@
     fallbackTimer = null;
   }
 
+  function recoverNavigation(button = document.getElementById("v010ReloadPlan")) {
+    clearFallback();
+    navigating = false;
+    setLoading(button, false);
+  }
+
+  function tryAssign(button) {
+    try {
+      window.location.assign(window.location.href);
+      return true;
+    } catch {
+      recoverNavigation(button);
+      return false;
+    }
+  }
+
   function reloadUpdatedPlan(button = document.getElementById("v010ReloadPlan")) {
     if (navigating) return false;
     navigating = true;
@@ -37,23 +53,19 @@
     clearFallback();
     fallbackTimer = setTimeout(() => {
       if (!navigating) return;
-      try {
-        window.location.assign(window.location.href);
-      } catch {}
+      tryAssign(button);
     }, FALLBACK_MS);
 
     try {
       window.location.reload();
     } catch {
-      try { window.location.assign(window.location.href); } catch {}
+      tryAssign(button);
     }
-    return true;
+    return navigating;
   }
 
   function resetAfterPageShow(event) {
-    clearFallback();
-    navigating = false;
-    setLoading(document.getElementById("v010ReloadPlan"), false);
+    recoverNavigation();
 
     if (!event?.persisted) return;
     setTimeout(() => {
