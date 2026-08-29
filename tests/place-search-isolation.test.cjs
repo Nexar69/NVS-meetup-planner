@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 
 const source = fs.readFileSync("ux-v051.js", "utf8");
+const legacySource = fs.readFileSync("places.js", "utf8");
 
 assert.doesNotMatch(
   source,
@@ -88,10 +89,57 @@ assert.match(
   /dialog\.openSearch = \(\) => \{\s*cancelSearch\(\);/,
   "reopening destination search must invalidate any prior completion before resetting UI",
 );
+
+assert.match(
+  legacySource,
+  /let searchGeneration = 0;/,
+  "the directly loaded legacy place dialog must also own a search generation",
+);
+assert.match(
+  legacySource,
+  /function invalidateSearch\([\s\S]*?searchGeneration \+= 1;[\s\S]*?searchController\?\.abort\(\);[\s\S]*?searchController = null;/,
+  "legacy search invalidation must cancel timers/network work and advance generation",
+);
+assert.match(
+  legacySource,
+  /dialog\.addEventListener\("close", \(\) => invalidateSearch\(\{ clearActive: true \}\)\);/,
+  "closing the legacy dialog must invalidate pending and cached completions",
+);
+assert.match(
+  legacySource,
+  /function openSearch\(select\) \{\s*invalidateSearch\(\{ clearActive: true \}\);/,
+  "reopening legacy search must invalidate the previous surface before assigning a new target",
+);
+assert.match(
+  legacySource,
+  /const generation = \+\+searchGeneration;[\s\S]*?generation !== searchGeneration \|\| !placeDialog\.dialog\.open/,
+  "legacy success completions must be generation-owned and unable to repaint a closed dialog",
+);
+assert.match(
+  legacySource,
+  /error\?\.name === "AbortError" \|\| generation !== searchGeneration \|\| !placeDialog\.dialog\.open/,
+  "legacy failure completions must not overwrite a closed or superseded search state",
+);
+assert.match(
+  legacySource,
+  /if \(searchController === controller\) searchController = null;/,
+  "an older legacy request must not clear a newer request controller",
+);
+assert.match(
+  legacySource,
+  /if \(!activeSelect \|\| !placeDialog\.dialog\.open\) return;/,
+  "legacy result selection must require the active dialog surface",
+);
+
 assert.doesNotMatch(
   source,
   /watchPosition|getCurrentPosition/,
-  "place-search reliability must not add continuous or implicit location access",
+  "new place-search reliability must not add continuous or implicit location access",
+);
+assert.doesNotMatch(
+  legacySource,
+  /watchPosition/,
+  "legacy place-search reliability must preserve one-shot location and never add continuous tracking",
 );
 
-console.log("place-search-isolation: cancellation, generation and closed-surface isolation passed");
+console.log("place-search-isolation: modern + legacy cancellation, generation and closed-surface isolation passed");
