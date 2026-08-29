@@ -78,6 +78,7 @@ jobs:
           node tests/test-lab-transfer-modes.test.cjs
           node tests/recovery-ownership.test.cjs
           node tests/recovery-reload-safari.test.cjs
+          node tests/recovery-lifecycle.test.cjs
           node tests/accessibility-smoke.test.cjs
           node tests/dialog-accessibility-behavior.test.cjs
           node tests/shared-live-scheduler.test.cjs
