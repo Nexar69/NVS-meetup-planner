@@ -71,7 +71,7 @@ assert.match(testJourneyLoader, /window\.NVSTestLab\?\.active/, "journey simulat
 assert.match(testJourneyLoader, /test-lab-journey-v0111\.js/, "Test Lab journey simulator must be loadable when Test Mode is active");
 
 const serviceWorker = read("service-worker.js");
-assert.match(serviceWorker, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r18";/, "service worker cache must be the latest v0.11.1 revision");
+assert.match(serviceWorker, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r19";/, "service worker cache must be the latest v0.11.1 revision");
 for (const asset of [
   "intelligence-core.js",
   "intelligence-v011.js",
@@ -204,4 +204,4 @@ assert.match(vmv, /plannedPlatformFrom/, "VMV adapter must preserve planned plat
 assert.match(vmv, /cancelled/, "VMV adapter must preserve cancellation state");
 assert.match(vmv, /remarks/, "VMV adapter must preserve disruption remarks");
 
-console.log("release-smoke: v0.11.1 wiring, r18 hardened app shell, voluntary-status-aware guidance/command sync and no-op plan revision protection look consistent");
+console.log("release-smoke: v0.11.1 wiring, r19 reconciled app shell, voluntary-status-aware guidance/command sync and no-op plan revision protection look consistent");
