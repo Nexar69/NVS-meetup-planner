@@ -117,14 +117,29 @@ vm.runInNewContext(source, {
 });
 
 const api = window.NVSOfflineJourney0111;
+assert.equal(typeof api.captureAndRender, "function");
+assert.equal(typeof api.resumeRender, "function");
 const storageKey = "meet-schwerin-offline-journey-v1";
 const snapshot = api.buildSnapshot(routeAssignment, new Date(base));
+sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
+
+routeAssignment.route.segments[1].line = "5";
+const beforeLifecycleResume = sessionStorage.getItem(storageKey);
+listeners.online?.();
+listeners.pageshow?.();
+listeners["nvs-shared-view-resumed"]?.();
+listeners["nvs-live-plan-synced"]?.();
+assert.equal(sessionStorage.getItem(storageKey), beforeLifecycleResume, "generic reconnect/resume events must not re-capture cached route data or renew its realtime trust timestamp");
+listeners["nvs-group-recommendations-rendered"]?.();
+const afterFreshRecommendation = JSON.parse(sessionStorage.getItem(storageKey));
+assert.equal(afterFreshRecommendation.segments[1].line, "5", "a fresh authoritative recommendation render should replace the offline snapshot with the newly rendered route");
+routeAssignment.route.segments[1].line = "4";
 sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
 
 navigator.onLine = false;
 sharedPlan = null;
 focus = -1;
-api.refresh();
+api.resumeRender();
 
 let card = nodes.get("offlineJourney0111");
 assert.ok(card, "offline personal viewer should render its tab-scoped saved route when the live plan is unavailable");
@@ -152,7 +167,7 @@ assert.equal(timers.size, 1, "returning to a visible offline card should re-arm 
 
 const staleSnapshot = { ...snapshot, capturedAt: new Date(base - 16 * 60_000).toISOString() };
 sessionStorage.setItem(storageKey, JSON.stringify(staleSnapshot));
-api.refresh();
+api.resumeRender();
 card = nodes.get("offlineJourney0111");
 assert.equal(timers.size, 1, "stale realtime context should retain one timer for authoritative session expiry instead of polling");
 const expiryTimer = [...timers.values()][0];
@@ -166,7 +181,7 @@ assert.match(card.innerHTML, /Tram 4 to Krebsförden/, "stale realtime context m
 assert.doesNotMatch(card.innerHTML, /Cancelled when last online/, "aged cancellation state must not retain fresh-looking wording");
 
 sessionStorage.removeItem(storageKey);
-api.refresh();
+api.resumeRender();
 card = nodes.get("offlineJourney0111");
 assert.ok(card, "an offline personal link without a saved route should explain the limitation instead of failing silently");
 assert.equal(timers.size, 0, "the no-snapshot state should leave no boundary timer armed");
@@ -177,7 +192,7 @@ assert.doesNotMatch(card.innerHTML, /Marienplatz|Krebsförden|Replacement buses/
 
 sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
 navigator.onLine = true;
-api.refresh();
+api.resumeRender();
 card = nodes.get("offlineJourney0111");
 assert.ok(card, "navigator.onLine alone must not erase the saved journey before live route data is actually usable");
 assert.equal(card.attributes.get("data-connection"), "reconnecting");
@@ -189,10 +204,10 @@ assert.equal(timers.size, 1, "a reconnecting fallback should keep its one-shot f
 
 sharedPlan = { view: "person" };
 focus = 0;
-api.refresh();
+api.resumeRender();
 assert.equal(timers.size, 0, "restored live-route rendering should cancel the saved-fallback boundary timer");
 assert.equal(nodes.has("offlineJourney0111"), false, "saved fallback should disappear only after usable live personal route data has returned");
 assert.doesNotMatch(source, /setInterval\s*\(/, "offline lifecycle should use one-shot boundary timers, never background polling");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "saved journey continuity must not add location tracking");
 
-console.log("offline-journey-render: saved route survives weak reconnects until live data returns, while preserving disruption priority, freshness, expiry, privacy and mobile cleanup");
+console.log("offline-journey-render: generic lifecycle resumes cannot re-age cached realtime facts; fresh recommendations may replace the tab-scoped fallback, which still preserves disruption priority, expiry, privacy and mobile cleanup");
