@@ -410,12 +410,14 @@ function technicalFallback(personA, personB, destination, target, mode = "fallba
 }
 
 async function search({ scrollToResults = false } = {}) {
+  const searchId = ++activeSearchId;
   const target = getTargetDate();
   const personA = personAInput.value;
   const personB = personBInput.value;
   const destination = destinationInput.value;
 
   if (!target) {
+    setSearching(false);
     summary.textContent = "Choose a valid date and target arrival time.";
     results.innerHTML = "";
     return;
@@ -432,17 +434,18 @@ async function search({ scrollToResults = false } = {}) {
   }
 
   if (!navigator.onLine) {
+    setSearching(false);
     technicalFallback(personA, personB, destination, target, "offline");
     return;
   }
 
   if (!window.NVSTransit?.fetchRoutes) {
+    setSearching(false);
     technicalFallback(personA, personB, destination, target, "fallback");
     showToast("Live routing module did not load; showing demo data.");
     return;
   }
 
-  const searchId = ++activeSearchId;
   setSearching(true);
   setDataMode("loading");
   renderLoading();
