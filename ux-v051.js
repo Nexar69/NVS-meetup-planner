@@ -14,7 +14,6 @@
 
   const searchCache = new Map();
   const controllerState = new Map();
-  let photonController = null;
   let destinationDialog = null;
   let destinationChip = null;
 
@@ -208,47 +207,54 @@
     });
   }
 
-  async function photonSearch(query) {
+  async function photonSearch(query, requestState = null) {
     const clean = normalizeText(query);
+    requestState?.photonController?.abort();
+    if (requestState) requestState.photonController = null;
+
     const cached = searchCache.get(clean);
     if (cached && Date.now() - cached.createdAt < SEARCH_CACHE_MS) return cached.results;
 
-    photonController?.abort();
-    photonController = new AbortController();
+    const controller = new AbortController();
+    if (requestState) requestState.photonController = controller;
 
-    const params = new URLSearchParams({
-      q: query.trim(),
-      lat: "53.628",
-      lon: "11.415",
-      limit: "8",
-      lang: "de",
-      bbox: SEARCH_BBOX,
-    });
+    try {
+      const params = new URLSearchParams({
+        q: query.trim(),
+        lat: "53.628",
+        lon: "11.415",
+        limit: "8",
+        lang: "de",
+        bbox: SEARCH_BBOX,
+      });
 
-    const response = await fetch(`${PHOTON_API}?${params.toString()}`, {
-      headers: { Accept: "application/json" },
-      credentials: "omit",
-      mode: "cors",
-      signal: photonController.signal,
-    });
+      const response = await fetch(`${PHOTON_API}?${params.toString()}`, {
+        headers: { Accept: "application/json" },
+        credentials: "omit",
+        mode: "cors",
+        signal: controller.signal,
+      });
 
-    if (!response.ok) throw new Error(`PHOTON_${response.status}`);
-    const data = await response.json();
-    const items = (Array.isArray(data?.features) ? data.features : [])
-      .map((feature, index) => normalizeFeature(feature, index))
-      .filter(Boolean);
+      if (!response.ok) throw new Error(`PHOTON_${response.status}`);
+      const data = await response.json();
+      const items = (Array.isArray(data?.features) ? data.features : [])
+        .map((feature, index) => normalizeFeature(feature, index))
+        .filter(Boolean);
 
-    const prioritized = prioritizeSameNameStops(items);
-    searchCache.set(clean, { createdAt: Date.now(), results: prioritized });
-    return prioritized;
+      const prioritized = prioritizeSameNameStops(items);
+      searchCache.set(clean, { createdAt: Date.now(), results: prioritized });
+      return prioritized;
+    } finally {
+      if (requestState?.photonController === controller) requestState.photonController = null;
+    }
   }
 
-  async function searchPlaces(query) {
+  async function searchPlaces(query, requestState = null) {
     const local = localMatches(query);
     if (query.trim().length < 2) return local;
 
     try {
-      const remote = await photonSearch(query);
+      const remote = await photonSearch(query, requestState);
       return dedupePlaces([...local, ...remote]).slice(0, 10);
     } catch (error) {
       if (error?.name === "AbortError") throw error;
@@ -346,6 +352,8 @@
   async function runOriginSearch(state, value) {
     const query = value.trim();
     clearTimeout(state.timer);
+    state.photonController?.abort();
+    state.photonController = null;
 
     if (!query) {
       state.results.innerHTML = `<div class="v051-search-state">Type a stop, street or place.</div>`;
@@ -360,7 +368,7 @@
 
     state.timer = setTimeout(async () => {
       try {
-        const found = await searchPlaces(query);
+        const found = await searchPlaces(query, state);
         if (state.input.value.trim() !== value.trim()) return;
         renderPlaceButtons(state.results, found, (item) => {
           registerAndSelect(state.select, item);
@@ -406,6 +414,7 @@
       chip: control.querySelector(".v051-selected-kind"),
       results: control.querySelector(".v051-origin-results"),
       timer: null,
+      photonController: null,
     };
     controllerState.set(select.id, state);
 
@@ -429,6 +438,9 @@
 
     state.input.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
+        clearTimeout(state.timer);
+        state.photonController?.abort();
+        state.photonController = null;
         state.results.classList.remove("open");
         state.input.setAttribute("aria-expanded", "false");
         state.input.blur();
@@ -470,10 +482,17 @@
 
     const input = dialog.querySelector(".v051-dialog-input");
     const list = dialog.querySelector(".v051-dialog-results");
+    const searchState = { photonController: null };
     let timer = null;
 
-    const perform = (query) => {
+    const cancelSearch = () => {
       clearTimeout(timer);
+      searchState.photonController?.abort();
+      searchState.photonController = null;
+    };
+
+    const perform = (query) => {
+      cancelSearch();
       const clean = query.trim();
       if (!clean) {
         list.innerHTML = `<div class="v051-search-state">Type a stop, street, address or place.</div>`;
@@ -483,7 +502,7 @@
       list.innerHTML = `<div class="v051-search-state">Searching…</div>`;
       timer = setTimeout(async () => {
         try {
-          const found = await searchPlaces(clean);
+          const found = await searchPlaces(clean, searchState);
           if (input.value.trim() !== query.trim()) return;
           renderPlaceButtons(list, found, (item) => {
             registerAndSelect(selects.destination, item);
@@ -503,8 +522,10 @@
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
+    dialog.addEventListener("close", cancelSearch);
 
     dialog.openSearch = () => {
+      cancelSearch();
       input.value = "";
       list.innerHTML = `<div class="v051-search-state">Type a stop, street, address or place.</div>`;
       dialog.showModal();
