@@ -156,6 +156,27 @@
     return candidate;
   }
 
+  function minuteKey(value) {
+    const date = asDate(value);
+    if (!date) return "";
+    return [date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), date.getMinutes()].join(":");
+  }
+
+  function setEntryTime(entry, duplicate) {
+    const cell = entry?.node?.querySelector?.(".timeline-time, .timeline-convergence-time");
+    if (!cell) return;
+    const readable = formatTime(entry.time);
+    if (duplicate) {
+      cell.textContent = "";
+      cell.setAttribute("aria-label", `${readable}, same minute as previous timeline event`);
+      entry.node.classList.add("timeline-shared-time");
+      return;
+    }
+    cell.textContent = readable;
+    cell.removeAttribute("aria-label");
+    entry.node.classList.remove("timeline-shared-time");
+  }
+
   function decorateTimelines(card, group, analysis) {
     const assignments = Array.isArray(group?.assignments) ? group.assignments : [];
     const timelines = [...card.querySelectorAll(".route-timeline")];
@@ -209,7 +230,14 @@
       });
 
       const fragment = document.createDocumentFragment();
-      entries.forEach((entry) => fragment.appendChild(entry.node));
+      let previousMinute = "";
+      entries.forEach((entry) => {
+        const currentMinute = minuteKey(entry.time);
+        const duplicate = Boolean(currentMinute && currentMinute === previousMinute);
+        setEntryTime(entry, duplicate);
+        if (currentMinute) previousMinute = currentMinute;
+        fragment.appendChild(entry.node);
+      });
       timelineSteps.replaceChildren(fragment);
       timelineSteps.dataset.convergenceSignature = signature;
     });
