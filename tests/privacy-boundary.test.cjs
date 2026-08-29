@@ -58,7 +58,7 @@ assert.doesNotMatch(whatIf, /fetch\(|XMLHttpRequest|sendBeacon|localStorage|sess
 
 const tripTools = fs.readFileSync(path.join(root, "trip-tools-v0111.js"), "utf8");
 assert.match(tripTools, /let recommendationsActive\s*=\s*false[\s\S]*let lastRouteUpdate\s*=\s*0/, "Trip Tools must boot in an inactive route state until an authoritative recommendation render arrives");
-assert.match(tripTools, /function scheduleRender\(\)[\s\S]*clearTimeout\(timer\)[\s\S]*timer\s*=\s*null[\s\S]*document\.hidden\s*\|\|\s*!recommendationsActive[\s\S]*return/, "Trip Tools scheduler must stay stopped while recommendations are empty, including foreground/pageshow restarts");
+assert.match(tripTools, /function scheduleRender\(\)[\s\S]*clearTimeout\(timer\)[\s\S]*timer\s*=\s*null[\s\S]*if \(document\.hidden\) return;[\s\S]*if \(!recommendationsActive\) return;/, "Trip Tools scheduler must stay stopped while hidden or recommendations are empty, including foreground/pageshow restarts");
 assert.match(tripTools, /addEventListener\("nvs-recommendations-cleared"[\s\S]*recommendationsActive\s*=\s*false[\s\S]*wakeWanted\s*=\s*false[\s\S]*releaseWakeLock\(\)/, "recommendation clearing must immediately mark Trip Tools inactive, drop wake-lock intent and release any screen wake lock");
 assert.match(tripTools, /addEventListener\("nvs-recommendations-cleared"[\s\S]*lastRouteUpdate\s*=\s*0/, "recommendation clearing must invalidate stale Trip Tools route-age state");
 assert.match(tripTools, /addEventListener\("nvs-recommendations-cleared"[\s\S]*clearTimeout\(timer\)[\s\S]*timer\s*=\s*null/, "recommendation clearing must stop and invalidate the Trip Tools refresh scheduler");
