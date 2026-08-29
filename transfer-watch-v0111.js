@@ -5,6 +5,7 @@
   const BLOCKING_VOLUNTARY = new Set(["missed", "arrived", "at-stop"]);
   let timer = null;
   let lastMarkup = "";
+  let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary?.assignments?.length);
 
   function asDate(value) {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -223,6 +224,10 @@
   }
 
   function render(now = Date.now()) {
+    if (!recommendationsActive) {
+      removeCard();
+      return null;
+    }
     const assignment = focusedAssignment();
     if (!assignment?.route || blockingVoluntaryState(now)) {
       removeCard();
@@ -246,7 +251,8 @@
 
   function schedule() {
     clearTimeout(timer);
-    if (document.hidden) return;
+    timer = null;
+    if (document.hidden || !recommendationsActive) return;
     timer = setTimeout(() => {
       render();
       schedule();
@@ -258,10 +264,26 @@
     schedule();
   }
 
-  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-recommendations-cleared", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
+  function clearRecommendationState() {
+    recommendationsActive = false;
+    clearTimeout(timer);
+    timer = null;
+    removeCard();
+  }
+
+  function activateRecommendationState() {
+    recommendationsActive = true;
+    refresh();
+  }
+
+  ["load", "pageshow", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
+  window.addEventListener("nvs-group-recommendations-rendered", activateRecommendationState);
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendationState);
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) clearTimeout(timer);
-    else refresh();
+    if (document.hidden) {
+      clearTimeout(timer);
+      timer = null;
+    } else refresh();
   });
 
   window.NVSTransferWatch0111 = Object.freeze({ transferGapMs, transferGapMinutes, transferCandidates, transferModel, platformChange, disruptionSummary, focusedFreshEntry, blockingVoluntaryState, freshMissed, render, refresh });
