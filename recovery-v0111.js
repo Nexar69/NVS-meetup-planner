@@ -1,6 +1,7 @@
 (() => {
   let timer = null;
   let snoozedSignature = "";
+  let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary);
 
   function alerts() {
     const values = window.NVSIntelligence?.getAlerts?.();
@@ -265,9 +266,14 @@
       : "Uses timetable data and voluntary check-ins only. No background location.";
   }
 
+  function shouldPoll() {
+    return recommendationsActive || Boolean(window.NVSSharedLive?.hasPendingPlanUpdate?.());
+  }
+
   function schedule() {
     clearTimeout(timer);
-    if (document.hidden) return;
+    timer = null;
+    if (document.hidden || !shouldPoll()) return;
     timer = setTimeout(() => {
       render();
       schedule();
@@ -280,9 +286,19 @@
     schedule();
   }
 
+  window.addEventListener("nvs-group-recommendations-rendered", () => {
+    recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary);
+    if (snoozedSignature && activeSignature() !== snoozedSignature) snoozedSignature = "";
+    render();
+    schedule();
+  });
+  window.addEventListener("nvs-recommendations-cleared", () => {
+    recommendationsActive = false;
+    if (snoozedSignature && activeSignature() !== snoozedSignature) snoozedSignature = "";
+    render();
+    schedule();
+  });
   [
-    "nvs-group-recommendations-rendered",
-    "nvs-recommendations-cleared",
     "nvs-shared-live-change",
     "nvs-routing-provider",
     "online",
@@ -290,10 +306,12 @@
   ].forEach((name) => window.addEventListener(name, () => {
     if (snoozedSignature && activeSignature() !== snoozedSignature) snoozedSignature = "";
     render();
+    schedule();
   }));
 
   document.addEventListener("visibilitychange", () => {
     clearTimeout(timer);
+    timer = null;
     if (!document.hidden) {
       render();
       schedule();
