@@ -5,6 +5,8 @@
   let state = { status: "unknown", checkedAt: 0, detail: "Not checked yet", health: null };
   let timer = null;
   let checking = false;
+  let requestGeneration = 0;
+  let activeController = null;
 
   function backendBase() {
     return String(window.NVSConfig?.backendUrl || "").replace(/\/$/, "");
@@ -86,21 +88,38 @@
     }
   }
 
+  function cancelActiveCheck() {
+    requestGeneration += 1;
+    activeController?.abort();
+    activeController = null;
+    checking = false;
+  }
+
+  function schedule() {
+    clearTimeout(timer);
+    if (document.hidden) return;
+    timer = setTimeout(check, CHECK_INTERVAL);
+  }
+
   async function check() {
     if (checking) return;
+    const generation = ++requestGeneration;
     const base = backendBase();
     if (!base) {
       state = { status: "warn", checkedAt: Date.now(), detail: "No backend URL is configured.", health: null };
       render();
+      schedule();
       return;
     }
     if (!navigator.onLine) {
       state = { ...state, status: "offline", checkedAt: Date.now(), detail: "Offline — cached app features remain available, but backend health cannot be checked." };
       render();
+      schedule();
       return;
     }
     checking = true;
     const controller = new AbortController();
+    activeController = controller;
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {
       const response = await fetch(`${base}/api/health`, {
@@ -112,9 +131,11 @@
       });
       if (!response.ok) throw new Error(`HTTP_${response.status}`);
       const health = await response.json();
+      if (generation !== requestGeneration) return;
       const result = classify(health);
       state = { ...result, checkedAt: Date.now(), health };
     } catch (error) {
+      if (generation !== requestGeneration) return;
       state = {
         status: navigator.onLine ? "error" : "offline",
         checkedAt: Date.now(),
@@ -123,16 +144,12 @@
       };
     } finally {
       clearTimeout(timeout);
+      if (activeController === controller) activeController = null;
+      if (generation !== requestGeneration) return;
       checking = false;
       render();
       schedule();
     }
-  }
-
-  function schedule() {
-    clearTimeout(timer);
-    if (document.hidden) return;
-    timer = setTimeout(check, CHECK_INTERVAL);
   }
 
   function start() {
@@ -141,14 +158,18 @@
     schedule();
   }
 
-  ["online", "offline", "nvs-routing-provider"].forEach((name) => window.addEventListener(name, () => {
+  ["online", "offline"].forEach((name) => window.addEventListener(name, () => {
+    cancelActiveCheck();
     render();
-    if (name !== "nvs-routing-provider") void check();
+    void check();
   }));
+  window.addEventListener("nvs-routing-provider", render);
   window.addEventListener("nvs-group-recommendations-rendered", render);
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) clearTimeout(timer);
-    else if (Date.now() - state.checkedAt > CHECK_INTERVAL) void check();
+    if (document.hidden) {
+      clearTimeout(timer);
+      cancelActiveCheck();
+    } else if (Date.now() - state.checkedAt > CHECK_INTERVAL) void check();
     else schedule();
   });
   window.addEventListener("pageshow", start);
