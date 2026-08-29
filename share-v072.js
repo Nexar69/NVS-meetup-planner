@@ -22,6 +22,8 @@
   let originalStorage = null;
   let restored = false;
   let shortPlanCache = null;
+  let shortPlanInflight = null;
+  let shortPlanGeneration = 0;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -235,39 +237,67 @@
     });
   }
 
-  async function ensureShortPlan() {
-    if (!config.backendUrl) return null;
-    const payload = currentPayload(-1);
-    if (!payload) return null;
-    const signature = planSignature(payload);
-    if (shortPlanCache?.signature === signature) return shortPlanCache;
+  function invalidateShortPlan() {
+    shortPlanGeneration += 1;
+    shortPlanCache = null;
+  }
 
-    const response = await fetch(`${config.backendUrl}/api/plans`, {
-      method: "POST",
-      mode: "cors",
-      credentials: "omit",
-      headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
-      body: JSON.stringify({ plan: payload }),
-    });
-    if (!response.ok) throw new Error(`SHORT_LINK_HTTP_${response.status}`);
-    const data = await response.json();
-    if (!data?.id || !data?.url) throw new Error("SHORT_LINK_BAD_RESPONSE");
-    shortPlanCache = { signature, id: data.id, url: data.url, expiresIn: data.expiresIn || config.shareTtlSeconds || 259200 };
-    return shortPlanCache;
+  function groupPayloadFrom(payload) {
+    return payload ? { ...payload, view: "group", focus: -1 } : null;
+  }
+
+  async function ensureShortPlan(payload = currentPayload(-1)) {
+    if (!config.backendUrl || !payload) return null;
+    const canonicalPayload = groupPayloadFrom(payload);
+    const signature = planSignature(canonicalPayload);
+    if (shortPlanCache?.signature === signature) return shortPlanCache;
+    if (shortPlanInflight?.signature === signature && shortPlanInflight.generation === shortPlanGeneration) {
+      return shortPlanInflight.promise;
+    }
+
+    const generation = shortPlanGeneration;
+    const promise = (async () => {
+      const response = await fetch(`${config.backendUrl}/api/plans`, {
+        method: "POST",
+        mode: "cors",
+        credentials: "omit",
+        headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
+        body: JSON.stringify({ plan: canonicalPayload }),
+      });
+      if (!response.ok) throw new Error(`SHORT_LINK_HTTP_${response.status}`);
+      const data = await response.json();
+      if (!data?.id || !data?.url) throw new Error("SHORT_LINK_BAD_RESPONSE");
+      const stored = { signature, id: data.id, url: data.url, expiresIn: data.expiresIn || config.shareTtlSeconds || 259200 };
+      if (generation === shortPlanGeneration) shortPlanCache = stored;
+      return stored;
+    })();
+
+    shortPlanInflight = { signature, generation, promise };
+    try {
+      return await promise;
+    } finally {
+      if (shortPlanInflight?.promise === promise) shortPlanInflight = null;
+    }
   }
 
   async function buildBestShareUrl(focus = -1) {
     const fallback = buildShareUrl(focus);
     if (!fallback || !config.backendUrl) return fallback;
+    const signature = planSignature(fallback.payload);
+    const generation = shortPlanGeneration;
     try {
-      const stored = await ensureShortPlan();
+      const stored = await ensureShortPlan(fallback.payload);
       if (!stored) return fallback;
+      const latest = currentPayload(focus);
+      if (generation !== shortPlanGeneration || !latest || planSignature(latest) !== signature) {
+        return buildShareUrl(focus) || fallback;
+      }
       const url = new URL(stored.url);
       if (focus >= 0) url.searchParams.set("me", String(focus + 1));
       return { url: url.toString(), payload: fallback.payload, short: true, expiresIn: stored.expiresIn };
     } catch (error) {
       console.warn("Short-link backend unavailable; using encoded link:", error);
-      return fallback;
+      return buildShareUrl(focus) || fallback;
     }
   }
 
@@ -408,9 +438,9 @@
   decorate();
 
   window.addEventListener("nvs-group-recommendations-rendered", () => { if (sharedPlan) restoreStorage(); decorate(); });
-  window.addEventListener("nvs-group-change", () => { shortPlanCache = null; decorate(); });
-  window.addEventListener("nvs-priority-change", () => { shortPlanCache = null; decorate(); });
-  window.addEventListener("nvs-timing-change", () => { shortPlanCache = null; decorate(); });
+  window.addEventListener("nvs-group-change", () => { invalidateShortPlan(); decorate(); });
+  window.addEventListener("nvs-priority-change", () => { invalidateShortPlan(); decorate(); });
+  window.addEventListener("nvs-timing-change", () => { invalidateShortPlan(); decorate(); });
   window.addEventListener("load", decorate);
   window.addEventListener("beforeunload", restoreStorage);
   if (results) new MutationObserver(decorate).observe(results, { childList: true, subtree: true });
