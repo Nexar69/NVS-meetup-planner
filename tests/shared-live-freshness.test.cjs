@@ -64,6 +64,14 @@ const api = window.NVSSharedLiveFreshness0111;
 assert.ok(api, "freshness guard should expose a testable API");
 assert.equal(api.freshnessFor({ at: now - 16 * 60_000 }, now).stale, true);
 assert.equal(api.freshnessFor({ at: now - 2 * 60_000 }, now).fresh, true);
+assert.equal(api.freshnessFor({ at: now + 4 * 60_000 }, now).fresh, true,
+  "small clock skew should not discard a valid voluntary check-in");
+const impossibleFuture = api.freshnessFor({ at: now + 6 * 60_000 }, now);
+assert.equal(impossibleFuture.fresh, false,
+  "a check-in too far in the future must never remain authoritative until the client clock catches up");
+assert.equal(impossibleFuture.stale, true);
+assert.equal(impossibleFuture.future, true);
+
 assert.equal(api.refresh(now), 1, "one stale voluntary row should be downgraded");
 assert.equal(classes.has("manual"), false, "stale rows must stop looking like current manual confirmations");
 assert.equal(classes.has("estimated"), true, "stale rows should fall back to timetable styling");
@@ -75,9 +83,16 @@ assert.match(detail.textContent, /last voluntary check-in about 20 min ago/);
 assert.equal(sourceBadge.textContent, "STALE · TIMETABLE");
 assert.match(sourceBadge.title, /older than 15 minutes/);
 
+state.members["0"] = { status: "arrived", at: now + 10 * 60_000 };
+assert.equal(api.refresh(now), 1, "an impossible future voluntary timestamp should be downgraded immediately");
+assert.equal(row.dataset.v0111Freshness, "invalid-future");
+assert.equal(sourceBadge.textContent, "INVALID TIME · TIMETABLE");
+assert.match(detail.textContent, /invalid future timestamp/);
+assert.match(sourceBadge.title, /too far in the future/);
+
 assert.equal(typeof handlers["nvs-shared-live-change"], "function");
 assert.doesNotThrow(() => handlers["nvs-shared-live-change"]({ type: "nvs-shared-live-change" }), "DOM events must not be mistaken for timestamps");
-assert.equal(sourceBadge.textContent, "STALE · TIMETABLE");
+assert.equal(sourceBadge.textContent, "INVALID TIME · TIMETABLE");
 
 assert.match(release, /loadSharedLiveFreshness0111/, "release owner must load the stale-status consistency guard");
 assert.match(release, /shared-live-freshness-v0111\.js/);
@@ -85,5 +100,6 @@ assert.match(serviceWorker, /shared-live-freshness-v0111\.js/, "stale-status con
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "freshness handling must not introduce location tracking");
 assert.match(source, /document\.hidden/, "periodic freshness checks should pause while hidden");
 assert.match(source, /nvs-shared-live-change", \(\) => refresh\(\)/, "shared-live events should trigger a fresh timestamp instead of passing the Event object through");
+assert.match(source, /MAX_FUTURE_SKEW_MS/, "freshness handling should bound tolerated client/server clock skew");
 
-console.log("shared-live-freshness: stale manual confirmations downgrade to timetable guidance after 15 minutes");
+console.log("shared-live-freshness: stale and impossible-future manual confirmations downgrade to timetable guidance");
