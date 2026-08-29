@@ -16,10 +16,26 @@ assert.match(source, /const refreshId = \+\+state\.refreshGeneration/,
   "each live map refresh should have a generation token");
 assert.match(source, /document\.hidden \|\| refreshId !== state\.refreshGeneration/,
   "in-flight route responses must not repaint a hidden or superseded map");
-assert.match(source, /function clearRecommendationState[\s\S]*clearTimeout\(state\.refreshTimer\)[\s\S]*refreshGeneration \+= 1[\s\S]*state\.recommendations = null[\s\S]*state\.context = null[\s\S]*state\.selectedType = "primary"[\s\S]*updateTabs\(\)[\s\S]*renderPreview\(\)/,
-  "recommendation clearing must invalidate stale async work, drop cached map recommendations/context, reset selection and return to preview");
+assert.match(source, /function showRoutePreview\(\) \{[\s\S]*state\.recommendations = null;[\s\S]*state\.context = null;[\s\S]*state\.selectedType = "primary";[\s\S]*updateTabs\(\);[\s\S]*tagResultCards\(\);[\s\S]*renderPreview\(\);/,
+  "preview fallback must clear stale recommendation/context state so old live routes cannot be resurrected by later map controls");
+assert.match(source, /if \(!context\.target \|\| !window\.NVSTransit\?\.fetchRoutes \|\| !window\.NVSRecommend\?\.recommendGroup\) \{ showRoutePreview\(\); return; \}/,
+  "invalid planner inputs or unavailable route machinery must drop stale live map state before showing the preview");
+assert.match(source, /if \(!dataBadge\?\.classList\.contains\("live"\)\) \{[\s\S]*showRoutePreview\(\);[\s\S]*return;/,
+  "non-live provider state must not retain an older live map recommendation");
+assert.match(source, /if \(context\.members\.some\(\(member\) => !member\.originKey\)\) \{[\s\S]*showRoutePreview\(\);[\s\S]*return;/,
+  "incomplete group origins must not retain an older route selection");
+assert.match(source, /if \(routeSets\.some\(\(routes\) => !routes\.length\)\) \{ showRoutePreview\(\); return; \}/,
+  "empty provider route sets must clear stale map recommendations");
+assert.match(source, /if \(!recommendations\.primary\) \{ showRoutePreview\(\); return; \}/,
+  "an empty recommendation result must clear stale map recommendations");
+assert.match(source, /console\.warn\("Group map refresh failed:", error\);[\s\S]*showRoutePreview\(\);/,
+  "failed live refreshes must leave the visible preview and internal map state consistent");
+assert.match(source, /function clearRecommendationState[\s\S]*clearTimeout\(state\.refreshTimer\)[\s\S]*refreshGeneration \+= 1[\s\S]*refreshPending = false[\s\S]*showRoutePreview\(\)/,
+  "authoritative recommendation clearing must invalidate async work and use the same stale-state-safe preview transition");
 assert.match(source, /addEventListener\("nvs-recommendations-cleared", clearRecommendationState\)/,
   "map lifecycle must consume the explicit recommendation-cleared boundary");
+assert.match(source, /nvs-group-change", \(\) => \{ showRoutePreview\(\); scheduleRefresh\(40\); \}/,
+  "group edits should immediately clear obsolete map state before intentionally requesting a fresh planner route");
 assert.match(source, /visibilitychange/,
   "map scheduler should react to foreground/background transitions");
 assert.match(source, /pageshow/,
@@ -33,4 +49,4 @@ assert.doesNotMatch(source, /setInterval\(/,
 assert.doesNotMatch(source, /watchPosition/,
   "map recommendation lifecycle must not add continuous location tracking");
 
-console.log("map-scheduler: hidden-tab suspension, stale-response invalidation, recommendation cleanup and Safari resume contracts passed");
+console.log("map-scheduler: hidden suspension, generation isolation, stale-map cleanup, planner refresh and Safari resume contracts passed");
