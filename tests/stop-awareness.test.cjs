@@ -9,20 +9,42 @@ const release = fs.readFileSync(path.resolve(__dirname, "../release-v011.js"), "
 const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf8");
 
 const listeners = new Map();
+const documentListeners = new Map();
+const timers = new Map();
+let nextTimer = 1;
 let stopRow = null;
+let observerCallback = null;
+let observerDisconnects = 0;
+const personalSharedPlan = {};
+
+function fakeSetTimeout(callback, delay) {
+  const id = nextTimer++;
+  timers.set(id, { callback, delay });
+  return id;
+}
+function fakeClearTimeout(id) {
+  timers.delete(id);
+}
+
 const window = {
   NVSShare: { getSharedPlan: () => null, getFocusIndex: () => -1 },
   addEventListener(name, handler) { listeners.set(name, handler); },
 };
 const document = {
   hidden: true,
-  addEventListener() {},
-  getElementById(id) { return id === "v0111StopAwareness" ? stopRow : null; },
+  addEventListener(name, handler) { documentListeners.set(name, handler); },
+  getElementById(id) {
+    if (id === "v0111StopAwareness") return stopRow;
+    if (id === "personalSharedPlan") return personalSharedPlan;
+    return null;
+  },
 };
 class MutationObserver {
+  constructor(callback) { observerCallback = callback; }
   observe() {}
-  disconnect() {}
+  disconnect() { observerDisconnects += 1; }
 }
+window.MutationObserver = MutationObserver;
 
 vm.runInNewContext(source, {
   window,
@@ -36,8 +58,8 @@ vm.runInNewContext(source, {
   Array,
   Object,
   Set,
-  setTimeout,
-  clearTimeout,
+  setTimeout: fakeSetTimeout,
+  clearTimeout: fakeClearTimeout,
 });
 
 const api = window.NVSStopAwareness0111;
@@ -95,17 +117,39 @@ assert.equal(api.blockingVoluntaryState(at(10).getTime()), null, "an on-board co
 liveEntry = { status: "at-stop", at: at(10).getTime() };
 assert.equal(api.blockingVoluntaryState(at(26).getTime()), null, "stale at-stop reports should stop suppressing timetable stop awareness");
 
+// Lifecycle: only an authoritative recommendation render may activate periodic/observer work.
 let removed = false;
 window.NVSShare.getSharedPlan = () => ({ id: "shared" });
-window.__NVS_LAST_RECOMMENDATIONS__ = null;
+document.hidden = false;
+window.__NVS_LAST_RECOMMENDATIONS__ = { primary: { assignments: [] } };
+assert.equal(typeof listeners.get("nvs-group-recommendations-rendered"), "function");
+listeners.get("nvs-group-recommendations-rendered")();
+assert.equal(timers.size, 1, "fresh recommendations should arm the Stop Awareness refresh timer");
+assert.equal(typeof observerCallback, "function", "fresh recommendations should arm the scoped observer");
+observerCallback();
+assert.equal(timers.size, 2, "a queued observer render should be separately cancellable");
+
 stopRow = { remove() { removed = true; stopRow = null; } };
 assert.equal(typeof listeners.get("nvs-recommendations-cleared"), "function", "Stop Awareness must react immediately when recommendations are cleared");
 listeners.get("nvs-recommendations-cleared")();
 assert.equal(removed, true, "clearing recommendations must remove stale Stop Awareness immediately");
+assert.equal(timers.size, 0, "clearing recommendations must cancel refresh and queued observer work");
+const disconnectsAfterClear = observerDisconnects;
+
+listeners.get("pageshow")();
+assert.equal(timers.size, 0, "pageshow must not resurrect Stop Awareness while recommendation state is empty");
+assert.equal(observerDisconnects, disconnectsAfterClear, "empty-state pageshow must not re-arm observer work");
+listeners.get("nvs-shared-view-resumed")();
+assert.equal(timers.size, 0, "shared-view resume must remain inert while recommendations are empty");
+
+listeners.get("nvs-group-recommendations-rendered")();
+assert.equal(timers.size, 1, "a later authoritative recommendation render should reactivate periodic work");
 
 assert.match(source, /BLOCKING_VOLUNTARY/);
 assert.match(source, /at-stop/, "stop awareness should explicitly respect at-stop voluntary state");
 assert.match(source, /15 \* 60_000/, "stop awareness should share the 15-minute voluntary freshness fallback");
+assert.match(source, /recommendationsActive/, "Stop Awareness should gate lifecycle work on authoritative recommendation state");
+assert.match(source, /queuedTimer/, "queued observer renders should be cancellable at the clear boundary");
 assert.match(source, /nvs-recommendations-cleared/, "Stop Awareness must consume the empty-recommendation lifecycle");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "stop awareness must stay timetable-only");
 assert.match(css, /v0111-stop-awareness/);
@@ -114,4 +158,4 @@ assert.match(release, /stop-awareness-v0111\.css/);
 assert.match(sw, /stop-awareness-v0111\.js/);
 assert.match(sw, /stop-awareness-v0111\.css/);
 
-console.log("stop-awareness: timetable-only next-stop guidance, empty lifecycle and voluntary-state precedence passed");
+console.log("stop-awareness: timetable-only next-stop guidance, lifecycle teardown/rehydration and voluntary-state precedence passed");
