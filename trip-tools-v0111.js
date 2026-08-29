@@ -11,7 +11,8 @@
   let wakeWanted = false;
   let wakeRequestGeneration = 0;
   let sendingStatus = false;
-  let lastRouteUpdate = Date.now();
+  let recommendationsActive = false;
+  let lastRouteUpdate = 0;
   let timer = null;
 
   function tripDialog() {
@@ -195,7 +196,8 @@
 
   function scheduleRender() {
     clearTimeout(timer);
-    if (document.hidden) return;
+    timer = null;
+    if (document.hidden || !recommendationsActive) return;
     timer = setTimeout(() => {
       render();
       scheduleRender();
@@ -221,11 +223,13 @@
   }
 
   window.addEventListener("nvs-group-recommendations-rendered", () => {
+    recommendationsActive = true;
     lastRouteUpdate = Date.now();
     render();
     scheduleRender();
   });
   window.addEventListener("nvs-recommendations-cleared", () => {
+    recommendationsActive = false;
     clearTimeout(timer);
     timer = null;
     wakeWanted = false;
@@ -238,6 +242,7 @@
   window.addEventListener("pageshow", start);
   document.addEventListener("visibilitychange", () => {
     clearTimeout(timer);
+    timer = null;
     if (document.hidden) {
       releaseWakeLock();
       return;
