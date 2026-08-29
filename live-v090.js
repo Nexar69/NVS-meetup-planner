@@ -15,6 +15,7 @@
   let renderTimer = null;
   let refreshing = false;
   let lastAutoRefresh = 0;
+  let recommendationsActive = false;
 
   function asDate(value) {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -306,7 +307,7 @@
       enabled = !enabled;
       writeState();
       scheduleTimers();
-      render();
+      if (recommendationsActive) render();
     });
     panel.querySelector("#live090Refresh")?.addEventListener("click", () => refreshPlan(false));
     return panel;
@@ -349,7 +350,7 @@
   function render() {
     const panel = ensurePanel();
     const group = recommendation();
-    if (!panel || !group || !assignments(group).length) {
+    if (!panel || !recommendationsActive || !group || !assignments(group).length) {
       panel?.classList.remove("visible");
       return;
     }
@@ -415,9 +416,9 @@
 
   async function refreshPlan(auto = false) {
     if (refreshing || !window.NVSGroup?.search) return;
-    if (auto && !enabled) return;
+    if (auto && (!enabled || !recommendationsActive)) return;
     refreshing = true;
-    render();
+    if (recommendationsActive) render();
     try {
       await window.NVSGroup.search();
       lastAutoRefresh = Date.now();
@@ -425,12 +426,12 @@
       console.warn("Live meetup refresh failed:", error);
     } finally {
       refreshing = false;
-      render();
+      if (recommendationsActive) render();
     }
   }
 
   function autoRefresh() {
-    if (!enabled || refreshing || document.hidden) return;
+    if (!recommendationsActive || !enabled || refreshing || document.hidden) return;
     const group = recommendation();
     const groupAssignments = assignments(group);
     if (!groupAssignments.length) return;
@@ -443,7 +444,8 @@
 
   function scheduleTick(delay = TICK_MS) {
     clearTimeout(tickTimer);
-    if (document.hidden) return;
+    tickTimer = null;
+    if (document.hidden || !recommendationsActive) return;
     tickTimer = setTimeout(() => {
       render();
       scheduleTick();
@@ -452,7 +454,8 @@
 
   function scheduleAutoRefresh(delay = AUTO_CHECK_MS) {
     clearTimeout(autoRefreshTimer);
-    if (document.hidden || !enabled) return;
+    autoRefreshTimer = null;
+    if (document.hidden || !enabled || !recommendationsActive) return;
     autoRefreshTimer = setTimeout(() => {
       autoRefresh();
       scheduleAutoRefresh();
@@ -468,9 +471,28 @@
 
   function scheduleTimers() {
     stopTimers();
-    if (document.hidden) return;
+    if (document.hidden || !recommendationsActive) return;
     scheduleTick();
     scheduleAutoRefresh();
+  }
+
+  function clearRecommendationState() {
+    recommendationsActive = false;
+    clearTimeout(renderTimer);
+    renderTimer = null;
+    stopTimers();
+    document.getElementById("liveMeetupPanel")?.classList.remove("visible");
+  }
+
+  function activateRecommendationState(event) {
+    const detailGroup = event?.detail?.recommendations?.primary || null;
+    recommendationsActive = assignments(detailGroup || recommendation()).length > 0;
+    if (!recommendationsActive) {
+      clearRecommendationState();
+      return;
+    }
+    scheduleRender();
+    scheduleTimers();
   }
 
   function showToast(message) {
@@ -549,17 +571,23 @@
 
   function scheduleRender() {
     clearTimeout(renderTimer);
-    if (document.hidden) return;
-    renderTimer = setTimeout(render, 45);
+    renderTimer = null;
+    if (document.hidden || !recommendationsActive) return;
+    renderTimer = setTimeout(() => {
+      renderTimer = null;
+      render();
+    }, 45);
   }
 
   readState();
   ensurePanel();
   ensureShareControls();
+  recommendationsActive = assignments().length > 0;
   scheduleTimers();
-  render();
+  if (recommendationsActive) render();
 
-  window.addEventListener("nvs-group-recommendations-rendered", scheduleRender);
+  window.addEventListener("nvs-group-recommendations-rendered", activateRecommendationState);
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendationState);
   window.addEventListener("nvs-group-change", scheduleRender);
   window.addEventListener("nvs-priority-change", scheduleRender);
   window.addEventListener("nvs-timing-change", scheduleRender);
@@ -567,18 +595,22 @@
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       clearTimeout(renderTimer);
+      renderTimer = null;
       stopTimers();
       return;
     }
+    if (!recommendationsActive) return;
     render();
     autoRefresh();
     scheduleTimers();
   });
   window.addEventListener("pageshow", () => {
+    if (!recommendationsActive) return;
     render();
     scheduleTimers();
   });
   window.addEventListener("load", () => {
+    if (!recommendationsActive) return;
     render();
     scheduleTimers();
   });
@@ -586,7 +618,12 @@
 
   window.NVSLiveMeetup = Object.freeze({
     isEnabled: () => enabled,
-    setEnabled: (value) => { enabled = Boolean(value); writeState(); scheduleTimers(); render(); },
+    setEnabled: (value) => {
+      enabled = Boolean(value);
+      writeState();
+      scheduleTimers();
+      if (recommendationsActive) render();
+    },
     refresh: () => refreshPlan(false),
     routeState,
     joinHealth,
