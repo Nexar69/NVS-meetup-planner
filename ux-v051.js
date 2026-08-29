@@ -340,9 +340,18 @@
     chip.textContent = `${info.icon} ${info.kindLabel}`;
   }
 
+  function cancelOriginSearch(state) {
+    clearTimeout(state.timer);
+    state.timer = null;
+    state.generation += 1;
+    state.photonController?.abort();
+    state.photonController = null;
+  }
+
   function closeAllOriginResults(except = null) {
     controllerState.forEach((state) => {
       if (state !== except) {
+        cancelOriginSearch(state);
         state.results.classList.remove("open");
         state.input.setAttribute("aria-expanded", "false");
       }
@@ -351,9 +360,8 @@
 
   async function runOriginSearch(state, value) {
     const query = value.trim();
-    clearTimeout(state.timer);
-    state.photonController?.abort();
-    state.photonController = null;
+    cancelOriginSearch(state);
+    const generation = state.generation;
 
     if (!query) {
       state.results.innerHTML = `<div class="v051-search-state">Type a stop, street or place.</div>`;
@@ -367,19 +375,27 @@
     state.input.setAttribute("aria-expanded", "true");
 
     state.timer = setTimeout(async () => {
+      state.timer = null;
       try {
         const found = await searchPlaces(query, state);
-        if (state.input.value.trim() !== value.trim()) return;
+        if (
+          state.generation !== generation ||
+          !state.results.classList.contains("open") ||
+          state.input.value.trim() !== value.trim()
+        ) return;
         renderPlaceButtons(state.results, found, (item) => {
+          if (state.generation !== generation) return;
           registerAndSelect(state.select, item);
           state.input.value = item.label;
           updateKindChip(state.select, state.chip);
+          cancelOriginSearch(state);
           state.results.classList.remove("open");
           state.input.setAttribute("aria-expanded", "false");
           plannerForm?.requestSubmit();
         });
       } catch (error) {
         if (error?.name === "AbortError") return;
+        if (state.generation !== generation || !state.results.classList.contains("open")) return;
         state.results.innerHTML = `<div class="v051-search-state">Search is unavailable right now.</div>`;
       }
     }, SEARCH_DEBOUNCE_MS);
@@ -415,6 +431,7 @@
       results: control.querySelector(".v051-origin-results"),
       timer: null,
       photonController: null,
+      generation: 0,
     };
     controllerState.set(select.id, state);
 
@@ -438,13 +455,18 @@
 
     state.input.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
-        clearTimeout(state.timer);
-        state.photonController?.abort();
-        state.photonController = null;
+        cancelOriginSearch(state);
         state.results.classList.remove("open");
         state.input.setAttribute("aria-expanded", "false");
         state.input.blur();
       }
+    });
+
+    control.addEventListener("focusout", (event) => {
+      if (control.contains(event.relatedTarget)) return;
+      cancelOriginSearch(state);
+      state.results.classList.remove("open");
+      state.input.setAttribute("aria-expanded", "false");
     });
 
     state.clear.addEventListener("click", () => {
@@ -482,17 +504,20 @@
 
     const input = dialog.querySelector(".v051-dialog-input");
     const list = dialog.querySelector(".v051-dialog-results");
-    const searchState = { photonController: null };
+    const searchState = { photonController: null, generation: 0 };
     let timer = null;
 
     const cancelSearch = () => {
       clearTimeout(timer);
+      timer = null;
+      searchState.generation += 1;
       searchState.photonController?.abort();
       searchState.photonController = null;
     };
 
     const perform = (query) => {
       cancelSearch();
+      const generation = searchState.generation;
       const clean = query.trim();
       if (!clean) {
         list.innerHTML = `<div class="v051-search-state">Type a stop, street, address or place.</div>`;
@@ -501,10 +526,16 @@
 
       list.innerHTML = `<div class="v051-search-state">Searching…</div>`;
       timer = setTimeout(async () => {
+        timer = null;
         try {
           const found = await searchPlaces(clean, searchState);
-          if (input.value.trim() !== query.trim()) return;
+          if (
+            searchState.generation !== generation ||
+            !dialog.open ||
+            input.value.trim() !== query.trim()
+          ) return;
           renderPlaceButtons(list, found, (item) => {
+            if (searchState.generation !== generation || !dialog.open) return;
             registerAndSelect(selects.destination, item);
             updateDestinationChip();
             dialog.close();
@@ -512,6 +543,7 @@
           });
         } catch (error) {
           if (error?.name === "AbortError") return;
+          if (searchState.generation !== generation || !dialog.open) return;
           list.innerHTML = `<div class="v051-search-state">Search is unavailable right now.</div>`;
         }
       }, SEARCH_DEBOUNCE_MS);
