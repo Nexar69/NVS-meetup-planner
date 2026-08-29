@@ -361,19 +361,23 @@
       <p class="v0111-offline-journey-meta">${arrival ? `Planned arrival ${escapeHtml(arrival)} · ` : ""}Completed legs are hidden when possible. Authoritative shared-session expiry is honored offline when known, including while reconnecting. No GPS, names, coordinates, plan IDs or private check-in keys are stored in this fallback.</p>`;
   }
 
-  function refresh() {
+  function captureAndRender() {
     if (navigator.onLine) capture();
     render();
   }
 
-  window.addEventListener("nvs-group-recommendations-rendered", refresh);
-  window.addEventListener("nvs-live-plan-synced", refresh);
-  window.addEventListener("online", refresh);
+  function resumeRender() {
+    render();
+  }
+
+  window.addEventListener("nvs-group-recommendations-rendered", captureAndRender);
+  window.addEventListener("nvs-live-plan-synced", resumeRender);
+  window.addEventListener("online", resumeRender);
   window.addEventListener("offline", render);
-  window.addEventListener("pageshow", refresh);
-  window.addEventListener("nvs-shared-view-resumed", refresh);
+  window.addEventListener("pageshow", resumeRender);
+  window.addEventListener("nvs-shared-view-resumed", resumeRender);
   window.addEventListener("nvs-shared-session-expired", clearSnapshot);
-  window.addEventListener("load", refresh);
+  window.addEventListener("load", captureAndRender);
   document.addEventListener?.("visibilitychange", () => {
     if (document.hidden) clearFreshnessTimer();
     else render();
@@ -393,8 +397,9 @@
     scopeFingerprint,
     authoritativeExpiry,
     hasUsableLiveRoute,
-    refresh,
+    captureAndRender,
+    resumeRender,
   });
 
-  refresh();
+  captureAndRender();
 })();
