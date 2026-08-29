@@ -3,6 +3,7 @@
   const destinationInput = document.getElementById("destination");
   const FALLBACK_COLORS = ["#2563eb", "#db2777", "#7c3aed", "#ea580c", "#0891b2", "#65a30d"];
   let decorateTimer = null;
+  let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__);
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -222,9 +223,25 @@
     decorateTimelines(card, group, analysis);
   }
 
-  function decorateExisting() {
+  function cancelDecoration() {
     clearTimeout(decorateTimer);
+    decorateTimer = null;
+  }
+
+  function clearGeneratedDecoration() {
+    if (!results) return;
+    [...results.querySelectorAll('[data-convergence-generated="true"]')].forEach((node) => node.remove());
+    results.querySelectorAll("[data-convergence-signature]").forEach((node) => {
+      delete node.dataset.convergenceSignature;
+    });
+  }
+
+  function decorateExisting() {
+    cancelDecoration();
+    if (!recommendationsActive) return;
     decorateTimer = setTimeout(() => {
+      decorateTimer = null;
+      if (!recommendationsActive) return;
       const recommendations = window.__NVS_LAST_RECOMMENDATIONS__;
       if (!recommendations || !results) return;
       [...results.querySelectorAll(":scope > .result[data-map-pair]")].forEach((card) => {
@@ -234,7 +251,19 @@
     }, 20);
   }
 
-  window.addEventListener("nvs-group-recommendations-rendered", decorateExisting);
+  function activateRecommendations() {
+    recommendationsActive = true;
+    decorateExisting();
+  }
+
+  function clearRecommendations() {
+    recommendationsActive = false;
+    cancelDecoration();
+    clearGeneratedDecoration();
+  }
+
+  window.addEventListener("nvs-group-recommendations-rendered", activateRecommendations);
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendations);
   window.addEventListener("nvs-group-change", decorateExisting);
   window.addEventListener("nvs-priority-change", decorateExisting);
   window.addEventListener("nvs-timing-change", decorateExisting);
