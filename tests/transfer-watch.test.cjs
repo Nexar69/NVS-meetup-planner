@@ -8,16 +8,29 @@ const css = fs.readFileSync(path.resolve(__dirname, "../transfer-watch-v0111.css
 const release = fs.readFileSync(path.resolve(__dirname, "../release-v011.js"), "utf8");
 const sw = fs.readFileSync(path.resolve(__dirname, "../service-worker.js"), "utf8");
 
+const listeners = new Map();
+const documentListeners = new Map();
+const timers = new Map();
+let nextTimer = 1;
+let transferCard = null;
+function fakeSetTimeout(callback, delay) {
+  const id = nextTimer++;
+  timers.set(id, { callback, delay });
+  return id;
+}
+function fakeClearTimeout(id) {
+  timers.delete(id);
+}
 const window = {
-  addEventListener() {},
+  addEventListener(name, handler) { listeners.set(name, handler); },
   NVSShare: { getFocusIndex: () => -1 },
 };
 const document = {
   hidden: true,
-  addEventListener() {},
-  getElementById() { return null; },
+  addEventListener(name, handler) { documentListeners.set(name, handler); },
+  getElementById(id) { return id === "v0111TransferWatch" ? transferCard : null; },
 };
-vm.runInNewContext(source, { window, document, Date, Math, Number, String, Array, Object, Intl, Set, setTimeout, clearTimeout });
+vm.runInNewContext(source, { window, document, Date, Math, Number, String, Array, Object, Intl, Set, setTimeout: fakeSetTimeout, clearTimeout: fakeClearTimeout });
 
 const api = window.NVSTransferWatch0111;
 assert.equal(typeof api?.transferModel, "function");
@@ -150,6 +163,25 @@ assert.equal(api.blockingVoluntaryState(at(5).getTime()), "arrived", "confirmed 
 liveEntry = { status: "on-vehicle", at: at(5).getTime() };
 assert.equal(api.blockingVoluntaryState(at(5).getTime()), null, "on-board confirmation can still benefit from upcoming transfer protection");
 
+// Authoritative lifecycle: empty recommendation state must not keep Connection Protection awake.
+document.hidden = false;
+window.__NVS_LAST_RECOMMENDATIONS__ = { primary: { assignments: [] } };
+assert.equal(typeof listeners.get("nvs-group-recommendations-rendered"), "function");
+listeners.get("nvs-group-recommendations-rendered")();
+assert.equal(timers.size, 1, "fresh recommendations should arm the Connection Protection refresh timer");
+let removed = false;
+transferCard = { remove() { removed = true; transferCard = null; } };
+assert.equal(typeof listeners.get("nvs-recommendations-cleared"), "function");
+listeners.get("nvs-recommendations-cleared")();
+assert.equal(removed, true, "clearing recommendations must remove stale Connection Protection immediately");
+assert.equal(timers.size, 0, "clearing recommendations must cancel periodic Connection Protection work");
+listeners.get("pageshow")();
+assert.equal(timers.size, 0, "pageshow must not resurrect Connection Protection while recommendations remain empty");
+listeners.get("nvs-shared-view-resumed")();
+assert.equal(timers.size, 0, "shared-view resume must remain inert while recommendations are empty");
+listeners.get("nvs-group-recommendations-rendered")();
+assert.equal(timers.size, 1, "a later authoritative recommendation render should reactivate Connection Protection");
+
 assert.match(source, /MAX_WATCH_MIN = 6/);
 assert.match(source, /MAX_LEAD_MIN = 30/, "proactive warnings should be bounded so distant transfers do not create persistent noise");
 assert.match(source, /plannedPlatformFrom/, "connection protection should compare planned and realtime boarding platforms");
@@ -159,6 +191,8 @@ assert.match(source, /slice\(0, 180\)/, "provider remarks should be bounded so t
 assert.match(source, /departs in about/, "nearby connection protection should include a timetable countdown without implying location awareness");
 assert.match(source, /BLOCKING_VOLUNTARY/);
 assert.match(source, /nvs-shared-live-change/);
+assert.match(source, /recommendationsActive/, "Connection Protection scheduler must be gated by authoritative recommendation state");
+assert.match(source, /nvs-recommendations-cleared/, "Connection Protection must consume the empty-recommendation lifecycle directly");
 assert.match(source, /document\.hidden/);
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "transfer protection must remain route-data-only");
 assert.match(css, /prefers-reduced-motion/);
@@ -169,4 +203,4 @@ assert.match(release, /transfer-watch-v0111\.css/);
 assert.match(sw, /transfer-watch-v0111\.js/, "installed/offline PWA should include transfer watch runtime");
 assert.match(sw, /transfer-watch-v0111\.css/);
 
-console.log("transfer-watch: tight/impossible/cancelled connection protection, realtime platform drift, countdown, bounded noise, voluntary precedence, PWA wiring and no-GPS behavior passed");
+console.log("transfer-watch: tight/impossible/cancelled connection protection, lifecycle teardown/rehydration, realtime platform drift, bounded noise, voluntary precedence, PWA wiring and no-GPS behavior passed");
