@@ -16,6 +16,8 @@ let sharedRefreshes = 0;
 let intelligenceRefreshes = 0;
 let resumedEvents = 0;
 let timerCallback = null;
+let throwOnReload = false;
+let throwOnAssign = false;
 
 const button = {
   disabled: false,
@@ -39,10 +41,14 @@ const document = {
 const window = {
   location: {
     href: "https://example.test/p/Abc234?me=0",
-    reload() { reloadCalls += 1; },
+    reload() {
+      reloadCalls += 1;
+      if (throwOnReload) throw new Error("reload blocked");
+    },
     assign(value) {
       assignCalls += 1;
       assert.equal(value, this.href, "fallback navigation must preserve the exact shared-link URL");
+      if (throwOnAssign) throw new Error("assign blocked");
     },
   },
   NVSSharedLive: { refresh() { sharedRefreshes += 1; } },
@@ -112,6 +118,18 @@ assert.equal(sharedRefreshes, 1, "shared live state should refresh after Safari 
 assert.equal(intelligenceRefreshes, 1, "journey intelligence should refresh after Safari bfcache restore");
 assert.equal(resumedEvents, 1, "other runtime layers should receive one resume signal");
 
+throwOnReload = true;
+throwOnAssign = true;
+const blocked = window.NVSSharedReload0111.reloadUpdatedPlan(button);
+assert.equal(blocked, false, "synchronously blocked reload and fallback navigation should report that no navigation remains active");
+assert.equal(reloadCalls, 2, "blocked path should still attempt the primary reload once");
+assert.equal(assignCalls, 2, "blocked path should attempt the location.assign fallback once");
+assert.equal(window.NVSSharedReload0111.isNavigating(), false, "blocked navigation must release the single-flight latch");
+assert.equal(button.disabled, false, "blocked navigation must restore the reload button instead of stranding it disabled");
+assert.equal(button.textContent, "Reload updated plan");
+assert.equal(button.attrs["aria-busy"], undefined, "blocked navigation must clear the busy state");
+assert.equal(timerCallback, null, "blocked navigation must cancel its now-useless fallback timer");
+
 assert.match(release, /shared-reload-v0111\.js/, "release loader must include the reload guard");
 assert.match(serviceWorker, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r18";/, "Safari reload guard should ride the current validated PWA shell revision");
 assert.match(serviceWorker, /shared-reload-v0111\.js/, "reload guard must be available to installed\/offline copies");
@@ -119,4 +137,4 @@ assert.match(serviceWorker, /test-lab-v0111\.js/, "hardened Test Lab should rema
 assert.match(serviceWorker, /test-lab-journey-v0111\.js/, "journey simulation should remain available in the current offline Test Lab shell");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "reload hardening must not introduce location access");
 
-console.log("shared-reload-safari: delegated reload is single-shot, fallback-safe, bfcache-aware and aligned with r18");
+console.log("shared-reload-safari: delegated reload is single-shot, fallback-safe, failure-recoverable, bfcache-aware and aligned with r18");
