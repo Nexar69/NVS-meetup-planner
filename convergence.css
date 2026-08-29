@@ -142,11 +142,17 @@
 }
 
 .timeline-convergence-time {
-  padding-top: 7px;
+  padding-top: 1px;
   color: #475467;
-  font-size: 10px;
+  font-size: 12px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
   text-align: left;
+}
+
+.timeline-convergence-time:empty,
+.timeline-time:empty {
+  min-height: 1px;
 }
 
 .timeline-convergence-rail {
@@ -224,12 +230,26 @@
   background: #f8fafc;
 }
 
-.timeline-convergence-event.join .timeline-convergence-copy {
+/* Start and intermediate meetup markers are annotations on the route, not
+   separate full-width cards. Keep the final arrival as the strong terminal
+   milestone. */
+.timeline-convergence-event.start .timeline-convergence-copy,
+.timeline-convergence-event.join .timeline-convergence-copy,
+.timeline-convergence-event.meet .timeline-convergence-copy {
+  width: fit-content;
+  max-width: 100%;
+  justify-self: start;
+}
+
+.timeline-convergence-event.join .timeline-convergence-copy,
+.timeline-convergence-event.meet .timeline-convergence-copy {
   border-color: #b2ddff;
   background: #eff8ff;
 }
 
 .timeline-convergence-event.everyone .timeline-convergence-copy {
+  width: auto;
+  justify-self: stretch;
   border-color: #abefc6;
   background: #ecfdf3;
 }
