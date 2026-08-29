@@ -329,6 +329,15 @@
     if (mapStatus) mapStatus.innerHTML = "Choose your meetup preferences to load <strong>every group route</strong>. Dashed lines are only a preview.";
   }
 
+  function showRoutePreview() {
+    state.recommendations = null;
+    state.context = null;
+    state.selectedType = "primary";
+    updateTabs();
+    tagResultCards();
+    renderPreview();
+  }
+
   function modeLabel(recommendations) {
     if (recommendations?.mode === "fastest") return "⚡ Fastest group match";
     if (recommendations?.mode === "easy") return "😌 Easiest group match";
@@ -414,19 +423,15 @@
     }
     const refreshId = ++state.refreshGeneration;
     const context = getContext();
-    if (!context.target || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommendGroup) { renderPreview(); return; }
+    if (!context.target || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommendGroup) { showRoutePreview(); return; }
 
     if (!dataBadge?.classList.contains("live")) {
-      state.recommendations = null;
-      state.context = context;
-      updateTabs();
-      tagResultCards();
-      renderPreview();
+      showRoutePreview();
       return;
     }
 
     if (context.members.some((member) => !member.originKey)) {
-      renderPreview();
+      showRoutePreview();
       return;
     }
 
@@ -438,11 +443,11 @@
         state.refreshPending = true;
         return;
       }
-      if (routeSets.some((routes) => !routes.length)) { renderPreview(); return; }
+      if (routeSets.some((routes) => !routes.length)) { showRoutePreview(); return; }
       const recommendations = window.NVSRecommend.recommendGroup(routeSets, context.members, context.target, {
         priorityIds: window.NVSGroup?.getPriorityIds?.() || [],
       });
-      if (!recommendations.primary) { renderPreview(); return; }
+      if (!recommendations.primary) { showRoutePreview(); return; }
       state.recommendations = recommendations;
       state.context = context;
       if (!recommendations[state.selectedType]) state.selectedType = "primary";
@@ -454,7 +459,7 @@
         return;
       }
       console.warn("Group map refresh failed:", error);
-      renderPreview();
+      showRoutePreview();
     }
   }
 
@@ -489,12 +494,7 @@
     state.refreshTimer = null;
     state.refreshGeneration += 1;
     state.refreshPending = false;
-    state.recommendations = null;
-    state.context = null;
-    state.selectedType = "primary";
-    updateTabs();
-    tagResultCards();
-    renderPreview();
+    showRoutePreview();
   }
 
   document.querySelectorAll(".map-tabs [data-map-pair]").forEach((button) => button.addEventListener("click", () => selectPair(button.dataset.mapPair)));
@@ -507,7 +507,7 @@
   [personAInput, personBInput, destinationInput, dateInput, timeInput].forEach((input) => input?.addEventListener("change", () => scheduleRefresh(220)));
   window.addEventListener("nvs-priority-change", () => { state.selectedType = "primary"; scheduleRefresh(20); });
   window.addEventListener("nvs-timing-change", () => { state.selectedType = "primary"; scheduleRefresh(20); });
-  window.addEventListener("nvs-group-change", () => { state.selectedType = "primary"; state.recommendations = null; renderPreview(); scheduleRefresh(40); });
+  window.addEventListener("nvs-group-change", () => { showRoutePreview(); scheduleRefresh(40); });
   window.addEventListener("nvs-recommendations-cleared", clearRecommendationState);
   window.addEventListener("nvs-group-recommendations-rendered", (event) => {
     const detail = event.detail || {};
