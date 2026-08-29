@@ -107,7 +107,7 @@ settingsDialog.open = true;
 click({ target: tripSettings });
 tripSettings.setAttribute("aria-hidden", "true");
 settingsDialog.dispatch("close");
-assert.equal(document.activeElement, settingsClose, "closing must not restore focus to an aria-hidden nested opener");
+assert.equal(document.activeElement, alertOpener, "an unavailable nested opener should fall back to the usable settings launcher");
 tripSettings.attrs.delete("aria-hidden");
 
 tripDialog.open = true;
