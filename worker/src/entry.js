@@ -1,4 +1,5 @@
 import app from "./index.js";
+import { plansEquivalent } from "./plan-equivalence.js";
 import { vmvRestPlan } from "./vmv-rest.js";
 
 const DEFAULT_APP_URL = "https://nexar69.github.io/NVS-meetup-planner/";
@@ -263,6 +264,16 @@ async function updatePlanApi(request, env, id) {
   if (!updated) return json({ error: "plan_identity_changed" }, 409, cors);
 
   const meta = await readPlanMeta(id, env);
+  if (plansEquivalent(existing, updated)) {
+    return json({
+      ok: true,
+      unchanged: true,
+      planId: id,
+      revision: meta.revision,
+      updatedAt: meta.updatedAt,
+    }, 200, cors);
+  }
+
   const nextMeta = { revision: meta.revision + 1, updatedAt: Date.now() };
   const ttl = liveTtl(env);
   await Promise.all([
@@ -270,7 +281,7 @@ async function updatePlanApi(request, env, id) {
     env.PLANS.put(`meta:${id}`, JSON.stringify(nextMeta), { expirationTtl: ttl }),
     env.PLANS.put(`owner:${id}`, ownerKey, { expirationTtl: ttl }),
   ]);
-  return json({ ok: true, planId: id, revision: nextMeta.revision, updatedAt: nextMeta.updatedAt }, 200, cors);
+  return json({ ok: true, unchanged: false, planId: id, revision: nextMeta.revision, updatedAt: nextMeta.updatedAt }, 200, cors);
 }
 
 async function createPlanWithCapabilities(request, env, ctx) {
