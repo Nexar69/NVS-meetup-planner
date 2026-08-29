@@ -4,6 +4,8 @@
   let timer = null;
   let observer = null;
   let queued = false;
+  let queuedTimer = null;
+  let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary?.assignments?.length);
 
   function asDate(value) {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -102,7 +104,7 @@
   }
 
   function render() {
-    if (!isPersonalSharedView()) {
+    if (!recommendationsActive || !isPersonalSharedView()) {
       removeRow();
       return;
     }
@@ -143,7 +145,8 @@
 
   function schedule() {
     clearTimeout(timer);
-    if (document.hidden || !isPersonalSharedView()) return;
+    timer = null;
+    if (document.hidden || !recommendationsActive || !isPersonalSharedView()) return;
     timer = setTimeout(() => {
       render();
       schedule();
@@ -151,17 +154,19 @@
   }
 
   function queueRender() {
-    if (queued) return;
+    if (queued || !recommendationsActive) return;
     queued = true;
-    setTimeout(() => {
+    queuedTimer = setTimeout(() => {
       queued = false;
+      queuedTimer = null;
+      if (!recommendationsActive) return;
       render();
       observe();
     }, 0);
   }
 
   function observe() {
-    if (document.hidden || !("MutationObserver" in window)) return;
+    if (document.hidden || !recommendationsActive || !("MutationObserver" in window)) return;
     if (!observer) observer = new MutationObserver(queueRender);
     observer.disconnect();
     const personal = document.getElementById("personalSharedPlan");
@@ -174,16 +179,35 @@
     schedule();
   }
 
+  function clearRecommendationState() {
+    recommendationsActive = false;
+    clearTimeout(timer);
+    timer = null;
+    if (queuedTimer != null) clearTimeout(queuedTimer);
+    queuedTimer = null;
+    queued = false;
+    observer?.disconnect?.();
+    removeRow();
+  }
+
+  function activateRecommendationState() {
+    recommendationsActive = true;
+    refresh();
+  }
+
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       clearTimeout(timer);
+      timer = null;
       observer?.disconnect?.();
     } else {
       refresh();
     }
   });
 
-  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-recommendations-cleared", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
+  ["load", "pageshow", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
+  window.addEventListener("nvs-group-recommendations-rendered", activateRecommendationState);
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendationState);
 
   window.NVSStopAwareness0111 = Object.freeze({ stopAwarenessForSegment, activeSegment, modelForRoute, focusedFreshEntry, blockingVoluntaryState, refresh });
   refresh();
