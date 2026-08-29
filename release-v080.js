@@ -9,6 +9,7 @@
   let fallbackReason = "";
   let timer = null;
   let showIntermediateStops = false;
+  let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__);
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -113,9 +114,22 @@
     }
   }
 
-  function decorateProviders() {
+  function cancelProviderDecoration() {
     clearTimeout(timer);
+    timer = null;
+  }
+
+  function removeProviderDecoration() {
+    if (!results) return;
+    results.querySelectorAll(".v080-provider-chip").forEach((chip) => chip.remove());
+  }
+
+  function decorateProviders() {
+    cancelProviderDecoration();
+    if (!recommendationsActive) return;
     timer = setTimeout(() => {
+      timer = null;
+      if (!recommendationsActive) return;
       const recommendations = window.__NVS_LAST_RECOMMENDATIONS__;
       if (!recommendations || !results) return;
       [...results.querySelectorAll(":scope > .result[data-map-pair]")].forEach((card) => {
@@ -138,6 +152,17 @@
     }, 30);
   }
 
+  function activateRecommendations() {
+    recommendationsActive = true;
+    decorateProviders();
+  }
+
+  function clearRecommendations() {
+    recommendationsActive = false;
+    cancelProviderDecoration();
+    removeProviderDecoration();
+  }
+
   readDisplayState();
   applyDisplayState();
 
@@ -147,7 +172,8 @@
     fallbackReason = String(event.detail?.reason || "");
     updateCopy();
   });
-  window.addEventListener("nvs-group-recommendations-rendered", decorateProviders);
+  window.addEventListener("nvs-group-recommendations-rendered", activateRecommendations);
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendations);
   window.addEventListener("load", () => {
     updateCopy();
     decorateProviders();
