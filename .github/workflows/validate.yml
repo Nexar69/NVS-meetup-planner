@@ -70,6 +70,7 @@ jobs:
           node tests/release-smoke.test.cjs
           node tests/legacy-decoration-lifecycle.test.cjs
           node tests/app-search-generation.test.cjs
+          node tests/group-search-generation.test.cjs
           node tests/test-lab.test.cjs
           node tests/test-lab-bootstrap.test.cjs
           node tests/test-lab-journey.test.cjs
