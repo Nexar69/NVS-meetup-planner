@@ -157,6 +157,18 @@ assert.equal(tripDialogCloseCount, 1, "the open Trip Mode dialog should be close
 assert.ok(clearedTimers.includes(clearPendingId), "clearing recommendations should cancel pending voluntary reconciliation work");
 listeners.get("nvs-recommendations-cleared")();
 assert.equal(tripDialogCloseCount, 1, "repeated clear events should remain idempotent once Trip Mode is closed");
+
+const beforeEmptyResume = timers.length;
+listeners.get("pageshow")();
+assert.equal(timers.length, beforeEmptyResume, "bfcache resume must not restart voluntary intelligence work while recommendations are empty");
+listeners.get("nvs-shared-view-resumed")();
+assert.equal(timers.length, beforeEmptyResume, "shared-view resume must remain inert while recommendations are empty");
+listeners.get("nvs-group-recommendations-rendered")();
+assert.equal(timers.length, beforeEmptyResume + 1, "fresh authoritative recommendations should re-arm reconciliation after an empty state");
+assert.equal(timers.at(-1).delay, 60, "fresh recommendation rehydration should settle before periodic reconciliation restarts");
+timers.at(-1).callback();
+assert.equal(timers.at(-1).delay, 30_000, "settled fresh recommendations should restart the relaxed periodic safety reconciliation");
+
 const beforeHiddenEvent = timers.length;
 document.hidden = true;
 listeners.get("nvs-live-plan-synced")();
@@ -170,6 +182,8 @@ assert.match(serviceWorker, /test-lab-journey-v0111\.js/, "journey simulation sh
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "status precedence must not introduce location tracking");
 assert.match(source, /15 \* 60_000/, "fallback freshness must preserve the 15-minute policy");
 assert.match(source, /document\.hidden/, "periodic reconciliation should pause while hidden");
+assert.match(source, /recommendationsActive/, "periodic reconciliation should also pause while authoritative recommendation state is empty");
+assert.match(source, /clearPeriodicSync/, "recommendation clearing should explicitly cancel the relaxed periodic safety timer");
 assert.match(source, /const SYNC_MS = 30_000/, "periodic safety reconciliation should remain relaxed");
 assert.match(source, /const SETTLE_MS = 60/, "event-driven reconciliation should settle after the base intelligence renderer's short debounce");
 assert.match(source, /cancelScheduledSync/, "new events should replace obsolete pending reconciliations rather than stacking timers");
@@ -177,4 +191,4 @@ assert.match(source, /clearRecommendationSurfaces/, "empty recommendation transi
 assert.doesNotMatch(source, /MutationObserver/, "voluntary intelligence reconciliation should no longer observe DOM mutations");
 assert.doesNotMatch(source, /observer\.observe/, "the removed DOM observer must not quietly return");
 
-console.log("intelligence-voluntary-sync: voluntary state and command-center lifecycle stay authoritative without GPS or DOM observation on r18");
+console.log("intelligence-voluntary-sync: voluntary state, empty-state scheduling and command-center lifecycle stay authoritative without GPS or DOM observation on r18");
