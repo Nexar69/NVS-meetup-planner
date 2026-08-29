@@ -54,6 +54,7 @@
     const priority = assignments
       .map((assignment, index) => priorityIds.includes(assignment.member.id) ? index : -1)
       .filter((index) => index >= 0);
+    const timing = recommendations.timingMode || window.NVSRecommend?.getTimingMode?.() || "target";
 
     return {
       v: 1,
@@ -67,9 +68,11 @@
       },
       priority,
       mode: recommendations.mode || window.NVSRecommend?.getMode?.() || "together",
-      timing: recommendations.timingMode || window.NVSRecommend?.getTimingMode?.() || "target",
-      date: dateInput?.value || "",
-      time: timeInput?.value || "",
+      timing,
+      // ASAP uses date/time only as an internal rolling routing anchor. Do not
+      // serialize that moving implementation detail as shared meetup intent.
+      date: timing === "asap" ? "" : (dateInput?.value || ""),
+      time: timing === "asap" ? "" : (timeInput?.value || ""),
       createdAt: Date.now(),
     };
   }
