@@ -2,6 +2,7 @@
   const UPDATE_MS = 15_000;
   let timer = null;
   let lastMarkup = "";
+  let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary);
 
   function asDate(value) {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -173,7 +174,8 @@
 
   function schedule(delay = UPDATE_MS) {
     clearTimeout(timer);
-    if (document.hidden) return;
+    timer = null;
+    if (document.hidden || !recommendationsActive) return;
     timer = setTimeout(() => {
       render();
       schedule();
@@ -185,12 +187,30 @@
     schedule();
   }
 
-  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-recommendations-cleared", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-group-change", "nvs-timing-change", "nvs-shared-view-resumed"].forEach((name) => {
+  function activateRecommendations() {
+    recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary);
+    refresh();
+  }
+
+  function clearRecommendations() {
+    recommendationsActive = false;
+    clearTimeout(timer);
+    timer = null;
+    removeCard();
+  }
+
+  ["load", "pageshow", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-group-change", "nvs-timing-change", "nvs-shared-view-resumed"].forEach((name) => {
     window.addEventListener(name, refresh);
   });
+  window.addEventListener("nvs-group-recommendations-rendered", activateRecommendations);
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendations);
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) clearTimeout(timer);
-    else refresh();
+    if (document.hidden) {
+      clearTimeout(timer);
+      timer = null;
+    } else {
+      refresh();
+    }
   });
 
   window.NVSMeetupRadar0111 = Object.freeze({ radarModel, render, refresh });
