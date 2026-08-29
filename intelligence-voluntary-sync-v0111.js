@@ -4,6 +4,7 @@
   const OVERRIDE_STATUSES = new Set(["missed", "arrived", "on-vehicle", "at-stop"]);
   let timer = null;
   let reconcileTimer = null;
+  let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary?.assignments?.length);
 
   function loadCheckinQueueAssets() {
     if (typeof document.querySelector !== "function" || typeof document.createElement !== "function") return;
@@ -141,7 +142,14 @@
     reconcileTimer = null;
   }
 
+  function clearPeriodicSync() {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  }
+
   function clearRecommendationSurfaces() {
+    recommendationsActive = false;
+    clearPeriodicSync();
     cancelScheduledSync();
     const panel = document.getElementById("v011CommandCenter");
     panel?.classList?.remove?.("visible");
@@ -149,8 +157,14 @@
     if (dialog?.open && typeof dialog.close === "function") dialog.close();
   }
 
+  function activateRecommendations() {
+    recommendationsActive = true;
+    schedule();
+    arm();
+  }
+
   function schedule(delay = SETTLE_MS) {
-    if (document.hidden) return;
+    if (document.hidden || !recommendationsActive) return;
     cancelScheduledSync();
     reconcileTimer = setTimeout(() => {
       reconcileTimer = null;
@@ -159,8 +173,8 @@
   }
 
   function arm() {
-    clearTimeout(timer);
-    if (document.hidden) return;
+    clearPeriodicSync();
+    if (document.hidden || !recommendationsActive) return;
     timer = setTimeout(() => {
       sync();
       arm();
@@ -169,18 +183,18 @@
 
   [
     "nvs-shared-live-change",
-    "nvs-group-recommendations-rendered",
     "nvs-live-plan-synced",
     "nvs-shared-view-resumed",
     "pageshow",
   ].forEach((name) => {
     window.addEventListener(name, () => schedule());
   });
+  window.addEventListener("nvs-group-recommendations-rendered", activateRecommendations);
   window.addEventListener("nvs-recommendations-cleared", clearRecommendationSurfaces);
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
-      clearTimeout(timer);
+      clearPeriodicSync();
       cancelScheduledSync();
     } else {
       schedule();
