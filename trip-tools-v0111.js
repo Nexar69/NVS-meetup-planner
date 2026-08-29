@@ -197,7 +197,8 @@
   function scheduleRender() {
     clearTimeout(timer);
     timer = null;
-    if (document.hidden || !recommendationsActive) return;
+    if (document.hidden) return;
+    if (!recommendationsActive) return;
     timer = setTimeout(() => {
       render();
       scheduleRender();
