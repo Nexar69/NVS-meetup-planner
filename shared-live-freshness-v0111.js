@@ -1,14 +1,19 @@
 (() => {
   const STALE_MS = 15 * 60_000;
   const UPDATE_MS = 15_000;
+  const MAX_FUTURE_SKEW_MS = 5 * 60_000;
   let timer = null;
 
   function freshnessFor(entry, now = Date.now()) {
-    const core = window.NVSIntelligenceCore?.checkinFreshness?.(entry, new Date(now));
-    if (core && typeof core.fresh === "boolean") return core;
+    const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
     const at = Number(entry?.at);
+    if (Number.isFinite(at) && at > timestamp + MAX_FUTURE_SKEW_MS) {
+      return { fresh: false, stale: true, future: true, ageMs: 0, ageMinutes: 0 };
+    }
+    const core = window.NVSIntelligenceCore?.checkinFreshness?.(entry, new Date(timestamp));
+    if (core && typeof core.fresh === "boolean") return core;
     if (!Number.isFinite(at)) return { fresh: false, stale: true, ageMs: Infinity, ageMinutes: Infinity };
-    const ageMs = Math.max(0, now - at);
+    const ageMs = Math.max(0, timestamp - at);
     return { fresh: ageMs <= STALE_MS, stale: ageMs > STALE_MS, ageMs, ageMinutes: ageMs / 60_000 };
   }
 
@@ -37,16 +42,22 @@
 
     row.classList?.remove?.("manual", "live", "wait", "warn", "good");
     row.classList?.add?.("estimated", "stale-confirmation");
-    if (row.dataset) row.dataset.v0111Freshness = "stale";
+    if (row.dataset) row.dataset.v0111Freshness = freshness.future ? "invalid-future" : "stale";
 
     const label = row.querySelector?.("small");
     const detail = row.querySelector?.("em");
     const source = row.querySelector?.(".v010-source");
     if (label) label.textContent = headline;
-    if (detail) detail.textContent = `${estimateDetail} · last voluntary check-in about ${age} min ago`;
+    if (detail) {
+      detail.textContent = freshness.future
+        ? `${estimateDetail} · voluntary check-in has an invalid future timestamp`
+        : `${estimateDetail} · last voluntary check-in about ${age} min ago`;
+    }
     if (source) {
-      source.textContent = "STALE · TIMETABLE";
-      source.title = "This voluntary check-in is older than 15 minutes, so timetable guidance takes priority.";
+      source.textContent = freshness.future ? "INVALID TIME · TIMETABLE" : "STALE · TIMETABLE";
+      source.title = freshness.future
+        ? "This voluntary check-in is too far in the future, so timetable guidance takes priority until fresh server state replaces it."
+        : "This voluntary check-in is older than 15 minutes, so timetable guidance takes priority.";
     }
     return true;
   }
