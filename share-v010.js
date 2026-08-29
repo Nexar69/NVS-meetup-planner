@@ -8,6 +8,8 @@
   let rotating = false;
   let pendingShare = null;
   let syncTimer = null;
+  let syncGeneration = 0;
+  let activePlanSync = null;
   let deliveryGeneration = 0;
   let activeDeliverySignature = null;
 
@@ -57,6 +59,7 @@
     const priority = assignments
       .map((assignment, index) => priorityIds.includes(assignment.member.id) ? index : -1)
       .filter((index) => index >= 0);
+    const timing = recommendations.timingMode || window.NVSRecommend?.getTimingMode?.() || "target";
 
     return {
       v: 1,
@@ -70,9 +73,11 @@
       },
       priority,
       mode: recommendations.mode || window.NVSRecommend?.getMode?.() || "together",
-      timing: recommendations.timingMode || window.NVSRecommend?.getTimingMode?.() || "target",
-      date: dateInput?.value || "",
-      time: timeInput?.value || "",
+      timing,
+      // ASAP date/time are only a rolling routing anchor. Keeping them out of
+      // the shared intent prevents pointless revisions as the clock advances.
+      date: timing === "asap" ? "" : (dateInput?.value || ""),
+      time: timing === "asap" ? "" : (timeInput?.value || ""),
       createdAt: Date.now(),
     };
   }
@@ -138,10 +143,16 @@
     renderManagement();
   }
 
+  function invalidatePlanSync() {
+    syncGeneration += 1;
+    activePlanSync = null;
+  }
+
   function clearSecureCache(reason = "") {
     if (!secureCache) return;
     const id = secureCache.id;
     secureCache = null;
+    invalidatePlanSync();
     renderManagement();
     window.dispatchEvent(new CustomEvent("nvs-share-session-cleared", {
       detail: { id, reason: String(reason || "cleared") },
@@ -205,30 +216,43 @@
 
     if (sig === secureCache.signature) return true;
     const session = secureCache;
-
-    const response = await fetch(`${String(config.backendUrl).replace(/\/$/, "")}/api/live/${session.id}/plan`, {
-      method: "POST",
-      mode: "cors",
-      credentials: "omit",
-      headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
-      body: JSON.stringify({ key: session.ownerKey, plan }),
-    });
-    if (secureCache !== session || (expectedSignature && currentPlanSignature() !== expectedSignature)) return false;
-    if (response.status === 404 || response.status === 409) {
-      clearSecureCache(response.status === 404 ? "missing-or-expired" : "identity-changed");
-      return false;
+    if (activePlanSync?.session === session && activePlanSync.signature === sig) {
+      return activePlanSync.promise;
     }
-    if (!response.ok) throw new Error(`LIVE_PLAN_SYNC_HTTP_${response.status}`);
-    const data = await response.json();
-    if (secureCache !== session || (expectedSignature && currentPlanSignature() !== expectedSignature)) return false;
-    session.signature = sig;
-    session.revision = Number(data?.revision) || session.revision || 1;
-    const expiry = Number(data?.expiresAt);
-    if (Number.isFinite(expiry) && expiry > 0) session.expiresAt = expiry;
-    window.dispatchEvent(new CustomEvent("nvs-live-plan-synced", {
-      detail: { id: session.id, revision: session.revision, expiresAt: cacheExpiresAt() },
-    }));
-    return true;
+
+    const generation = ++syncGeneration;
+    const promise = (async () => {
+      const response = await fetch(`${String(config.backendUrl).replace(/\/$/, "")}/api/live/${session.id}/plan`, {
+        method: "POST",
+        mode: "cors",
+        credentials: "omit",
+        headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
+        body: JSON.stringify({ key: session.ownerKey, plan }),
+      });
+      if (secureCache !== session || generation !== syncGeneration || (expectedSignature && currentPlanSignature() !== expectedSignature)) return false;
+      if (response.status === 404 || response.status === 409) {
+        clearSecureCache(response.status === 404 ? "missing-or-expired" : "identity-changed");
+        return false;
+      }
+      if (!response.ok) throw new Error(`LIVE_PLAN_SYNC_HTTP_${response.status}`);
+      const data = await response.json();
+      if (secureCache !== session || generation !== syncGeneration || (expectedSignature && currentPlanSignature() !== expectedSignature)) return false;
+      session.signature = sig;
+      session.revision = Number(data?.revision) || session.revision || 1;
+      const expiry = Number(data?.expiresAt);
+      if (Number.isFinite(expiry) && expiry > 0) session.expiresAt = expiry;
+      window.dispatchEvent(new CustomEvent("nvs-live-plan-synced", {
+        detail: { id: session.id, revision: session.revision, expiresAt: cacheExpiresAt() },
+      }));
+      return true;
+    })();
+
+    activePlanSync = { session, signature: sig, generation, promise };
+    try {
+      return await promise;
+    } finally {
+      if (activePlanSync?.generation === generation) activePlanSync = null;
+    }
   }
 
   function scheduleSync() {
@@ -276,6 +300,7 @@
     }
     if (expectedSignature && currentPlanSignature() !== expectedSignature) return null;
     const expiry = Number(data?.expiresAt);
+    invalidatePlanSync();
     secureCache = {
       id: data.id,
       identity,
@@ -536,7 +561,10 @@
   window.addEventListener("nvs-group-recommendations-rendered", handlePlannerMutation);
   window.addEventListener("nvs-priority-change", handlePlannerMutation);
   window.addEventListener("nvs-timing-change", handlePlannerMutation);
-  window.addEventListener("pagehide", () => invalidateDelivery({ dismissDialog: true }));
+  window.addEventListener("pagehide", () => {
+    invalidatePlanSync();
+    invalidateDelivery({ dismissDialog: true });
+  });
 
   window.NVSShare010 = Object.freeze({
     shareGroup: () => confirmShare("group"),
