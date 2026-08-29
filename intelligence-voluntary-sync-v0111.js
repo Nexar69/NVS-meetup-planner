@@ -160,7 +160,6 @@
   function activateRecommendations() {
     recommendationsActive = true;
     schedule();
-    arm();
   }
 
   function schedule(delay = SETTLE_MS) {
@@ -169,6 +168,7 @@
     reconcileTimer = setTimeout(() => {
       reconcileTimer = null;
       sync();
+      arm();
     }, Math.max(0, Number(delay) || 0));
   }
 
