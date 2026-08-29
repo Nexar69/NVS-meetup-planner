@@ -12,6 +12,8 @@ class FakeElement {
     this.children = new Map();
     this.open = false;
     this.isConnected = true;
+    this.hidden = false;
+    this.disabled = false;
     this.focusCount = 0;
   }
   setAttribute(name, value) { this.attrs.set(name, String(value)); }
@@ -22,6 +24,7 @@ class FakeElement {
   querySelectorAll() { return []; }
   focus() { this.focusCount += 1; document.activeElement = this; }
   closest(selector) {
+    if (selector === "[inert]") return this.attrs.has("inert") ? this : null;
     return selector.split(",").some((part) => part.trim() === `#${this.id}`) ? this : null;
   }
 }
@@ -47,6 +50,7 @@ const documentListeners = new Map();
 global.document = {
   activeElement: null,
   documentElement: {},
+  hidden: false,
   getElementById: (id) => elements.get(id) || null,
   addEventListener: (name, fn) => documentListeners.set(name, fn),
 };
@@ -90,4 +94,28 @@ assert.equal(document.activeElement, settingsClose, "nested Alert settings shoul
 settingsDialog.dispatch("close");
 assert.equal(document.activeElement, tripSettings, "nested Alert settings should restore focus inside Trip Mode");
 
-console.log("dialog-accessibility-behavior: dialog labels and focus lifecycle passed");
+settingsDialog.open = true;
+alertOpener.hidden = false;
+click({ target: alertOpener });
+assert.equal(document.activeElement, settingsClose, "settings close control should own focus while the dialog is open");
+alertOpener.hidden = true;
+settingsDialog.dispatch("close");
+assert.equal(document.activeElement, settingsClose, "closing must not move focus into a launcher that became hidden");
+alertOpener.hidden = false;
+
+settingsDialog.open = true;
+click({ target: tripSettings });
+tripSettings.setAttribute("aria-hidden", "true");
+settingsDialog.dispatch("close");
+assert.equal(document.activeElement, settingsClose, "closing must not restore focus to an aria-hidden nested opener");
+tripSettings.attrs.delete("aria-hidden");
+
+tripDialog.open = true;
+click({ target: tripOpener });
+tripOpener.disabled = true;
+tripDialog.dispatch("close");
+assert.equal(document.activeElement, tripClose, "closing must not focus a launcher that became disabled");
+tripOpener.disabled = false;
+
+assert.doesNotMatch(source, /watchPosition|getCurrentPosition/, "accessibility focus handling must not access location APIs");
+console.log("dialog-accessibility-behavior: dialog labels, safe focus restoration and lifecycle passed");

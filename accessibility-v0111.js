@@ -15,16 +15,24 @@
     },
   };
 
+  function isUsableOpener(element) {
+    if (!element?.isConnected || element.hidden || element.disabled) return false;
+    if (element.getAttribute?.("aria-hidden") === "true") return false;
+    if (element.closest?.("[inert]")) return false;
+    return true;
+  }
+
   function focusSafely(element) {
-    if (!element?.focus) return;
+    if (!isUsableOpener(element) || !element?.focus) return;
     try { element.focus({ preventScroll: true }); } catch { try { element.focus(); } catch {} }
   }
 
   function activeOpenerFor(dialog) {
     const stored = OPENERS.get(dialog.id);
-    if (stored?.isConnected) return stored;
+    if (isUsableOpener(stored)) return stored;
     const id = DIALOGS[dialog.id]?.opener;
-    return id ? document.getElementById(id) : null;
+    const fallback = id ? document.getElementById(id) : null;
+    return isUsableOpener(fallback) ? fallback : null;
   }
 
   function enhanceDialog(dialog) {
