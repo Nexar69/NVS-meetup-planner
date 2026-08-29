@@ -24,6 +24,8 @@
   let shortPlanCache = null;
   let shortPlanInflight = null;
   let shortPlanGeneration = 0;
+  let deliveryInflight = null;
+  let deliveryGeneration = 0;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -242,6 +244,11 @@
     shortPlanCache = null;
   }
 
+  function invalidateDelivery() {
+    deliveryGeneration += 1;
+    deliveryInflight = null;
+  }
+
   function groupPayloadFrom(payload) {
     return payload ? { ...payload, view: "group", focus: -1 } : null;
   }
@@ -319,18 +326,30 @@
   }
 
   async function deliver(focus = -1) {
-    const built = await buildBestShareUrl(focus);
-    if (!built) { showToast("Find a live group recommendation before sharing it."); return; }
-    const person = focus >= 0 ? built.payload.members[focus] : null;
-    const text = person ? `${person.name}'s read-only Meet Schwerin route to ${built.payload.destination.label}.` : `Read-only Meet Schwerin group plan to ${built.payload.destination.label}.`;
+    if (deliveryInflight) return deliveryInflight.promise;
+    const generation = deliveryGeneration + 1;
+    deliveryGeneration = generation;
+    const promise = (async () => {
+      const built = await buildBestShareUrl(focus);
+      if (generation !== deliveryGeneration) return;
+      if (!built) { showToast("Find a live group recommendation before sharing it."); return; }
+      const person = focus >= 0 ? built.payload.members[focus] : null;
+      const text = person ? `${person.name}'s read-only Meet Schwerin route to ${built.payload.destination.label}.` : `Read-only Meet Schwerin group plan to ${built.payload.destination.label}.`;
+      try {
+        if (navigator.share) await navigator.share({ title: person ? `${person.name} · Meet Schwerin` : "Meet Schwerin group plan", text, url: built.url });
+        else if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(built.url);
+          if (generation === deliveryGeneration) showToast(built.short ? (person ? `${person.name}'s short link copied.` : "Short group link copied.") : "Link copied.");
+        } else if (generation === deliveryGeneration) window.prompt("Copy this link:", built.url);
+      } catch (error) {
+        if (generation === deliveryGeneration && error?.name !== "AbortError") showToast("Could not share the link.");
+      }
+    })();
+    deliveryInflight = { generation, promise };
     try {
-      if (navigator.share) await navigator.share({ title: person ? `${person.name} · Meet Schwerin` : "Meet Schwerin group plan", text, url: built.url });
-      else if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(built.url);
-        showToast(built.short ? (person ? `${person.name}'s short link copied.` : "Short group link copied.") : "Link copied.");
-      } else window.prompt("Copy this link:", built.url);
-    } catch (error) {
-      if (error?.name !== "AbortError") showToast("Could not share the link.");
+      return await promise;
+    } finally {
+      if (deliveryInflight?.promise === promise) deliveryInflight = null;
     }
   }
 
@@ -438,11 +457,12 @@
   decorate();
 
   window.addEventListener("nvs-group-recommendations-rendered", () => { if (sharedPlan) restoreStorage(); decorate(); });
-  window.addEventListener("nvs-group-change", () => { invalidateShortPlan(); decorate(); });
-  window.addEventListener("nvs-priority-change", () => { invalidateShortPlan(); decorate(); });
-  window.addEventListener("nvs-timing-change", () => { invalidateShortPlan(); decorate(); });
+  window.addEventListener("nvs-group-change", () => { invalidateShortPlan(); invalidateDelivery(); decorate(); });
+  window.addEventListener("nvs-priority-change", () => { invalidateShortPlan(); invalidateDelivery(); decorate(); });
+  window.addEventListener("nvs-timing-change", () => { invalidateShortPlan(); invalidateDelivery(); decorate(); });
   window.addEventListener("load", decorate);
-  window.addEventListener("beforeunload", restoreStorage);
+  window.addEventListener("pagehide", invalidateDelivery);
+  window.addEventListener("beforeunload", () => { invalidateDelivery(); restoreStorage(); });
   if (results) new MutationObserver(decorate).observe(results, { childList: true, subtree: true });
 
   window.NVSShare = Object.freeze({
