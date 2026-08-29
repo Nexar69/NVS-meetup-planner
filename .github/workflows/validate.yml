@@ -68,6 +68,7 @@ jobs:
           node tests/intelligence-lifecycle.test.cjs
           node tests/privacy-boundary.test.cjs
           node tests/release-smoke.test.cjs
+          node tests/legacy-decoration-lifecycle.test.cjs
           node tests/test-lab.test.cjs
           node tests/test-lab-bootstrap.test.cjs
           node tests/test-lab-journey.test.cjs
