@@ -10,7 +10,14 @@ assert.match(source, /function beginDelivery\(expectedSignature\)/, "deliveries 
 assert.match(source, /function deliveryIsCurrent\(token\)/, "late organizer share completions should be checked against active ownership");
 assert.match(source, /currentPlanSignature\(\) === token\.signature/, "delivery ownership must include the current planner state");
 assert.match(source, /function invalidateDelivery/, "organizer share lifecycle should support explicit invalidation");
-assert.match(source, /window\.addEventListener\("pagehide", \(\) => invalidateDelivery/, "navigation should invalidate pending organizer delivery work");
+assert.match(source, /date: timing === "asap" \? ""/, "ASAP sharing must not serialize the rolling routing date");
+assert.match(source, /time: timing === "asap" \? ""/, "ASAP sharing must not serialize the rolling routing time");
+assert.match(source, /let syncGeneration = 0;/, "organizer plan sync should own a generation counter");
+assert.match(source, /let activePlanSync = null;/, "organizer plan sync should retain the active request");
+assert.match(source, /activePlanSync\?\.session === session && activePlanSync\.signature === sig[\s\S]*return activePlanSync\.promise;/, "matching plan syncs should coalesce onto one request");
+assert.match(source, /generation !== syncGeneration/, "superseded plan sync responses must not mutate the active session");
+assert.match(source, /function invalidatePlanSync\(\)/, "plan sync work should support explicit lifecycle invalidation");
+assert.match(source, /window\.addEventListener\("pagehide", \(\) => \{[\s\S]*invalidatePlanSync\(\);[\s\S]*invalidateDelivery/, "navigation should invalidate both plan sync and delivery work");
 assert.match(source, /pendingShare = \{ type, index, signature: signature\(plan\) \}/, "the share dialog target should be bound to the plan it described");
 assert.match(source, /if \(currentPlanSignature\(\) !== action\.signature\)/, "confirming a stale share dialog must be rejected");
 assert.match(source, /if \(!deliveryIsCurrent\(token\)\) return false;[\s\S]*navigator\.share/, "Web Share must not start for superseded planner state");
