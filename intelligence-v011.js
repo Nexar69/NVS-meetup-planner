@@ -23,6 +23,7 @@
   let notified = new Map();
   let reloadingForUpdate = false;
   let updateRegistration = null;
+  let recommendationsActive = Boolean(assignments().length);
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -549,8 +550,19 @@
     tick = null;
   }
 
+  function clearRecommendationState() {
+    recommendationsActive = false;
+    clearTick();
+    clearTimeout(renderTimer);
+    renderTimer = null;
+    document.getElementById("v011CommandCenter")?.classList.remove("visible");
+    const dialog = document.getElementById("v011TripDialog");
+    if (dialog?.open) dialog.close();
+  }
+
   function nextTickDelay() {
     if (document.hidden) return null;
+    if (!recommendationsActive) return null;
     return document.getElementById("v011TripDialog")?.open ? 1_000 : 5_000;
   }
 
@@ -567,6 +579,8 @@
 
   function scheduleRender(delay = 20) {
     clearTimeout(renderTimer);
+    renderTimer = null;
+    if (!recommendationsActive) return;
     renderTimer = setTimeout(() => {
       renderTimer = null;
       render();
@@ -582,13 +596,19 @@
     ensureSettingsDialog();
     ensureUpdateBanner();
     renderSettings();
+    recommendationsActive = Boolean(assignments().length);
     render();
     scheduleTick();
     installUpdateWatcher();
   }
 
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendationState);
+  window.addEventListener("nvs-group-recommendations-rendered", () => {
+    recommendationsActive = Boolean(assignments().length);
+    scheduleRender();
+  });
+
   [
-    "nvs-group-recommendations-rendered",
     "nvs-routing-provider",
     "nvs-shared-live-change",
     "nvs-group-change",
