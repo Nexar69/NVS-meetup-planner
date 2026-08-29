@@ -637,9 +637,11 @@
   }
 
   async function groupSearch({ scrollToResults = false } = {}) {
+    const id = ++searchSequence;
     const members = membersForRouting();
     const missing = members.find((member) => !member.originKey || !window.NVSTransit?.LOCATIONS?.[member.originKey]);
     if (missing) {
+      setSearching(false);
       summary.textContent = `Choose a starting point for ${missing.name}.`;
       showToast(`Choose a starting point for ${missing.name}`);
       return;
@@ -648,6 +650,7 @@
     const target = currentTarget();
     const destination = destinationSelect?.value;
     if (!target || !destination) {
+      setSearching(false);
       summary.textContent = "Choose a valid meetup time and destination.";
       return;
     }
@@ -659,17 +662,18 @@
     if (scrollToResults) document.getElementById("results-title")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
     if (!navigator.onLine) {
+      setSearching(false);
       groupFallback(members, destination, target, "offline");
       return;
     }
 
     if (!window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommendGroup) {
+      setSearching(false);
       groupFallback(members, destination, target, "fallback");
       showToast("Group routing module unavailable — showing demo data.");
       return;
     }
 
-    const id = ++searchSequence;
     setSearching(true);
     setDataMode("loading");
     renderLoading();
