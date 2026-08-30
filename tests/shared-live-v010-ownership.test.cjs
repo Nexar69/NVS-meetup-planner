@@ -4,14 +4,21 @@ const assert = require('assert');
 const source = fs.readFileSync('shared-live-v010.js', 'utf8');
 
 // The directly-loaded Shared Live owner must not let an older GET replace a
-// newer POST-confirmed state. Polls therefore own a generation and controller,
-// and voluntary writes explicitly invalidate any poll already in flight.
+// newer POST-confirmed state. Polls therefore own a generation, controller,
+// and the exact shared-plan scope they started under. Voluntary writes explicitly
+// invalidate any poll already in flight.
 assert.match(source, /let pollGeneration = 0;/,
   'shared live should track poll generations');
 assert.match(source, /let pollTask = null;/,
   'shared live should retain the active poll identity');
 assert.match(source, /function invalidatePoll\(\)[\s\S]*pollGeneration \+= 1;[\s\S]*pollTask = null;[\s\S]*\.abort\(\)/,
   'poll invalidation should advance ownership and abort the old request');
+assert.match(source, /function pollStillCurrent\(task\)[\s\S]*pollTask === task[\s\S]*task\.generation === pollGeneration[\s\S]*!document\.hidden[\s\S]*!sending[\s\S]*planId\(\) === task\.planId/,
+  'GET completion should fail closed when its shared-plan scope no longer owns the page');
+assert.match(source, /const currentPlanId = planId\(\);[\s\S]*const task = \{ generation, controller, planId: currentPlanId, promise: null \};/,
+  'each poll should capture the plan ID it was created for');
+assert.match(source, /const response = await fetch\([^\n]+[\s\S]*if \(!response\.ok \|\| !pollStillCurrent\(task\)\) return;[\s\S]*const next = await response\.json\(\);[\s\S]*if \(!pollStillCurrent\(task\)\) return;[\s\S]*liveState = next;/,
+  'GET ownership must be checked before body parsing and again before liveState assignment');
 assert.match(source, /sending = true;\s*invalidatePoll\(\);/,
   'a voluntary POST should invalidate any older GET before it can overwrite the confirmed state');
 
@@ -48,8 +55,8 @@ assert.match(source, /if \(pollTask\) return pollTask\.promise;/,
   'overlapping current-generation polls should coalesce');
 assert.match(source, /const generation = \+\+pollGeneration;/,
   'each fresh poll should receive a new generation');
-assert.match(source, /generation !== pollGeneration[^\n]*document\.hidden[^\n]*sending/,
-  'poll completion should be rejected when superseded, hidden, or racing a POST');
+assert.match(source, /if \(!response\.ok \|\| !pollStillCurrent\(task\)\) return;/,
+  'poll completion should be rejected when superseded, hidden, racing a POST, or owned by another plan');
 assert.match(source, /if \(pollTask === task\) pollTask = null;/,
   'an older poll must never clear the identity of its replacement');
 
@@ -71,4 +78,4 @@ assert.doesNotMatch(source, /watchPosition\s*\(/,
 assert.doesNotMatch(source, /localStorage|indexedDB/i,
   'Shared Live check-in ownership must not add durable personal state storage');
 
-console.log('shared live v010 read/write ownership contracts OK');
+console.log('shared live v010 plan/read/write ownership contracts OK');
