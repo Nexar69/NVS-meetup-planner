@@ -177,7 +177,7 @@ assert.match(secureShare, /resetPersonLink/, "organizer share API should support
 const sharedLive = read("shared-live-v010.js");
 assert.match(sharedLive, /sessionStorage\.setItem/, "personal check-in capability should move into tab-scoped storage after opening");
 assert.match(sharedLive, /sessionStorage\.removeItem/, "a revoked personal capability should be removed from the current tab");
-assert.match(sharedLive, /CHECKIN_CAPABILITY_REVOKED/, "revoked personal links should downgrade themselves to read-only after authorization failure");
+assert.match(sharedLive, /response\.status === 403[\s\S]*forgetCapability\(\)[\s\S]*checkinOutcome\("rejected", "capability_revoked"/, "revoked personal links should downgrade themselves to read-only after authorization failure");
 assert.match(sharedLive, /history\.replaceState/, "opened personal links should remove the write capability from the address bar");
 assert.match(sharedLive, /params\.delete\("k"\)/, "URL sanitization must remove only the private capability parameter");
 assert.match(sharedLive, /sessionStorage\.getItem/, "reloads in the same tab should retain the check-in capability");
