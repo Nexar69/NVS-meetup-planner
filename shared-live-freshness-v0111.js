@@ -7,6 +7,7 @@
     "v0111StopAwareness",
     "v0111TransferWatch",
     "v0111MeetupRadar",
+    "v0111WhatIf",
   ];
   let timer = null;
   let trustObserver = null;
