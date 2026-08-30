@@ -117,6 +117,20 @@ assert.equal(api.blockingVoluntaryState(at(10).getTime()), null, "an on-board co
 liveEntry = { status: "at-stop", at: at(10).getTime() };
 assert.equal(api.blockingVoluntaryState(at(26).getTime()), null, "stale at-stop reports should stop suppressing timetable stop awareness");
 
+// Partial-shell fallback must preserve the central timestamp-trust boundary.
+window.NVSIntelligenceCore = null;
+const fallbackNow = at(10).getTime();
+liveEntry = { status: "at-stop", at: fallbackNow + 5 * 60_000 };
+assert.equal(api.blockingVoluntaryState(fallbackNow), "at-stop", "fallback should tolerate up to five minutes of ordinary device-clock skew");
+liveEntry = { status: "at-stop", at: fallbackNow + 5 * 60_000 + 1 };
+assert.equal(api.blockingVoluntaryState(fallbackNow), null, "fallback must reject check-ins beyond the future-skew trust boundary");
+liveEntry = { status: "at-stop", at: fallbackNow - 15 * 60_000 };
+assert.equal(api.blockingVoluntaryState(fallbackNow), "at-stop", "exactly 15 minutes old remains fresh at the fallback boundary");
+liveEntry = { status: "at-stop", at: fallbackNow - 15 * 60_000 - 1 };
+assert.equal(api.blockingVoluntaryState(fallbackNow), null, "older fallback reports must stop suppressing timetable guidance");
+liveEntry = { status: "at-stop", at: "not-a-time" };
+assert.equal(api.blockingVoluntaryState(fallbackNow), null, "malformed fallback timestamps must never become authoritative");
+
 // Lifecycle: only an authoritative recommendation render may activate periodic/observer work.
 let removed = false;
 window.NVSShare.getSharedPlan = () => ({ id: "shared" });
@@ -147,7 +161,8 @@ assert.equal(timers.size, 1, "a later authoritative recommendation render should
 
 assert.match(source, /BLOCKING_VOLUNTARY/);
 assert.match(source, /at-stop/, "stop awareness should explicitly respect at-stop voluntary state");
-assert.match(source, /15 \* 60_000/, "stop awareness should share the 15-minute voluntary freshness fallback");
+assert.match(source, /MAX_FUTURE_SKEW_MS/, "stop awareness fallback must explicitly bound tolerated future clock skew");
+assert.match(source, /STALE_AFTER_MS/, "stop awareness should share the 15-minute voluntary freshness fallback");
 assert.match(source, /recommendationsActive/, "Stop Awareness should gate lifecycle work on authoritative recommendation state");
 assert.match(source, /queuedTimer/, "queued observer renders should be cancellable at the clear boundary");
 assert.match(source, /nvs-recommendations-cleared/, "Stop Awareness must consume the empty-recommendation lifecycle");
@@ -158,4 +173,4 @@ assert.match(release, /stop-awareness-v0111\.css/);
 assert.match(sw, /stop-awareness-v0111\.js/);
 assert.match(sw, /stop-awareness-v0111\.css/);
 
-console.log("stop-awareness: timetable-only next-stop guidance, lifecycle teardown/rehydration and voluntary-state precedence passed");
+console.log("stop-awareness: timetable-only next-stop guidance, fallback clock-skew trust, lifecycle teardown/rehydration and voluntary-state precedence passed");
