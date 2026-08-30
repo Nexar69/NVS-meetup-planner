@@ -5,6 +5,7 @@
   const MAX_SEGMENTS = 12;
   const COMPLETED_GRACE_MS = 2 * 60 * 1000;
   let freshnessTimer = null;
+  let memorySnapshot = null;
 
   function asDate(value) {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -123,12 +124,27 @@
     return Array.isArray(items) && focus >= 0 ? items[focus] : null;
   }
 
+  function snapshotUsable(snapshot, now = Date.now()) {
+    const expectedScope = scopeFingerprint();
+    if (!snapshot || snapshot.schema !== "meet-schwerin-offline-journey-v1" || !expectedScope || snapshot.scope !== expectedScope || !Array.isArray(snapshot.segments) || !snapshot.segments.length) return false;
+    const captured = asDate(snapshot.capturedAt)?.getTime();
+    const expiresAt = asDate(snapshot.expiresAt)?.getTime();
+    return Boolean(
+      Number.isFinite(captured)
+      && Number(now) - captured <= MAX_AGE_MS
+      && captured - Number(now) <= 5 * 60_000
+      && (!Number.isFinite(expiresAt) || Number(now) < expiresAt),
+    );
+  }
+
   function writeSnapshot(snapshot) {
     if (!snapshot) return false;
     try {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+      memorySnapshot = null;
       return true;
     } catch {
+      memorySnapshot = snapshot;
       return false;
     }
   }
@@ -140,6 +156,7 @@
 
   function clearSnapshot() {
     clearFreshnessTimer();
+    memorySnapshot = null;
     try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
     removeCard();
   }
@@ -152,23 +169,23 @@
   }
 
   function readSnapshot(now = Date.now()) {
+    let parsed = null;
     try {
-      const parsed = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "null");
-      const expectedScope = scopeFingerprint();
-      if (!parsed || parsed.schema !== "meet-schwerin-offline-journey-v1" || !expectedScope || parsed.scope !== expectedScope || !Array.isArray(parsed.segments) || !parsed.segments.length) {
-        if (parsed) sessionStorage.removeItem(STORAGE_KEY);
-        return null;
-      }
-      const captured = asDate(parsed.capturedAt)?.getTime();
-      const expiresAt = asDate(parsed.expiresAt)?.getTime();
-      if (!Number.isFinite(captured) || now - captured > MAX_AGE_MS || captured - now > 5 * 60_000 || (Number.isFinite(expiresAt) && now >= expiresAt)) {
-        sessionStorage.removeItem(STORAGE_KEY);
-        return null;
-      }
-      return parsed;
+      parsed = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "null");
     } catch {
+      parsed = null;
+    }
+
+    if (parsed && snapshotUsable(parsed, now)) return parsed;
+    if (parsed) {
+      try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
+      memorySnapshot = null;
       return null;
     }
+
+    if (memorySnapshot && snapshotUsable(memorySnapshot, now)) return memorySnapshot;
+    memorySnapshot = null;
+    return null;
   }
 
   function reconcileAuthoritativeExpiry(now = Date.now()) {
