@@ -67,6 +67,7 @@ const window = {
 const document = {
   hidden: false,
   addEventListener(name, handler) { listeners.set(`document:${name}`, handler); },
+  getElementById() { return null; },
 };
 
 class FakeCustomEvent {
@@ -144,13 +145,17 @@ vm.runInNewContext(source, {
   // expired session must remain non-writable and marked as a pending plan update.
   now = 3_000;
   document.hidden = false;
-  const restoreHandler = listeners.get('document:visibilitychange');
-  restoreHandler?.();
+  listeners.get('document:visibilitychange')?.();
 
-  // visibilitychange starts refresh asynchronously; yield until its response is consumed.
-  await Promise.resolve();
-  await Promise.resolve();
+  // visibilitychange intentionally starts refresh without returning its promise.
+  // Yield deterministically until the immediate fake response has crossed both
+  // fetch and response.json microtask boundaries.
+  for (let i = 0; i < 8 && api.getState()?.revision !== 4; i += 1) {
+    await Promise.resolve();
+  }
 
+  assert.equal(fetchStep, 3,
+    'restoration should perform exactly one fresh reconnect request');
   assert.equal(api.getState()?.revision, 4,
     'restoration should accept only the fresh reconnect response');
   assert.equal(api.hasPendingPlanUpdate(), true,
