@@ -16,6 +16,8 @@
   let pendingRevision = null;
   let pollGeneration = 0;
   let pollTask = null;
+  let sendGeneration = 0;
+  let sendTask = null;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -78,8 +80,18 @@
     return Number.isInteger(value) ? value : -1;
   }
 
+  function authoritativeExpiry() {
+    const value = Number(liveState?.expiresAt);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  function sessionExpired() {
+    const expiry = authoritativeExpiry();
+    return expiry != null && Date.now() >= expiry;
+  }
+
   function canCheckIn() {
-    return focusIndex() >= 0 && capabilityKey().length >= 20;
+    return focusIndex() >= 0 && capabilityKey().length >= 20 && pendingRevision == null && !sessionExpired();
   }
 
   function apiUrl() {
@@ -135,11 +147,34 @@
     try { task?.controller?.abort(); } catch {}
   }
 
+  function invalidateSend() {
+    sendGeneration += 1;
+    const task = sendTask;
+    sendTask = null;
+    sending = false;
+    try { task?.controller?.abort(); } catch {}
+  }
+
+  function sendStillCurrent(task) {
+    return sendTask === task
+      && task.generation === sendGeneration
+      && !document.hidden
+      && pendingRevision == null
+      && !sessionExpired()
+      && planId() === task.planId
+      && focusIndex() === task.focus;
+  }
+
   async function sendStatus(status) {
     const url = apiUrl();
     const focus = focusIndex();
     const key = capabilityKey();
-    if (!url || focus < 0 || !key || sending) return;
+    if (!url || focus < 0 || !key || sending || pendingRevision != null || sessionExpired()) return;
+
+    const generation = ++sendGeneration;
+    const controller = new AbortController();
+    const task = { generation, controller, planId: planId(), focus };
+    sendTask = task;
     sending = true;
     invalidatePoll();
     render();
@@ -147,8 +182,10 @@
       const response = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
-        body: JSON.stringify({ member: focus, key, status, note: status === "clear" ? "" : suggestedNote(status) }),
+        body: JSON.stringify({ member: focus, key, status, note: status === "clear" ? "" : suggestedNote(status), revision: loadedRevision }),
+        signal: controller.signal,
       });
+      if (!sendStillCurrent(task)) return;
       if (response.status === 403) {
         forgetCapability();
         const note = document.getElementById("v010CheckinNote");
@@ -157,19 +194,24 @@
       }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const next = await response.json();
+      if (!sendStillCurrent(task)) return;
       liveState = { ...(liveState || {}), ...next };
       render();
       window.dispatchEvent(new CustomEvent("nvs-shared-live-change", { detail: liveState }));
     } catch (error) {
+      if (error?.name === "AbortError") return;
       console.warn("Shared check-in failed", error);
       const note = document.getElementById("v010CheckinNote");
       if (note && error?.message !== "CHECKIN_CAPABILITY_REVOKED") {
         note.textContent = "Could not update the shared status. This link may be an older read-only link, or you may be offline.";
       }
     } finally {
-      sending = false;
-      render();
-      schedulePoll();
+      if (sendTask === task) {
+        sendTask = null;
+        sending = false;
+        render();
+        schedulePoll();
+      }
     }
   }
 
@@ -292,22 +334,24 @@
 
     const checkin = panel.querySelector("#v010Checkin");
     if (checkin) checkin.hidden = !canCheckIn();
-    panel.querySelectorAll("[data-v010-status]").forEach((button) => { button.disabled = sending || pendingRevision != null; });
+    panel.querySelectorAll("[data-v010-status]").forEach((button) => { button.disabled = sending || pendingRevision != null || sessionExpired(); });
 
     const current = focus >= 0 ? values[String(focus)] : null;
     const note = panel.querySelector("#v010CheckinNote");
     if (note) {
-      note.textContent = pendingRevision != null
-        ? "Reload the updated plan before posting another check-in."
-        : current?.status
-          ? `Your latest check-in: ${STATUS_COPY[current.status]?.label || current.status}${current.note ? ` · ${current.note}` : ""} · ${ago(current.at)}`
-          : canCheckIn()
-            ? "Private check-in key is kept only in this tab after opening; it is hidden from the address bar."
-            : "Tap only what you want to share with this meetup.";
+      note.textContent = sessionExpired()
+        ? "This shared session has expired. Ask the organizer for a new link to continue voluntary check-ins."
+        : pendingRevision != null
+          ? "Reload the updated plan before posting another check-in."
+          : current?.status
+            ? `Your latest check-in: ${STATUS_COPY[current.status]?.label || current.status}${current.note ? ` · ${current.note}` : ""} · ${ago(current.at)}`
+            : canCheckIn()
+              ? "Private check-in key is kept only in this tab after opening; it is hidden from the address bar."
+              : "Tap only what you want to share with this meetup.";
     }
 
     let legacy = panel.querySelector(".v010-legacy-note");
-    if (focus >= 0 && !canCheckIn()) {
+    if (focus >= 0 && !canCheckIn() && pendingRevision == null && !sessionExpired()) {
       if (!legacy) {
         legacy = document.createElement("p");
         legacy.className = "v010-legacy-note";
@@ -360,6 +404,10 @@
 
   window.addEventListener("nvs-group-recommendations-rendered", render);
   window.addEventListener("nvs-display-options-change", render);
+  window.addEventListener("nvs-shared-session-expired", () => {
+    invalidateSend();
+    render();
+  });
   window.addEventListener("pageshow", () => {
     invalidatePoll();
     void poll();
@@ -369,10 +417,12 @@
   window.addEventListener("pagehide", () => {
     clearTimeout(timer);
     invalidatePoll();
+    invalidateSend();
   });
   document.addEventListener("visibilitychange", () => {
     clearTimeout(timer);
     invalidatePoll();
+    if (document.hidden) invalidateSend();
     if (!document.hidden) {
       void poll();
       schedulePoll();
