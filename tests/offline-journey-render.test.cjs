@@ -117,8 +117,9 @@ vm.runInNewContext(source, {
 });
 
 const api = window.NVSOfflineJourney0111;
-assert.equal(typeof api.captureAndRender, "function");
+assert.equal(typeof api.captureFreshRouteAndRender, "function");
 assert.equal(typeof api.resumeRender, "function");
+assert.equal(typeof api.markConnectionBoundary, "function");
 const storageKey = "meet-schwerin-offline-journey-v1";
 const snapshot = api.buildSnapshot(routeAssignment, new Date(base));
 sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
@@ -126,7 +127,7 @@ sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
 routeAssignment.route.segments[1].line = "5";
 const beforeLifecycleResume = sessionStorage.getItem(storageKey);
 listeners.online?.();
-listeners.pageshow?.();
+listeners.pageshow?.({ type: "pageshow", persisted: false });
 listeners["nvs-shared-view-resumed"]?.();
 listeners["nvs-live-plan-synced"]?.();
 assert.equal(sessionStorage.getItem(storageKey), beforeLifecycleResume, "generic reconnect/resume events must not re-capture cached route data or renew its realtime trust timestamp");
@@ -137,11 +138,38 @@ routeAssignment.route.segments[1].line = "4";
 sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
 
 navigator.onLine = false;
+listeners.offline?.();
+let card = nodes.get("offlineJourney0111");
+assert.ok(card, "an offline transition must expose the saved fallback even while stale live-route DOM is still mounted");
+assert.equal(card.attributes.get("data-connection"), "offline");
+assert.match(card.innerHTML, /Your saved journey is still available/);
+
+navigator.onLine = true;
+listeners.online?.();
+card = nodes.get("offlineJourney0111");
+assert.ok(card, "reconnect must keep the saved fallback until a fresh route render is confirmed");
+assert.equal(card.attributes.get("data-connection"), "reconnecting");
+assert.match(card.innerHTML, /Keeping your saved journey until live data returns/);
+const beforePersistedResume = sessionStorage.getItem(storageKey);
+listeners.pagehide?.();
+listeners.pageshow?.({ type: "pageshow", persisted: true });
+listeners["nvs-shared-view-resumed"]?.();
+assert.equal(sessionStorage.getItem(storageKey), beforePersistedResume, "bfcache/shared-view resumes must not renew offline realtime trust");
+assert.ok(nodes.get("offlineJourney0111"), "bfcache resume must not dismiss the fallback based only on restored stale DOM");
+
+routeAssignment.route.segments[1].line = "6";
+listeners["nvs-group-recommendations-rendered"]?.();
+assert.equal(nodes.has("offlineJourney0111"), false, "only a fresh recommendation render should dismiss the reconnect fallback");
+assert.equal(JSON.parse(sessionStorage.getItem(storageKey)).segments[1].line, "6", "fresh reconnect data should replace the saved route before fallback dismissal");
+routeAssignment.route.segments[1].line = "4";
+sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
+
+navigator.onLine = false;
 sharedPlan = null;
 focus = -1;
 api.resumeRender();
 
-let card = nodes.get("offlineJourney0111");
+card = nodes.get("offlineJourney0111");
 assert.ok(card, "offline personal viewer should render its tab-scoped saved route when the live plan is unavailable");
 assert.equal(card.attributes.get("data-connection"), "offline");
 assert.doesNotMatch(card.innerHTML, /OLD|Old stop|Already passed/, "clearly completed route legs should not clutter the offline mobile card");
@@ -205,9 +233,11 @@ assert.equal(timers.size, 1, "a reconnecting fallback should keep its one-shot f
 sharedPlan = { view: "person" };
 focus = 0;
 api.resumeRender();
-assert.equal(timers.size, 0, "restored live-route rendering should cancel the saved-fallback boundary timer");
-assert.equal(nodes.has("offlineJourney0111"), false, "saved fallback should disappear only after usable live personal route data has returned");
+assert.ok(nodes.get("offlineJourney0111"), "restored stale route objects alone must not clear the reconnect fallback before a confirmed recommendation render");
+listeners["nvs-group-recommendations-rendered"]?.();
+assert.equal(timers.size, 0, "fresh live-route rendering should cancel the saved-fallback boundary timer");
+assert.equal(nodes.has("offlineJourney0111"), false, "saved fallback should disappear only after usable live personal route data has been freshly rendered");
 assert.doesNotMatch(source, /setInterval\s*\(/, "offline lifecycle should use one-shot boundary timers, never background polling");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "saved journey continuity must not add location tracking");
 
-console.log("offline-journey-render: generic lifecycle resumes cannot re-age cached realtime facts; fresh recommendations may replace the tab-scoped fallback, which still preserves disruption priority, expiry, privacy and mobile cleanup");
+console.log("offline-journey-render: offline/reconnect/bfcache boundaries keep the saved route until fresh rendering confirms replacement, without renewing trust timestamps or adding GPS");
