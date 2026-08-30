@@ -170,7 +170,8 @@
     if (freshness && !freshness.fresh) return null;
     if (!freshness) {
       const at = Number(entry.at);
-      if (!Number.isFinite(at) || Math.max(0, now - at) > 15 * 60_000) return null;
+      const age = now - at;
+      if (!Number.isFinite(at) || age < -5 * 60_000 || age > 15 * 60_000) return null;
     }
     return entry;
   }
@@ -225,7 +226,7 @@
   });
   ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
   window.addEventListener("nvs-recommendations-cleared", clearRecommendationGuidance);
-  window.NVSTripGuidance0111 = Object.freeze({ guidanceForRoute, refresh, observeGuidanceSurfaces, clearRecommendationGuidance });
+  window.NVSTripGuidance0111 = Object.freeze({ guidanceForRoute, freshVoluntaryEntry, refresh, observeGuidanceSurfaces, clearRecommendationGuidance });
   observeGuidanceSurfaces();
   refresh();
 })();
