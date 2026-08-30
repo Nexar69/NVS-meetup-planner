@@ -262,6 +262,26 @@
     return { ...recentAttempt };
   }
 
+  function definiteOutcomeMessage(outcome) {
+    const reason = String(outcome?.reason || "");
+    if (reason === "plan_updated") return "The organizer changed the meetup plan, so that status was rejected and was not shared. Reload the updated plan before posting again.";
+    if (reason === "capability_revoked") return "This private check-in link was reset, so that status was rejected and was not shared.";
+    if (reason === "expired") return "The shared meetup session expired, so that status was not shared.";
+    if (reason === "busy") return "Another status update was already sending, so this tap was not sent.";
+    if (reason === "unavailable") return "This personal check-in is not currently writable, so that status was not sent.";
+    if (reason === "http_error") return "The server rejected that status update, so it was not shared.";
+    return "That status update was not sent.";
+  }
+
+  function handleCheckinOutcome(event) {
+    const outcome = event?.detail;
+    if (!outcome || !recentAttempt) return;
+    if (outcome.status === "sent" || outcome.status === "uncertain" || outcome.status === "aborted") return;
+    clearRecentAttempt();
+    lastNotice = definiteOutcomeMessage(outcome);
+    render();
+  }
+
   async function sendPending() {
     const item = currentPending();
     if (!item || sendingPending) return false;
@@ -296,10 +316,26 @@
     const before = liveEntry();
     render();
     try {
-      await window.NVSSharedLive.checkIn(item.status);
+      const outcome = await window.NVSSharedLive.checkIn(item.status);
       if (!pendingSendStillOwned(task)) return false;
-      if (window.NVSSharedLive?.hasPendingPlanUpdate?.()) {
-        lastNotice = "The meetup plan changed while this status was sending. Reload the updated plan before deciding whether to send it again.";
+      if (outcome?.ok === true || outcome?.status === "sent") {
+        pending = null;
+        lastNotice = item.status === "clear" ? "No active check-in remains." : "Pending status sent successfully.";
+        clearExpiryTimer();
+        return true;
+      }
+      if (outcome?.reason === "plan_updated" || window.NVSSharedLive?.hasPendingPlanUpdate?.()) {
+        lastNotice = "The meetup plan changed while this status was sending. The server rejected the stale status; reload the updated plan before deciding whether to send it again.";
+        return false;
+      }
+      if (outcome?.reason === "capability_revoked" || outcome?.reason === "expired") {
+        pending = null;
+        lastNotice = definiteOutcomeMessage(outcome);
+        clearExpiryTimer();
+        return false;
+      }
+      if (outcome?.status === "blocked" || outcome?.status === "rejected") {
+        lastNotice = `${definiteOutcomeMessage(outcome)} The pending status remains only in this tab so you can review it.`;
         return false;
       }
       if (isExpired(item)) {
@@ -318,7 +354,9 @@
         clearExpiryTimer();
         return false;
       }
-      lastNotice = "Meet Schwerin could not confirm a fresh shared update. Check your connection and tap Send now again if the status is still correct.";
+      lastNotice = outcome?.status === "aborted"
+        ? "The send was interrupted before Meet Schwerin could confirm it. The pending status stays only in this tab; verify the shared meetup before sending again."
+        : "Meet Schwerin could not confirm a fresh shared update. Check your connection and tap Send now again if the status is still correct.";
       return false;
     } finally {
       if (pendingSendTask === task) {
@@ -411,6 +449,7 @@
     if (event.target?.closest?.("[data-v0111-pending-send]")) void sendPending();
     if (event.target?.closest?.("[data-v0111-pending-discard]")) discardPending();
   });
+  window.addEventListener("nvs-shared-checkin-outcome", handleCheckinOutcome);
   document.addEventListener("visibilitychange", () => {
     clearExpiryTimer();
     clearConfirmationTimer();
