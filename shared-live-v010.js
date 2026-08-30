@@ -155,6 +155,14 @@
     try { task?.controller?.abort(); } catch {}
   }
 
+  function pollStillCurrent(task) {
+    return pollTask === task
+      && task.generation === pollGeneration
+      && !document.hidden
+      && !sending
+      && planId() === task.planId;
+  }
+
   function sendStillCurrent(task) {
     return sendTask === task
       && task.generation === sendGeneration
@@ -265,19 +273,20 @@
   }
 
   function poll() {
+    const currentPlanId = planId();
     const url = apiUrl();
-    if (!url || document.hidden || sending) return Promise.resolve();
+    if (!url || !currentPlanId || document.hidden || sending) return Promise.resolve();
     if (pollTask) return pollTask.promise;
 
     const generation = ++pollGeneration;
     const controller = new AbortController();
-    const task = { generation, controller, promise: null };
+    const task = { generation, controller, planId: currentPlanId, promise: null };
     task.promise = (async () => {
       try {
         const response = await fetch(url, { method: "GET", cache: "no-store", signal: controller.signal });
-        if (!response.ok || generation !== pollGeneration || document.hidden || sending) return;
+        if (!response.ok || !pollStillCurrent(task)) return;
         const next = await response.json();
-        if (generation !== pollGeneration || document.hidden || sending) return;
+        if (!pollStillCurrent(task)) return;
         const revision = Math.max(1, Number(next?.revision) || 1);
         if (loadedRevision == null) loadedRevision = revision;
         else if (revision > loadedRevision) pendingRevision = revision;
