@@ -120,6 +120,7 @@ jobs:
           node tests/trip-guidance-transfer-window.test.cjs
           node tests/trip-guidance-observer.test.cjs
           node tests/transfer-watch.test.cjs
+          node tests/transfer-watch-fallback-freshness.test.cjs
           node tests/transfer-watch-boundaries.test.cjs
           node tests/transfer-watch-cancellation-shapes.test.cjs
           node tests/transfer-watch-modes.test.cjs
