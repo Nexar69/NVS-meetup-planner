@@ -220,9 +220,9 @@ assert.doesNotMatch(card.innerHTML, /Marienplatz|Krebsförden|Replacement buses/
 
 sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
 navigator.onLine = true;
-api.resumeRender();
+listeners.online?.();
 card = nodes.get("offlineJourney0111");
-assert.ok(card, "navigator.onLine alone must not erase the saved journey before live route data is actually usable");
+assert.ok(card, "the real online lifecycle event must keep the saved journey until live route data is actually usable");
 assert.equal(card.attributes.get("data-connection"), "reconnecting");
 assert.match(card.innerHTML, /RECONNECTING · SAVED FALLBACK/);
 assert.match(card.innerHTML, /Keeping your saved journey until live data returns/);
