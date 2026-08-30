@@ -146,6 +146,7 @@ export default {
     let beforeMeta = null;
     let beforePlan = null;
     let submittedPlan = null;
+    let submittedLive = null;
 
     if (sessionId) {
       beforeMeta = await readMeta(sessionId, env);
@@ -159,6 +160,20 @@ export default {
         readPlan(match[1], env),
         parseJsonRequest(request),
       ]);
+    }
+
+    if (match && !match[2] && request.method === "POST" && beforeMeta) {
+      submittedLive = await parseJsonRequest(request);
+      const submittedRevision = Number(submittedLive?.revision);
+      if (Number.isInteger(submittedRevision) && submittedRevision > 0 && submittedRevision !== beforeMeta.revision) {
+        return json({
+          error: "plan_updated",
+          planId: match[1],
+          revision: beforeMeta.revision,
+          updatedAt: beforeMeta.updatedAt,
+          expiresAt: beforeMeta.expiresAt,
+        }, 409, liveCorsHeaders(request, env));
+      }
     }
 
     const response = await core.fetch(request, env, ctx);
@@ -197,3 +212,16 @@ export default {
     return response;
   },
 };
+
+function liveCorsHeaders(request, env) {
+  const origin = request.headers.get("Origin") || "";
+  let workerOrigin = "";
+  let appOrigin = "";
+  try { workerOrigin = new URL(request.url).origin; } catch {}
+  try { appOrigin = new URL(env.APP_URL || "https://nexar69.github.io/NVS-meetup-planner/").origin; } catch {}
+  const allowed = !origin || origin === appOrigin || origin === workerOrigin || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  return allowed ? {
+    "access-control-allow-origin": origin || workerOrigin,
+    vary: "Origin",
+  } : {};
+}
