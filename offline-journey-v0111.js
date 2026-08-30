@@ -89,6 +89,14 @@
     }
   }
 
+  function hasPendingPlanUpdate() {
+    try {
+      return Boolean(window.NVSSharedLive?.hasPendingPlanUpdate?.());
+    } catch {
+      return false;
+    }
+  }
+
   function buildSnapshot(assignment, now = new Date()) {
     const route = assignment?.route;
     const segments = Array.isArray(route?.segments)
@@ -163,7 +171,7 @@
   }
 
   function capture(now = new Date()) {
-    if (!isPersonalSharedView()) return null;
+    if (!isPersonalSharedView() || hasPendingPlanUpdate()) return null;
     const snapshot = buildSnapshot(assignment(), now);
     if (snapshot) writeSnapshot(snapshot);
     return snapshot;
@@ -365,7 +373,7 @@
   }
 
   function hasUsableLiveRoute() {
-    if (awaitingFreshRoute) return false;
+    if (awaitingFreshRoute || hasPendingPlanUpdate()) return false;
     const liveAssignment = assignment();
     const personalPlan = document.getElementById("personalSharedPlan");
     return Boolean(liveAssignment?.route?.segments?.length && personalPlan);
@@ -392,12 +400,13 @@
       }
       return;
     }
+    const planUpdated = hasPendingPlanUpdate();
     const reconnecting = Boolean(navigator.onLine);
     const visibleSegments = remainingSegments(snapshot);
     const realtimeFresh = realtimeContextFresh(snapshot);
     scheduleFreshnessRefresh(snapshot);
     const card = ensureCard();
-    card.setAttribute("data-connection", reconnecting ? "reconnecting" : "offline");
+    card.setAttribute("data-connection", planUpdated ? "plan-updated" : reconnecting ? "reconnecting" : "offline");
     const steps = visibleSegments.map((segment) => {
       const time = formatTime(segment.departure);
       const platformLabel = realtimeFresh ? "platform" : "last-known platform";
@@ -408,16 +417,20 @@
     }).join("");
     const arrival = formatTime(snapshot.arrival);
     const hasCancelled = visibleSegments.some((segment) => segment.cancelled);
-    const safetyCopy = !realtimeFresh
-      ? "Saved realtime details are more than 15 minutes old. Treat platform changes, cancellations and disruption notes as historical only; verify them on station/vehicle displays or reconnect before relying on them."
-      : hasCancelled
-        ? "At least one remaining saved leg was already cancelled when you were last online. Do not rely on that leg; use station/vehicle information or reconnect before continuing."
-        : reconnecting
-          ? "Your device reports a connection, but the current personal route has not loaded again yet. Keep using this saved journey as a fallback until live route data returns."
-          : "Realtime updates are unavailable. This is the remaining part of the last timetable plan saved in this tab; check vehicle displays and stop announcements because the route may have changed.";
+    const safetyCopy = planUpdated
+      ? "The organizer updated this meetup. This saved journey belongs to the previous plan revision, so treat every route and realtime detail below as historical until you reload the updated plan."
+      : !realtimeFresh
+        ? "Saved realtime details are more than 15 minutes old. Treat platform changes, cancellations and disruption notes as historical only; verify them on station/vehicle displays or reconnect before relying on them."
+        : hasCancelled
+          ? "At least one remaining saved leg was already cancelled when you were last online. Do not rely on that leg; use station/vehicle information or reconnect before continuing."
+          : reconnecting
+            ? "Your device reports a connection, but the current personal route has not loaded again yet. Keep using this saved journey as a fallback until live route data returns."
+            : "Realtime updates are unavailable. This is the remaining part of the last timetable plan saved in this tab; check vehicle displays and stop announcements because the route may have changed.";
+    const kicker = planUpdated ? "PLAN UPDATED · SAVED ROUTE" : reconnecting ? "RECONNECTING · SAVED FALLBACK" : "OFFLINE FALLBACK";
+    const title = planUpdated ? "This saved journey is from the previous plan" : reconnecting ? "Keeping your saved journey until live data returns" : "Your saved journey is still available";
     card.innerHTML = `
       <div class="v0111-offline-journey-head">
-        <div><small>${reconnecting ? "RECONNECTING · SAVED FALLBACK" : "OFFLINE FALLBACK"}</small><h2 id="offlineJourney0111Title">${reconnecting ? "Keeping your saved journey until live data returns" : "Your saved journey is still available"}</h2></div>
+        <div><small>${kicker}</small><h2 id="offlineJourney0111Title">${title}</h2></div>
         <span>Tab only</span>
       </div>
       <p>${escapeHtml(safetyCopy)} (${escapeHtml(ageLabel(snapshot.capturedAt))})</p>
@@ -426,6 +439,11 @@
   }
 
   function captureFreshRouteAndRender() {
+    if (hasPendingPlanUpdate()) {
+      awaitingFreshRoute = true;
+      render();
+      return;
+    }
     if (navigator.onLine) {
       const snapshot = capture();
       if (snapshot && document.getElementById("personalSharedPlan")) awaitingFreshRoute = false;
@@ -453,8 +471,14 @@
     render();
   }
 
+  function handleSharedLiveChange() {
+    if (hasPendingPlanUpdate()) awaitingFreshRoute = true;
+    render();
+  }
+
   window.addEventListener("nvs-group-recommendations-rendered", captureFreshRouteAndRender);
   window.addEventListener("nvs-live-plan-synced", reconcileExpiryAndRender);
+  window.addEventListener("nvs-shared-live-change", handleSharedLiveChange);
   window.addEventListener("online", markConnectionBoundary);
   window.addEventListener("offline", markConnectionBoundary);
   window.addEventListener("pagehide", handlePageHide);
@@ -481,11 +505,13 @@
     personalViewerHint,
     scopeFingerprint,
     authoritativeExpiry,
+    hasPendingPlanUpdate,
     hasUsableLiveRoute,
     captureFreshRouteAndRender,
     resumeRender,
     markConnectionBoundary,
     reconcileExpiryAndRender,
+    handleSharedLiveChange,
   });
 
   captureFreshRouteAndRender();
