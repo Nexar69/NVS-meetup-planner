@@ -98,6 +98,7 @@ jobs:
           node tests/shared-checkin-queue-scope.test.cjs
           node tests/shared-checkin-queue-unconfirmed.test.cjs
           node tests/shared-checkin-outcomes.test.cjs
+          node tests/trip-tools-checkin-outcomes.test.cjs
           node tests/shared-connection.test.cjs
           node tests/shared-connection-backoff-bypass.test.cjs
           node tests/shared-plan-update.test.cjs
