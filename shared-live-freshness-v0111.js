@@ -40,19 +40,38 @@
     return Boolean(window.NVSSharedLive?.hasPendingPlanUpdate?.());
   }
 
-  function applyPlanTrustBoundary() {
+  function authoritativeExpiresAt() {
+    const value = Number(window.NVSSharedLive?.getState?.()?.expiresAt);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  function sharedSessionExpired(now = Date.now()) {
+    const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+    const expiry = authoritativeExpiresAt();
+    return expiry != null && expiry <= timestamp;
+  }
+
+  function routeIntelligenceBlocked(now = Date.now()) {
+    return hasPendingPlanUpdate() || sharedSessionExpired(now);
+  }
+
+  function applyPlanTrustBoundary(now = Date.now()) {
     const pending = hasPendingPlanUpdate();
+    const expired = sharedSessionExpired(now);
+    const blocked = pending || expired;
     const root = document.documentElement;
     if (root?.dataset) {
       if (pending) root.dataset.nvsPlanUpdatePending = "true";
       else delete root.dataset.nvsPlanUpdatePending;
+      if (expired) root.dataset.nvsSharedSessionExpired = "true";
+      else delete root.dataset.nvsSharedSessionExpired;
     }
 
     let changed = 0;
     ROUTE_INTELLIGENCE_IDS.forEach((id) => {
       const element = document.getElementById(id);
       if (!element) return;
-      if (pending) {
+      if (blocked) {
         if (element.dataset?.nvsPlanTrustHidden !== "true" || !element.hidden) changed += 1;
         element.hidden = true;
         if (element.dataset) element.dataset.nvsPlanTrustHidden = "true";
@@ -69,15 +88,15 @@
     return changed;
   }
 
-  function syncTrustObserver() {
+  function syncTrustObserver(now = Date.now()) {
     if (!("MutationObserver" in window) || !document.body) return;
     if (!trustObserver) {
       trustObserver = new MutationObserver(() => {
-        if (hasPendingPlanUpdate()) applyPlanTrustBoundary();
+        if (routeIntelligenceBlocked()) applyPlanTrustBoundary();
       });
     }
     trustObserver.disconnect();
-    if (hasPendingPlanUpdate()) trustObserver.observe(document.body, { childList: true, subtree: true });
+    if (routeIntelligenceBlocked(now)) trustObserver.observe(document.body, { childList: true, subtree: true });
   }
 
   function markStaleRow(row, index, entry, now = Date.now()) {
@@ -115,10 +134,10 @@
   }
 
   function refresh(now = Date.now()) {
-    applyPlanTrustBoundary();
-    syncTrustObserver();
-
     const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+    applyPlanTrustBoundary(timestamp);
+    syncTrustObserver(timestamp);
+
     const list = document.getElementById("v010StatusList");
     const state = window.NVSSharedLive?.getState?.();
     const members = state?.members && typeof state.members === "object" ? state.members : null;
@@ -147,7 +166,7 @@
     schedule();
   }
 
-  ["nvs-shared-live-change", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "nvs-shared-view-resumed", "online"].forEach((name) => {
+  ["nvs-shared-live-change", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "nvs-shared-view-resumed", "nvs-shared-session-expired", "online"].forEach((name) => {
     window.addEventListener(name, () => refresh());
   });
   window.addEventListener("pageshow", start);
@@ -166,6 +185,9 @@
     freshnessFor,
     markStaleRow,
     hasPendingPlanUpdate,
+    authoritativeExpiresAt,
+    sharedSessionExpired,
+    routeIntelligenceBlocked,
     applyPlanTrustBoundary,
   });
 
