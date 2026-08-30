@@ -113,6 +113,31 @@ function assignment(overrides = {}) {
 }
 
 {
+  const now = at(20);
+  const tolerated = core.checkinFreshness({ at: now.getTime() + 5 * core.MINUTE }, now);
+  assert.equal(tolerated.fresh, true, "up to five minutes of future clock skew should remain usable");
+  assert.equal(tolerated.invalidTime, false);
+  assert.equal(tolerated.futureSkew, true);
+
+  const impossible = core.checkinFreshness({ at: now.getTime() + 5 * core.MINUTE + 1 }, now);
+  assert.equal(impossible.fresh, false, "future timestamps beyond the skew boundary must not remain authoritative");
+  assert.equal(impossible.stale, true);
+  assert.equal(impossible.invalidTime, true);
+  assert.equal(impossible.futureSkew, true);
+}
+
+{
+  const now = at(20);
+  const state = { members: { "0": { status: "missed", at: now.getTime() + 8 * core.MINUTE } } };
+  const alerts = core.sharedAlerts(state, [{ name: "You" }], now);
+  const invalid = alerts.find((entry) => entry.invalidTime);
+  assert.ok(invalid, "impossible future check-ins should produce a timetable-priority trust warning");
+  assert.equal(invalid.kind, "stale-checkin");
+  assert.match(invalid.detail, /clock-skew|timetable/i);
+  assert.equal(alerts.some((entry) => entry.kind === "recovery"), false, "an impossible future missed status must never force recovery");
+}
+
+{
   const ranked = core.rankAlerts([
     { id: "a", severity: "info" },
     { id: "b", severity: "critical" },
