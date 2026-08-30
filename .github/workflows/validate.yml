@@ -116,6 +116,7 @@ jobs:
           node tests/share-expiry-cache.test.cjs
           node tests/share-v010-delivery-lifecycle.test.cjs
           node tests/trip-guidance.test.cjs
+          node tests/trip-guidance-fallback-freshness.test.cjs
           node tests/trip-guidance-transfer-window.test.cjs
           node tests/trip-guidance-observer.test.cjs
           node tests/transfer-watch.test.cjs
