@@ -11,6 +11,55 @@
   ];
   let timer = null;
   let trustObserver = null;
+  let scopedPlanId = null;
+  let scopeReloading = false;
+
+  function currentPlanId() {
+    const pathname = String(window.location?.pathname || "");
+    const match = pathname.match(/^\/p\/([23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{6,12})\/?$/);
+    return match?.[1] || "";
+  }
+
+  function hideForPlanScopeChange() {
+    const root = document.documentElement;
+    if (root?.dataset) root.dataset.nvsSharedPlanScopeChanging = "true";
+
+    const panel = document.getElementById("sharedLiveV010");
+    if (panel) {
+      panel.hidden = true;
+      panel.setAttribute?.("aria-hidden", "true");
+    }
+
+    ROUTE_INTELLIGENCE_IDS.forEach((id) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.hidden = true;
+      if (element.dataset) element.dataset.nvsPlanTrustHidden = "true";
+      element.setAttribute?.("aria-hidden", "true");
+    });
+  }
+
+  function enforcePlanScope() {
+    const nextPlanId = currentPlanId();
+    if (scopedPlanId == null) {
+      scopedPlanId = nextPlanId;
+      return false;
+    }
+    if (nextPlanId === scopedPlanId) return false;
+
+    scopedPlanId = nextPlanId;
+    clearTimeout(timer);
+    trustObserver?.disconnect?.();
+    hideForPlanScopeChange();
+    if (!scopeReloading) {
+      scopeReloading = true;
+      try {
+        window.dispatchEvent(new CustomEvent("nvs-shared-plan-scope-change"));
+      } catch {}
+      try { window.location.reload(); } catch {}
+    }
+    return true;
+  }
 
   function freshnessFor(entry, now = Date.now()) {
     const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
@@ -134,6 +183,7 @@
   }
 
   function refresh(now = Date.now()) {
+    if (enforcePlanScope()) return 0;
     const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
     applyPlanTrustBoundary(timestamp);
     syncTrustObserver(timestamp);
@@ -154,7 +204,7 @@
 
   function schedule() {
     clearTimeout(timer);
-    if (document.hidden) return;
+    if (document.hidden || scopeReloading) return;
     timer = setTimeout(() => {
       refresh();
       schedule();
@@ -162,12 +212,16 @@
   }
 
   function start() {
+    if (enforcePlanScope()) return;
     refresh();
     schedule();
   }
 
   ["nvs-shared-live-change", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "nvs-shared-view-resumed", "nvs-shared-session-expired", "online"].forEach((name) => {
     window.addEventListener(name, () => refresh());
+  });
+  window.addEventListener("popstate", () => {
+    if (!enforcePlanScope()) refresh();
   });
   window.addEventListener("pageshow", start);
   window.addEventListener("pagehide", () => {
@@ -189,6 +243,8 @@
     sharedSessionExpired,
     routeIntelligenceBlocked,
     applyPlanTrustBoundary,
+    enforcePlanScope,
+    getScopedPlanId: () => scopedPlanId,
   });
 
   start();
