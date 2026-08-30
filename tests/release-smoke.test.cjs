@@ -200,8 +200,8 @@ assert.match(lifecycleEntry, /plansEquivalent/, "lifecycle gateway should suppre
 assert.match(lifecycleEntry, /unchanged:\s*true/, "no-op plan updates should be explicitly reported as unchanged");
 
 const vmv = read("worker/src/vmv-rest.js");
-assert.match(vmv, /plannedPlatformFrom/, "VMV normalization should retain planned platform metadata when available");
-assert.match(vmv, /realtimePlatformFrom/, "VMV normalization should retain realtime platform metadata when available");
-assert.match(vmv, /cancelled|canceled|isCancelled|status/, "VMV normalization should preserve cancellation evidence when exposed by the provider");
+assert.match(vmv, /plannedPlatformFrom/, "VMV adapter must preserve planned platform");
+assert.match(vmv, /cancelled/, "VMV adapter must preserve cancellation state");
+assert.match(vmv, /remarks/, "VMV adapter must preserve disruption remarks");
 
-console.log("release smoke checks OK");
+console.log("release-smoke: v0.11.1 wiring, r20 reconciled app shell, voluntary-status-aware guidance/command sync and no-op plan revision protection look consistent");
