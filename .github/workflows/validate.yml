@@ -134,6 +134,7 @@ jobs:
           node tests/offline-journey.test.cjs
           node tests/offline-journey-render.test.cjs
           node tests/offline-journey-expiry-reconcile.test.cjs
+          node tests/offline-journey-storage-failure.test.cjs
           node tests/intelligence-voluntary-sync.test.cjs
           node tests/update-safety.test.cjs
           node tests/worker-plan-equivalence.test.cjs
