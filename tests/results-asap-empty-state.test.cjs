@@ -85,7 +85,7 @@ assert.ok(nodes.summary.innerHTML.includes('<strong>ASAP</strong> · no fresh co
 assert.ok(nodes.summary.innerHTML.includes('Lankow &lt;A&gt;'), 'summary labels must remain HTML-escaped');
 assert.ok(nodes.summary.innerHTML.includes('Friend &amp; B'), 'friend label must remain HTML-escaped');
 assert.ok(nodes.summary.innerHTML.includes('Dreescher &gt; Markt'), 'destination label must remain HTML-escaped');
-assert.match(serviceWorker, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r19";/, 'map lifecycle cleanup should ship in the validated r19 shell');
+assert.match(serviceWorker, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r20";/, 'map lifecycle cleanup should ship in the validated r20 shell');
 assert.ok(!source.includes('watchPosition'), 'ASAP empty-state rendering must not introduce continuous location tracking');
 
 console.log('ASAP empty-state regression tests passed.');
