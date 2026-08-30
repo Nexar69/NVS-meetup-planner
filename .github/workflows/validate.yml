@@ -102,6 +102,7 @@ jobs:
           node tests/shared-live-checkin-lifecycle-boundary.test.cjs
           node tests/trip-tools-checkin-outcomes.test.cjs
           node tests/shared-connection.test.cjs
+          node tests/shared-connection-retry-ownership.test.cjs
           node tests/shared-connection-backoff-bypass.test.cjs
           node tests/shared-plan-update.test.cjs
           node tests/shared-reload-safari.test.cjs
