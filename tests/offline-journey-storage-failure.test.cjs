@@ -39,6 +39,15 @@ function runtime({ storageMode = "methods-throw" } = {}) {
     hidden: false,
     getElementById() { return null; },
     querySelector() { return null; },
+    createElement() {
+      return {
+        id: "",
+        className: "",
+        innerHTML: "",
+        setAttribute() {},
+        remove() {},
+      };
+    },
     addEventListener() {},
   };
   const context = {
