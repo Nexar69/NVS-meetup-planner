@@ -130,7 +130,9 @@ assert.equal(api.enforcePlanScope(), true,
 assert.equal(reloads, 1, "cross-plan state should recover through a clean document reload");
 assert.equal(sharedPanel.hidden, true, "the old Shared Live panel must fail closed before reload");
 assert.equal(sharedPanel.attributes["aria-hidden"], "true", "old shared state must leave the accessibility tree too");
+assert.equal(sharedPanel.attributes.inert, "", "old shared controls must become non-interactive before recovery reload");
 assert.equal(guidancePanel.hidden, true, "route-derived intelligence must not remain visible under the new plan path");
+assert.equal(guidancePanel.attributes.inert, "", "stale route-derived controls must not remain focusable or clickable during scope recovery");
 assert.equal(document.documentElement.dataset.nvsSharedPlanScopeChanging, "true");
 assert.equal(dispatched.at(-1)?.type, "nvs-shared-plan-scope-change",
   "scope changes should publish a privacy-safe lifecycle signal without plan identifiers");
@@ -148,6 +150,8 @@ assert.match(source, /nvs-shared-live-change/, "shared-live events should trigge
 assert.match(source, /MAX_FUTURE_SKEW_MS/, "freshness handling should bound tolerated client/server clock skew");
 assert.match(source, /nvs-shared-plan-scope-change/,
   "same-document plan changes should expose a lifecycle boundary for adjacent recovery modules");
+assert.match(source, /setAttribute\?\.\("inert", ""\)/,
+  "cross-plan fail-closed recovery should make stale interactive surfaces inert before reload");
 assert.doesNotMatch(JSON.stringify(dispatched), /ABCDEF|BCDEFG|\/p\//,
   "scope-change lifecycle events must not leak shared plan IDs or paths");
 
