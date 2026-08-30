@@ -90,6 +90,7 @@ jobs:
           node tests/shared-live-coalescing.test.cjs
           node tests/shared-live-v010-ownership.test.cjs
           node tests/shared-live-freshness.test.cjs
+          node tests/shared-plan-intelligence-boundary.test.cjs
           node tests/shared-freshness-scheduler.test.cjs
           node tests/shared-checkin-queue.test.cjs
           node tests/shared-checkin-queue-scope.test.cjs
