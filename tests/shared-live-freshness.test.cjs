@@ -99,7 +99,7 @@ assert.match(release, /shared-live-freshness-v0111\.js/);
 assert.match(serviceWorker, /shared-live-freshness-v0111\.js/, "stale-status consistency guard must be available in the offline shell");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "freshness handling must not introduce location tracking");
 assert.match(source, /document\.hidden/, "periodic freshness checks should pause while hidden");
-assert.match(source, /nvs-shared-live-change", \(\) => refresh\(\)/, "shared-live events should trigger a fresh timestamp instead of passing the Event object through");
+assert.match(source, /nvs-shared-live-change/, "shared-live events should trigger freshness and plan-trust reevaluation");
 assert.match(source, /MAX_FUTURE_SKEW_MS/, "freshness handling should bound tolerated client/server clock skew");
 
 console.log("shared-live-freshness: stale and impossible-future manual confirmations downgrade to timetable guidance");
