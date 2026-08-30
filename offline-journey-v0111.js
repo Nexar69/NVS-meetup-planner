@@ -168,6 +168,18 @@
     return snapshot;
   }
 
+  function snapshotCapturedAtMs(snapshot) {
+    const captured = asDate(snapshot?.capturedAt)?.getTime();
+    return Number.isFinite(captured) ? captured : -Infinity;
+  }
+
+  function strictestExpiry(snapshot, other) {
+    const expiry = asDate(snapshot?.expiresAt)?.getTime();
+    const otherExpiry = asDate(other?.expiresAt)?.getTime();
+    if (!Number.isFinite(otherExpiry) || (Number.isFinite(expiry) && expiry <= otherExpiry)) return snapshot;
+    return { ...snapshot, expiresAt: new Date(otherExpiry).toISOString() };
+  }
+
   function readSnapshot(now = Date.now()) {
     let parsed = null;
     try {
@@ -176,15 +188,31 @@
       parsed = null;
     }
 
-    if (parsed && snapshotUsable(parsed, now)) return parsed;
-    if (parsed) {
+    const persistedUsable = Boolean(parsed && snapshotUsable(parsed, now));
+    const memoryUsable = Boolean(memorySnapshot && snapshotUsable(memorySnapshot, now));
+
+    if (parsed && !persistedUsable) {
       try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
+      parsed = null;
+    }
+    if (memorySnapshot && !memoryUsable) memorySnapshot = null;
+
+    if (persistedUsable && memoryUsable) {
+      if (snapshotCapturedAtMs(memorySnapshot) > snapshotCapturedAtMs(parsed)) {
+        const selected = strictestExpiry(memorySnapshot, parsed);
+        writeSnapshot(selected);
+        return selected;
+      }
       memorySnapshot = null;
-      return null;
+      return strictestExpiry(parsed, memorySnapshot);
     }
 
-    if (memorySnapshot && snapshotUsable(memorySnapshot, now)) return memorySnapshot;
-    memorySnapshot = null;
+    if (memoryUsable) {
+      const selected = memorySnapshot;
+      writeSnapshot(selected);
+      return selected;
+    }
+    if (persistedUsable) return parsed;
     return null;
   }
 
