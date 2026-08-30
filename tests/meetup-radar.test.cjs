@@ -108,6 +108,18 @@ assert.equal(allArrived.tone, "good");
 assert.match(allArrived.title, /Everyone has checked in at the meetup/);
 assert.match(allArrived.detail, /fresh voluntary arrival confirmations/);
 
+// Partial-shell fallback must preserve the central timestamp-trust boundary.
+window.NVSIntelligenceCore = null;
+const toleratedFuture = radarModel(group, { members: { "1": { status: "missed", at: now + 5 * 60_000 } } }, joinAnalysis, now);
+assert.equal(toleratedFuture.tone, "warn", "fallback should tolerate up to five minutes of ordinary device-clock skew");
+const impossibleFuture = radarModel(group, { members: { "1": { status: "missed", at: now + 5 * 60_000 + 1 } } }, joinAnalysis, now);
+assert.equal(impossibleFuture.eyebrow, "Meetup radar · next join", "fallback must reject check-ins beyond the five-minute future-skew boundary");
+assert.match(impossibleFuture.meta, /timetable estimates active/);
+const exactStaleBoundary = radarModel(group, { members: { "1": { status: "missed", at: now - 15 * 60_000 } } }, joinAnalysis, now);
+assert.equal(exactStaleBoundary.tone, "warn", "exactly 15 minutes old remains fresh at the fallback boundary");
+const beyondStaleBoundary = radarModel(group, { members: { "1": { status: "missed", at: now - 15 * 60_000 - 1 } } }, joinAnalysis, now);
+assert.equal(beyondStaleBoundary.eyebrow, "Meetup radar · next join", "older fallback check-ins must return to timetable guidance");
+
 assert.equal(radarModel({ assignments: [group.assignments[0]] }, null, null, now), null, "radar should stay hidden for a one-person journey");
 
 let removed = false;
@@ -117,20 +129,19 @@ assert.equal(typeof listeners.get("nvs-recommendations-cleared"), "function", "M
 listeners.get("nvs-recommendations-cleared")();
 assert.equal(removed, true, "clearing recommendations must remove a stale Meetup Radar card immediately");
 
-// Foreground/pageshow work must not resurrect the periodic scheduler while recommendation state is empty.
 document.hidden = false;
 const beforeEmptyPageshow = scheduled;
 listeners.get("pageshow")();
 assert.equal(scheduled, beforeEmptyPageshow, "pageshow must not restart Meetup Radar scheduling without active recommendations");
 
-// A fresh authoritative recommendation render is the only lifecycle boundary that reactivates periodic Radar work.
 window.__NVS_LAST_RECOMMENDATIONS__ = { primary: group };
 assert.equal(typeof listeners.get("nvs-group-recommendations-rendered"), "function");
 listeners.get("nvs-group-recommendations-rendered")();
 assert.equal(scheduled, beforeEmptyPageshow + 1, "fresh recommendations should restart Meetup Radar scheduling");
 
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "Meetup Radar must not introduce location tracking");
-assert.match(source, /15 \* 60_000/, "Radar must retain the shared 15-minute voluntary freshness fallback");
+assert.match(source, /MAX_FUTURE_SKEW_MS/, "Radar fallback must explicitly bound tolerated future clock skew");
+assert.match(source, /STALE_AFTER_MS/, "Radar must retain the shared 15-minute voluntary freshness fallback");
 assert.match(source, /document\.hidden/, "Radar periodic work should suspend while hidden");
 assert.match(source, /!recommendationsActive/, "Radar periodic work should remain stopped while recommendation state is inactive");
 assert.match(source, /nvs-shared-view-resumed/, "Safari shared-view resume should refresh the Radar");
@@ -143,4 +154,4 @@ assert.match(release, /meetup-radar-v0111\.css/, "release owner must load Meetup
 assert.match(sw, /meetup-radar-v0111\.js/, "Meetup Radar runtime should be available offline");
 assert.match(sw, /meetup-radar-v0111\.css/, "Meetup Radar styles should be available offline");
 
-console.log("meetup-radar: convergence, recovery precedence, inactive scheduler lifecycle, stale fallback, accessibility and no-GPS behavior passed");
+console.log("meetup-radar: convergence, recovery precedence, fallback clock-skew trust, inactive scheduler lifecycle, accessibility and no-GPS behavior passed");
