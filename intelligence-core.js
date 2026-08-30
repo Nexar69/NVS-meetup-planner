@@ -5,6 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   const MINUTE = 60_000;
   const DEFAULT_STALE_MS = 15 * MINUTE;
+  const DEFAULT_FUTURE_SKEW_MS = 5 * MINUTE;
   const SEVERITY = { critical: 5, warn: 4, action: 3, info: 2, good: 1 };
 
   function asDate(value) {
@@ -203,11 +204,32 @@
     )];
   }
 
-  function checkinFreshness(entry, now = new Date(), staleMs = DEFAULT_STALE_MS) {
+  function checkinFreshness(entry, now = new Date(), staleMs = DEFAULT_STALE_MS, futureSkewMs = DEFAULT_FUTURE_SKEW_MS) {
     const at = Number(entry?.at);
-    if (!Number.isFinite(at)) return { fresh: false, stale: true, ageMs: Infinity, ageMinutes: Infinity };
-    const ageMs = Math.max(0, (asDate(now) || new Date()).getTime() - at);
-    return { fresh: ageMs <= staleMs, stale: ageMs > staleMs, ageMs, ageMinutes: ageMs / MINUTE };
+    const nowMs = (asDate(now) || new Date()).getTime();
+    if (!Number.isFinite(at)) {
+      return { fresh: false, stale: true, invalidTime: true, futureSkew: false, ageMs: Infinity, ageMinutes: Infinity };
+    }
+    const rawAgeMs = nowMs - at;
+    if (rawAgeMs < -futureSkewMs) {
+      return {
+        fresh: false,
+        stale: true,
+        invalidTime: true,
+        futureSkew: true,
+        ageMs: rawAgeMs,
+        ageMinutes: rawAgeMs / MINUTE,
+      };
+    }
+    const ageMs = Math.max(0, rawAgeMs);
+    return {
+      fresh: ageMs <= staleMs,
+      stale: ageMs > staleMs,
+      invalidTime: false,
+      futureSkew: rawAgeMs < 0,
+      ageMs,
+      ageMinutes: ageMs / MINUTE,
+    };
   }
 
   function sharedAlerts(sharedState, members = [], now = new Date()) {
@@ -220,6 +242,17 @@
       if (!entry) return;
       const freshness = checkinFreshness(entry, now);
       const name = member?.name || `Person ${index + 1}`;
+      if (freshness.invalidTime) {
+        alerts.push(alert(
+          `invalid-checkin-time:${index}:${entry.at}`,
+          "info",
+          "stale-checkin",
+          `${name}'s check-in time cannot be trusted`,
+          "The timestamp is outside the allowed clock-skew window; timetable estimates should take priority now.",
+          { memberIndex: index, stale: true, invalidTime: true },
+        ));
+        return;
+      }
       if (freshness.stale) {
         alerts.push(alert(
           `stale:${index}:${entry.at}`,
@@ -307,6 +340,7 @@
   return Object.freeze({
     MINUTE,
     DEFAULT_STALE_MS,
+    DEFAULT_FUTURE_SKEW_MS,
     asDate,
     minutesBetween,
     minutesUntil,
