@@ -203,8 +203,9 @@
         writeSnapshot(selected);
         return selected;
       }
-      memorySnapshot = null;
-      return strictestExpiry(parsed, memorySnapshot);
+      const selected = strictestExpiry(parsed, memorySnapshot);
+      writeSnapshot(selected);
+      return selected;
     }
 
     if (memoryUsable) {
