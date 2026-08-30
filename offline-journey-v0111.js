@@ -171,6 +171,22 @@
     }
   }
 
+  function reconcileAuthoritativeExpiry(now = Date.now()) {
+    const snapshot = readSnapshot(now);
+    if (!snapshot) return null;
+    const expiresAt = authoritativeExpiry();
+    const expiryMs = asDate(expiresAt)?.getTime();
+    if (!Number.isFinite(expiryMs)) return snapshot;
+    if (Number(now) >= expiryMs) {
+      clearSnapshot();
+      return null;
+    }
+    if (snapshot.expiresAt === expiresAt) return snapshot;
+    const reconciled = { ...snapshot, expiresAt };
+    writeSnapshot(reconciled);
+    return reconciled;
+  }
+
   function snapshotAgeMs(snapshot, now = Date.now()) {
     const captured = asDate(snapshot?.capturedAt)?.getTime();
     if (!Number.isFinite(captured)) return Infinity;
@@ -370,8 +386,13 @@
     render();
   }
 
+  function reconcileExpiryAndRender() {
+    if (navigator.onLine) reconcileAuthoritativeExpiry();
+    render();
+  }
+
   window.addEventListener("nvs-group-recommendations-rendered", captureAndRender);
-  window.addEventListener("nvs-live-plan-synced", resumeRender);
+  window.addEventListener("nvs-live-plan-synced", reconcileExpiryAndRender);
   window.addEventListener("online", resumeRender);
   window.addEventListener("offline", render);
   window.addEventListener("pageshow", resumeRender);
@@ -387,6 +408,7 @@
     buildSnapshot,
     capture,
     readSnapshot,
+    reconcileAuthoritativeExpiry,
     snapshotAgeMs,
     realtimeContextFresh,
     nextOfflineBoundary,
@@ -399,6 +421,7 @@
     hasUsableLiveRoute,
     captureAndRender,
     resumeRender,
+    reconcileExpiryAndRender,
   });
 
   captureAndRender();
