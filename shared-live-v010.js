@@ -14,6 +14,8 @@
   let sending = false;
   let loadedRevision = null;
   let pendingRevision = null;
+  let pollGeneration = 0;
+  let pollTask = null;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -126,12 +128,20 @@
     return "";
   }
 
+  function invalidatePoll() {
+    pollGeneration += 1;
+    const task = pollTask;
+    pollTask = null;
+    try { task?.controller?.abort(); } catch {}
+  }
+
   async function sendStatus(status) {
     const url = apiUrl();
     const focus = focusIndex();
     const key = capabilityKey();
     if (!url || focus < 0 || !key || sending) return;
     sending = true;
+    invalidatePoll();
     render();
     try {
       const response = await fetch(url, {
@@ -159,25 +169,40 @@
     } finally {
       sending = false;
       render();
+      schedulePoll();
     }
   }
 
-  async function poll() {
+  function poll() {
     const url = apiUrl();
-    if (!url || document.hidden) return;
-    try {
-      const response = await fetch(url, { method: "GET", cache: "no-store" });
-      if (!response.ok) return;
-      const next = await response.json();
-      const revision = Math.max(1, Number(next?.revision) || 1);
-      if (loadedRevision == null) loadedRevision = revision;
-      else if (revision > loadedRevision) pendingRevision = revision;
-      liveState = next;
-      render();
-      window.dispatchEvent(new CustomEvent("nvs-shared-live-change", { detail: liveState }));
-    } catch {
-      // Keep the most recent state visible while temporarily offline.
-    }
+    if (!url || document.hidden || sending) return Promise.resolve();
+    if (pollTask) return pollTask.promise;
+
+    const generation = ++pollGeneration;
+    const controller = new AbortController();
+    const task = { generation, controller, promise: null };
+    task.promise = (async () => {
+      try {
+        const response = await fetch(url, { method: "GET", cache: "no-store", signal: controller.signal });
+        if (!response.ok || generation !== pollGeneration || document.hidden || sending) return;
+        const next = await response.json();
+        if (generation !== pollGeneration || document.hidden || sending) return;
+        const revision = Math.max(1, Number(next?.revision) || 1);
+        if (loadedRevision == null) loadedRevision = revision;
+        else if (revision > loadedRevision) pendingRevision = revision;
+        liveState = next;
+        render();
+        window.dispatchEvent(new CustomEvent("nvs-shared-live-change", { detail: liveState }));
+      } catch (error) {
+        if (error?.name !== "AbortError") {
+          // Keep the most recent state visible while temporarily offline.
+        }
+      } finally {
+        if (pollTask === task) pollTask = null;
+      }
+    })();
+    pollTask = task;
+    return task.promise;
   }
 
   function schedulePoll(delay = POLL_MS) {
@@ -327,6 +352,7 @@
     if (!planId() || !sharedPlan()) return;
     sanitizeCapabilityUrl();
     ensurePanel();
+    invalidatePoll();
     void poll();
     schedulePoll();
     render();
@@ -334,13 +360,28 @@
 
   window.addEventListener("nvs-group-recommendations-rendered", render);
   window.addEventListener("nvs-display-options-change", render);
-  window.addEventListener("pageshow", () => { void poll(); schedulePoll(); render(); });
+  window.addEventListener("pageshow", () => {
+    invalidatePoll();
+    void poll();
+    schedulePoll();
+    render();
+  });
+  window.addEventListener("pagehide", () => {
+    clearTimeout(timer);
+    invalidatePoll();
+  });
   document.addEventListener("visibilitychange", () => {
     clearTimeout(timer);
+    invalidatePoll();
     if (!document.hidden) {
       void poll();
       schedulePoll();
     }
+  });
+  window.addEventListener("online", () => {
+    invalidatePoll();
+    void poll();
+    schedulePoll();
   });
   window.addEventListener("load", start);
 
