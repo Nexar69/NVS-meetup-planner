@@ -12,6 +12,18 @@ function json(data, status = 200, headers = {}) {
   });
 }
 
+function liveCorsHeaders(request, env) {
+  const origin = request.headers.get("Origin") || "";
+  const workerOrigin = new URL(request.url).origin;
+  const appOrigin = new URL(env.APP_URL || "https://nexar69.github.io/NVS-meetup-planner/").origin;
+  const allowed = !origin || origin === appOrigin || origin === workerOrigin || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  if (!allowed) return null;
+  return {
+    "access-control-allow-origin": origin || workerOrigin,
+    vary: "Origin",
+  };
+}
+
 function liveTtl(env) {
   return Math.max(3600, Math.min(Number(env.PLAN_TTL_SECONDS) || DEFAULT_TTL, 7 * 24 * 60 * 60));
 }
@@ -146,7 +158,6 @@ export default {
     let beforeMeta = null;
     let beforePlan = null;
     let submittedPlan = null;
-    let submittedLive = null;
 
     if (sessionId) {
       beforeMeta = await readMeta(sessionId, env);
@@ -163,16 +174,17 @@ export default {
     }
 
     if (match && !match[2] && request.method === "POST" && beforeMeta) {
-      submittedLive = await parseJsonRequest(request);
+      const cors = liveCorsHeaders(request, env);
+      const submittedLive = await parseJsonRequest(request);
       const submittedRevision = Number(submittedLive?.revision);
-      if (Number.isInteger(submittedRevision) && submittedRevision > 0 && submittedRevision !== beforeMeta.revision) {
+      if (cors && Number.isInteger(submittedRevision) && submittedRevision > 0 && submittedRevision !== beforeMeta.revision) {
         return json({
           error: "plan_updated",
           planId: match[1],
           revision: beforeMeta.revision,
           updatedAt: beforeMeta.updatedAt,
           expiresAt: beforeMeta.expiresAt,
-        }, 409, liveCorsHeaders(request, env));
+        }, 409, cors);
       }
     }
 
@@ -212,16 +224,3 @@ export default {
     return response;
   },
 };
-
-function liveCorsHeaders(request, env) {
-  const origin = request.headers.get("Origin") || "";
-  let workerOrigin = "";
-  let appOrigin = "";
-  try { workerOrigin = new URL(request.url).origin; } catch {}
-  try { appOrigin = new URL(env.APP_URL || "https://nexar69.github.io/NVS-meetup-planner/").origin; } catch {}
-  const allowed = !origin || origin === appOrigin || origin === workerOrigin || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-  return allowed ? {
-    "access-control-allow-origin": origin || workerOrigin,
-    vary: "Origin",
-  } : {};
-}
