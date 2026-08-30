@@ -158,6 +158,18 @@
     schedule();
   }
 
+  function suspend() {
+    clearTimeout(timer);
+    timer = null;
+    cancelActiveCheck();
+  }
+
+  function resumeFromPageCache(event) {
+    if (!event?.persisted) return;
+    cancelActiveCheck();
+    start();
+  }
+
   ["online", "offline"].forEach((name) => window.addEventListener(name, () => {
     cancelActiveCheck();
     render();
@@ -166,13 +178,12 @@
   window.addEventListener("nvs-routing-provider", render);
   window.addEventListener("nvs-group-recommendations-rendered", render);
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      clearTimeout(timer);
-      cancelActiveCheck();
-    } else if (Date.now() - state.checkedAt > CHECK_INTERVAL) void check();
+    if (document.hidden) suspend();
+    else if (Date.now() - state.checkedAt > CHECK_INTERVAL) void check();
     else schedule();
   });
-  window.addEventListener("pageshow", start);
+  window.addEventListener("pagehide", suspend);
+  window.addEventListener("pageshow", resumeFromPageCache);
 
   window.NVSProviderHealth0111 = Object.freeze({
     check,
