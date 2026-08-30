@@ -88,6 +88,7 @@ jobs:
           node tests/shared-live-backoff-isolation.test.cjs
           node tests/shared-live-http-overload.test.cjs
           node tests/shared-live-coalescing.test.cjs
+          node tests/shared-live-v010-ownership.test.cjs
           node tests/shared-live-freshness.test.cjs
           node tests/shared-freshness-scheduler.test.cjs
           node tests/shared-checkin-queue.test.cjs
