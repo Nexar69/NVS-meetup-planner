@@ -84,11 +84,54 @@ function samplePlan() {
   const checkin = await worker.fetch(new Request(`${workerOrigin}/api/live/${id}`, {
     method: "POST",
     headers: { Origin: origin, "content-type": "application/json", "x-meet-schwerin": "1" },
-    body: JSON.stringify({ member: 0, key: created.memberKeys[0], status: "left" }),
+    body: JSON.stringify({ member: 0, key: created.memberKeys[0], status: "left", revision: 1 }),
   }), env, {});
   assert.equal(checkin.status, 200);
   assert.equal((await checkin.json()).expiresAt, created.expiresAt);
   assert.equal(env.PLANS.options.get(`live:${id}`)?.expiration, expirations[0], "live state must be normalized onto the same absolute expiry");
+
+  // A voluntary note is route-derived. If the organizer changes the plan after
+  // the viewer loaded revision 1, the stale write must be rejected before the
+  // core live-state handler mutates KV.
+  const changedPlan = samplePlan();
+  changedPlan.destination = { ...changedPlan.destination, label: "Updated meetup" };
+  const changed = await worker.fetch(new Request(`${workerOrigin}/api/live/${id}/plan`, {
+    method: "POST",
+    headers: { Origin: origin, "content-type": "application/json", "x-meet-schwerin": "1" },
+    body: JSON.stringify({ key: created.ownerKey, plan: changedPlan }),
+  }), env, {});
+  assert.equal(changed.status, 200);
+  const changedData = await changed.json();
+  assert.equal(changedData.revision, 2);
+
+  const staleCheckin = await worker.fetch(new Request(`${workerOrigin}/api/live/${id}`, {
+    method: "POST",
+    headers: { Origin: origin, "content-type": "application/json", "x-meet-schwerin": "1" },
+    body: JSON.stringify({ member: 0, key: created.memberKeys[0], status: "missed", note: "Old route", revision: 1 }),
+  }), env, {});
+  assert.equal(staleCheckin.status, 409, "check-ins derived from an older organizer revision must fail closed");
+  const staleData = await staleCheckin.json();
+  assert.equal(staleData.error, "plan_updated");
+  assert.equal(staleData.revision, 2);
+  assert.equal(staleData.expiresAt, created.expiresAt);
+
+  const afterStale = await worker.fetch(new Request(`${workerOrigin}/api/live/${id}`), env, {});
+  const afterStaleData = await afterStale.json();
+  assert.equal(afterStaleData.members["0"].status, "left", "rejected stale writes must not mutate live state");
+
+  const freshCheckin = await worker.fetch(new Request(`${workerOrigin}/api/live/${id}`, {
+    method: "POST",
+    headers: { Origin: origin, "content-type": "application/json", "x-meet-schwerin": "1" },
+    body: JSON.stringify({ member: 0, key: created.memberKeys[0], status: "arrived", revision: 2 }),
+  }), env, {});
+  assert.equal(freshCheckin.status, 200, "the current organizer revision should still permit voluntary check-ins");
+
+  const forbiddenStale = await worker.fetch(new Request(`${workerOrigin}/api/live/${id}`, {
+    method: "POST",
+    headers: { Origin: "https://attacker.example", "content-type": "application/json", "x-meet-schwerin": "1" },
+    body: JSON.stringify({ member: 0, key: created.memberKeys[0], status: "missed", revision: 1 }),
+  }), env, {});
+  assert.equal(forbiddenStale.status, 403, "stale-revision hardening must not bypass the existing origin policy");
 
   const replan = await worker.fetch(new Request(`${workerOrigin}/api/live/${id}/plan`, {
     method: "POST",
@@ -119,7 +162,7 @@ function samplePlan() {
   assert.equal("expiresAt" in legacyData, false, "legacy sessions should stay readable without pretending to know an exact expiry");
 
   // The logical deadline must be enforced even if KV retains a record briefly near its minimum TTL boundary.
-  await env.PLANS.put(`meta:${id}`, JSON.stringify({ revision: 2, updatedAt: Date.now(), expiresAt: Date.now() - 1 }));
+  await env.PLANS.put(`meta:${id}`, JSON.stringify({ revision: 3, updatedAt: Date.now(), expiresAt: Date.now() - 1 }));
   const expiredPage = await worker.fetch(new Request(`${workerOrigin}/p/${id}`), env, {});
   assert.equal(expiredPage.status, 404, "expired shared pages must stop resolving at the exact logical deadline");
   assert.match(await expiredPage.text(), /expired/i);
@@ -127,7 +170,7 @@ function samplePlan() {
     assert.equal(await env.PLANS.get(`${prefix}${id}`), null, `expired session key ${prefix}${id} should be cleaned up`);
   }
 
-  console.log("worker-expiry: shared sessions keep one authoritative non-sliding deadline");
+  console.log("worker-expiry: authoritative deadline and stale-revision check-in ownership passed");
 })().catch((error) => {
   console.error(error);
   process.exit(1);
