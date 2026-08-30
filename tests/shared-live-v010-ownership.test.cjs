@@ -26,13 +26,13 @@ assert.match(source, /function invalidateSend\(\)[\s\S]*sendGeneration \+= 1;[\s
   'POST invalidation should advance ownership, clear busy state, and abort old work');
 assert.match(source, /function sendStillCurrent\(task\)[\s\S]*sendTask === task[\s\S]*task\.generation === sendGeneration[\s\S]*!document\.hidden[\s\S]*pendingRevision == null[\s\S]*!sessionExpired\(\)[\s\S]*planId\(\) === task\.planId[\s\S]*focusIndex\(\) === task\.focus/,
   'POST completion should fail closed across lifecycle, revision, expiry, and personal-scope boundaries');
-assert.match(source, /if \(!url \|\| focus < 0 \|\| !key \|\| sending \|\| pendingRevision != null \|\| sessionExpired\(\)\) return;/,
-  'new voluntary writes should be blocked once the route is superseded or the session expires');
+assert.match(source, /if \(!url \|\| focus < 0 \|\| !key\) return checkinOutcome\("blocked", "unavailable"\);[\s\S]*if \(pendingRevision != null\) return checkinOutcome\("rejected", "plan_updated"[\s\S]*if \(sessionExpired\(\)\) return checkinOutcome\("rejected", "expired"/,
+  'new voluntary writes should report explicit blocked/rejected outcomes once scope, revision, or expiry prevents a send');
 assert.match(source, /body: JSON\.stringify\([^\n]*revision: loadedRevision[^\n]*\)/,
   'voluntary writes should carry the loaded plan revision for server-side stale-write hardening');
 assert.match(source, /signal: controller\.signal/,
   'owned GET and POST requests should be cancellable');
-assert.match(source, /const next = await response\.json\(\);\s*if \(!sendStillCurrent\(task\)\) return;\s*liveState =/,
+assert.match(source, /const next = await response\.json\(\);[\s\S]*if \(!sendStillCurrent\(task\)\)[\s\S]*liveState =/,
   'a POST must re-check ownership after async body parsing before publishing state');
 assert.match(source, /addEventListener\("nvs-shared-session-expired"[\s\S]*invalidateSend\(\)/,
   'authoritative expiry should invalidate an in-flight voluntary write');
