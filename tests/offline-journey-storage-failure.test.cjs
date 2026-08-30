@@ -73,11 +73,11 @@ function runtime({ storageMode = "methods-throw" } = {}) {
   }
 
   assert.doesNotThrow(() => vm.runInNewContext(source, context, { filename: "offline-journey-v0111.js" }), `${storageMode}: module bootstrap must survive unavailable tab storage`);
-  return { api: window.NVSOfflineJourney0111, listeners };
+  return { api: window.NVSOfflineJourney0111, listeners, window };
 }
 
 for (const storageMode of ["methods-throw", "accessor-throws"]) {
-  const { api, listeners } = runtime({ storageMode });
+  const { api, listeners, window } = runtime({ storageMode });
   assert.equal(typeof api?.capture, "function");
   assert.equal(typeof api?.readSnapshot, "function");
   assert.equal(typeof api?.clearSnapshot, "function");
@@ -85,18 +85,34 @@ for (const storageMode of ["methods-throw", "accessor-throws"]) {
 
   const now = new Date("2026-08-30T08:00:00.000Z");
   const snapshot = api.capture(now);
-  assert.equal(snapshot?.segments?.length, 1, `${storageMode}: a usable route may still be sanitized even when persistence is unavailable`);
+  assert.equal(snapshot?.segments?.length, 1, `${storageMode}: a usable route should still be sanitized when tab persistence is unavailable`);
   assert.equal(snapshot?.expiresAt, "2026-08-30T10:00:00.000Z");
-  assert.equal(api.readSnapshot(now.getTime() + 60_000), null, `${storageMode}: blocked storage must fail closed instead of inventing a persisted fallback`);
+
+  const recovered = api.readSnapshot(now.getTime() + 60_000);
+  assert.equal(recovered?.capturedAt, snapshot.capturedAt, `${storageMode}: failed sessionStorage writes should retain a same-document memory fallback`);
+  assert.equal(recovered?.scope, snapshot.scope);
+
+  window.NVSSharedLive.getState = () => ({ expiresAt: "2026-08-30T09:00:00.000Z" });
+  const reconciled = api.reconcileAuthoritativeExpiry(now.getTime() + 2 * 60_000);
+  assert.equal(reconciled?.expiresAt, "2026-08-30T09:00:00.000Z", `${storageMode}: memory fallback should still honor newly learned authoritative expiry`);
+  assert.equal(api.readSnapshot(Date.parse("2026-08-30T09:00:00.000Z")), null, `${storageMode}: memory fallback must disappear exactly at authoritative expiry`);
+
+  api.capture(now);
+  window.location.search = "?me=1";
+  assert.equal(api.readSnapshot(now.getTime() + 60_000), null, `${storageMode}: memory fallback must not cross a personal-view scope change`);
+  window.location.search = "?me=0";
+
+  api.capture(now);
   assert.doesNotThrow(() => api.clearSnapshot(), `${storageMode}: cleanup must remain safe when removeItem is unavailable`);
-  assert.equal(api.reconcileAuthoritativeExpiry(now.getTime() + 60_000), null, `${storageMode}: expiry reconciliation must safely no-op without a readable snapshot`);
+  assert.equal(api.readSnapshot(now.getTime() + 60_000), null, `${storageMode}: explicit cleanup must clear the memory fallback too`);
   assert.doesNotThrow(() => listeners["nvs-shared-session-expired"]?.(), `${storageMode}: authoritative expiry events must remain safe under storage failure`);
 }
 
-assert.match(source, /try\s*\{\s*sessionStorage\.setItem/s, "tab fallback writes should be isolated from storage exceptions");
-assert.match(source, /try\s*\{\s*const parsed = JSON\.parse\(sessionStorage\.getItem/s, "tab fallback reads should be isolated from storage exceptions");
-assert.match(source, /try \{ sessionStorage\.removeItem\(STORAGE_KEY\); \} catch \{\}/, "tab fallback cleanup should tolerate storage exceptions");
-assert.doesNotMatch(source, /localStorage|indexedDB/i, "personal route fallback must not escape tab-scoped storage when sessionStorage is unavailable");
+assert.match(source, /memorySnapshot\s*=\s*snapshot/, "failed tab storage writes should use only an in-memory same-document fallback");
+assert.match(source, /try\s*\{\s*sessionStorage\.setItem/s, "tab fallback writes should remain isolated from storage exceptions");
+assert.match(source, /sessionStorage\.getItem\(STORAGE_KEY\)/, "tab fallback reads should still prefer tab-scoped sessionStorage when available");
+assert.match(source, /memorySnapshot\s*=\s*null;\s*try \{ sessionStorage\.removeItem/s, "explicit cleanup should clear memory before attempting storage cleanup");
+assert.doesNotMatch(source, /localStorage|indexedDB/i, "personal route fallback must never escape same-document/session storage scope");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "storage degradation must never introduce location tracking");
 
-console.log("offline-journey-storage-failure: blocked/private-mode sessionStorage fails closed without crashing, durable fallback, or GPS escalation");
+console.log("offline-journey-storage-failure: private-mode storage failures retain only a scope-bound, expiry-bound memory fallback without durable storage or GPS escalation");
