@@ -11,6 +11,7 @@
   let wakeWanted = false;
   let wakeRequestGeneration = 0;
   let sendingStatus = false;
+  let checkinUiGeneration = 0;
   let recommendationsActive = false;
   let lastRouteUpdate = 0;
   let timer = null;
@@ -104,8 +105,27 @@
     return Boolean(entry?.status === status && Number(entry?.at) !== Number(beforeAt));
   }
 
+  function outcomeMessage(outcome, status) {
+    if (outcome?.status === "sent") return status === "clear" ? "Check-in cleared." : "Shared just now.";
+    if (outcome?.reason === "plan_updated") return "The organizer updated the plan. Reload the latest plan before checking in.";
+    if (outcome?.reason === "expired") return "This shared trip has expired. Check-ins are now read-only.";
+    if (outcome?.reason === "capability_revoked") return "This private check-in link was reset. Ask the organizer for a fresh personal link.";
+    if (outcome?.status === "uncertain") return "Connection interrupted. Check the shared status before sending again.";
+    if (outcome?.status === "aborted") return "Check-in cancelled before it was confirmed.";
+    if (outcome?.reason === "busy") return "Another check-in is still being sent.";
+    if (outcome?.reason === "unavailable") return "Check-in is not available for this view.";
+    if (outcome?.status === "rejected") return "The check-in was rejected. Refresh the shared trip before trying again.";
+    return "Could not confirm the update. Check the shared status before trying again.";
+  }
+
+  function invalidateCheckinUi() {
+    checkinUiGeneration += 1;
+    sendingStatus = false;
+  }
+
   async function sendStatus(status) {
     if (!canCheckIn() || sendingStatus || !window.NVSSharedLive?.checkIn) return;
+    const generation = ++checkinUiGeneration;
     sendingStatus = true;
     render();
     const state = document.getElementById("v0111CheckinState");
@@ -114,15 +134,33 @@
     const focus = focusIndex();
     const beforeAt = Number(window.NVSSharedLive?.getState?.()?.members?.[String(focus)]?.at || 0);
     try {
-      await window.NVSSharedLive.checkIn(status);
-      if (!statusWasApplied(status, beforeAt)) throw new Error("CHECKIN_NOT_CONFIRMED");
-      if (state) state.textContent = status === "clear" ? "Check-in cleared." : "Shared just now.";
-      window.NVSSharedLive.refresh?.();
+      const outcome = await window.NVSSharedLive.checkIn(status);
+      if (generation !== checkinUiGeneration || document.hidden) return;
+
+      // Compatibility with an older cached Shared Live module: only infer success
+      // from state when no structured outcome is available.
+      const hasOutcome = Boolean(outcome && typeof outcome === "object" && typeof outcome.status === "string");
+      if (!hasOutcome) {
+        if (!statusWasApplied(status, beforeAt)) {
+          if (state) state.textContent = "Could not confirm the update. Check the shared status before trying again.";
+          return;
+        }
+        if (state) state.textContent = status === "clear" ? "Check-in cleared." : "Shared just now.";
+        window.NVSSharedLive.refresh?.();
+        return;
+      }
+
+      if (state) state.textContent = outcomeMessage(outcome, status);
+      if (outcome.status === "sent") window.NVSSharedLive.refresh?.();
     } catch {
-      if (state) state.textContent = "Could not update. Check your connection and try again.";
+      if (generation === checkinUiGeneration && !document.hidden && state) {
+        state.textContent = "Could not confirm the update. Check the shared status before trying again.";
+      }
     } finally {
-      sendingStatus = false;
-      render();
+      if (generation === checkinUiGeneration) {
+        sendingStatus = false;
+        render();
+      }
     }
   }
 
@@ -210,6 +248,7 @@
     if (!dialog || dialog.dataset.v0111Lifecycle === "true") return;
     dialog.dataset.v0111Lifecycle = "true";
     dialog.addEventListener("close", async () => {
+      invalidateCheckinUi();
       wakeWanted = false;
       await releaseWakeLock();
       render();
@@ -231,6 +270,7 @@
   });
   window.addEventListener("nvs-recommendations-cleared", () => {
     recommendationsActive = false;
+    invalidateCheckinUi();
     clearTimeout(timer);
     timer = null;
     wakeWanted = false;
@@ -240,11 +280,13 @@
   window.addEventListener("nvs-shared-live-change", render);
   window.addEventListener("online", render);
   window.addEventListener("offline", render);
+  window.addEventListener("pagehide", invalidateCheckinUi);
   window.addEventListener("pageshow", start);
   document.addEventListener("visibilitychange", () => {
     clearTimeout(timer);
     timer = null;
     if (document.hidden) {
+      invalidateCheckinUi();
       releaseWakeLock();
       return;
     }
