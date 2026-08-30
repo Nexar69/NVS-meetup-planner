@@ -24,7 +24,12 @@ assert.match(runtime, /requestGeneration \+= 1;\s*activeController\?\.abort\(\)/
 assert.match(runtime, /const generation = \+\+requestGeneration/, "each fresh health probe should claim a new generation");
 assert.match(runtime, /if \(generation !== requestGeneration\) return;/, "stale health responses must be rejected before updating UI state");
 assert.match(runtime, /\["online", "offline"\][\s\S]*cancelActiveCheck\(\)[\s\S]*void check\(\)/, "network transitions should cancel stale probes before starting a fresh health check");
-assert.match(runtime, /if \(document\.hidden\) \{[\s\S]*cancelActiveCheck\(\)/, "hidden pages should cancel in-flight diagnostics work as well as periodic timers");
+assert.match(runtime, /function suspend\(\) \{[\s\S]*clearTimeout\(timer\)[\s\S]*cancelActiveCheck\(\)/, "suspending the document should cancel both the periodic timer and in-flight probe");
+assert.match(runtime, /window\.addEventListener\("pagehide", suspend\)/, "pagehide must invalidate diagnostics work before Safari/bfcache can freeze it");
+assert.match(runtime, /function resumeFromPageCache\(event\) \{[\s\S]*if \(!event\?\.persisted\) return;[\s\S]*cancelActiveCheck\(\);[\s\S]*start\(\)/, "only a persisted pageshow should restart diagnostics and it must invalidate pre-cache generations first");
+assert.match(runtime, /window\.addEventListener\("pageshow", resumeFromPageCache\)/, "bfcache restore should have an explicit owned resume path");
+assert.doesNotMatch(runtime, /window\.addEventListener\("pageshow", start\)/, "ordinary pageshow must not redundantly restart a probe already started during boot");
+assert.match(runtime, /if \(document\.hidden\) suspend\(\)/, "hidden pages should use the same cancellation owner as pagehide");
 assert.match(runtime, /document\.hidden/, "hidden pages should suspend periodic diagnostics work");
 assert.match(runtime, /no location data is sent by this check/i, "diagnostics UI should state the privacy boundary");
 assert.doesNotMatch(runtime, /geolocation|watchPosition|getCurrentPosition/, "health diagnostics must never access location APIs");
@@ -46,4 +51,4 @@ assert.match(sw, /test-lab-journey-v0111\.js/, "journey simulation should be ava
 assert.match(styles, /min-height:44px/, "system status disclosure should preserve a mobile-sized touch target");
 assert.match(styles, /forced-colors:active/, "provider diagnostics should support high-contrast mode");
 
-console.log("provider-health: backend drift, stale-probe isolation, safe text rendering, lifecycle, privacy and PWA r20 wiring look consistent");
+console.log("provider-health: backend drift, bfcache/stale-probe isolation, safe text rendering, lifecycle, privacy and PWA r20 wiring look consistent");
