@@ -1,5 +1,7 @@
 (() => {
   const UPDATE_MS = 15_000;
+  const MAX_FUTURE_SKEW_MS = 5 * 60_000;
+  const STALE_AFTER_MS = 15 * 60_000;
   let timer = null;
   let lastMarkup = "";
   let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary);
@@ -39,7 +41,9 @@
     const freshness = window.NVSIntelligenceCore?.checkinFreshness?.(entry, new Date(now));
     if (freshness) return Boolean(freshness.fresh);
     const at = Number(entry.at);
-    return Number.isFinite(at) && now >= at && now - at <= 15 * 60_000;
+    if (!Number.isFinite(at)) return false;
+    const age = now - at;
+    return age >= -MAX_FUTURE_SKEW_MS && age <= STALE_AFTER_MS;
   }
 
   function arrivalSummary(list) {
