@@ -11,16 +11,18 @@ const sessionStorage = {
   removeItem(key) { saved.delete(key); },
 };
 
+const base = Date.now();
+const iso = (offsetMs) => new Date(base + offsetMs).toISOString();
 const assignment = {
   route: {
-    arrival: "2026-08-30T06:45:00.000Z",
+    arrival: iso(45 * 60_000),
     segments: [{
       mode: "TRAM",
       line: "2",
       from: "Marienplatz",
       to: "Krebsförden",
-      departure: "2026-08-30T06:10:00.000Z",
-      arrival: "2026-08-30T06:35:00.000Z",
+      departure: iso(10 * 60_000),
+      arrival: iso(35 * 60_000),
     }],
   },
 };
@@ -67,30 +69,30 @@ vm.runInNewContext(source, {
 
 const api = window.NVSOfflineJourney0111;
 const storageKey = "meet-schwerin-offline-journey-v1";
-const capturedAt = new Date("2026-08-30T06:00:00.000Z");
+const capturedAt = new Date(base - 60_000);
 api.capture(capturedAt);
 let stored = JSON.parse(sessionStorage.getItem(storageKey));
 assert.equal(stored.expiresAt, null, "snapshot may begin without authoritative expiry while Shared Live is still loading");
 
-liveState = { expiresAt: "2026-08-30T07:00:00.000Z" };
-const reconciled = api.reconcileAuthoritativeExpiry(new Date("2026-08-30T06:05:00.000Z").getTime());
-assert.equal(reconciled.expiresAt, "2026-08-30T07:00:00.000Z", "late authoritative expiry should tighten the existing tab snapshot");
+liveState = { expiresAt: iso(60 * 60_000) };
+const reconciled = api.reconcileAuthoritativeExpiry(base);
+assert.equal(reconciled.expiresAt, iso(60 * 60_000), "late authoritative expiry should tighten the existing tab snapshot");
 stored = JSON.parse(sessionStorage.getItem(storageKey));
-assert.equal(stored.expiresAt, "2026-08-30T07:00:00.000Z", "reconciled expiry must persist in sessionStorage for later offline reads");
+assert.equal(stored.expiresAt, iso(60 * 60_000), "reconciled expiry must persist in sessionStorage for later offline reads");
 
-liveState = { expiresAt: "2026-08-30T06:50:00.000Z" };
+liveState = { expiresAt: iso(30 * 60_000) };
 listeners["nvs-live-plan-synced"]?.();
 stored = JSON.parse(sessionStorage.getItem(storageKey));
-assert.equal(stored.expiresAt, "2026-08-30T06:50:00.000Z", "successful live-plan sync should reconcile newly learned authoritative expiry automatically");
+assert.equal(stored.expiresAt, iso(30 * 60_000), "successful live-plan sync should reconcile newly learned authoritative expiry automatically");
 
-const atExpiry = api.reconcileAuthoritativeExpiry(new Date("2026-08-30T06:50:00.000Z").getTime());
+const atExpiry = api.reconcileAuthoritativeExpiry(base + 30 * 60_000);
 assert.equal(atExpiry, null, "snapshot must be rejected exactly at the authoritative deadline");
 assert.equal(sessionStorage.getItem(storageKey), null, "expired snapshot must be evicted instead of being extended or resurrected");
 
 liveState = { expiresAt: null };
 api.capture(capturedAt);
 liveState = { expiresAt: "not-a-date" };
-const unchanged = api.reconcileAuthoritativeExpiry(new Date("2026-08-30T06:05:00.000Z").getTime());
+const unchanged = api.reconcileAuthoritativeExpiry(base);
 assert.equal(unchanged.expiresAt, null, "malformed live metadata must not invent or corrupt an offline expiry");
 assert.equal(JSON.parse(sessionStorage.getItem(storageKey)).expiresAt, null);
 
