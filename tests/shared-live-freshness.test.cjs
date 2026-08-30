@@ -136,6 +136,15 @@ assert.equal(guidancePanel.attributes.inert, "", "stale route-derived controls m
 assert.equal(document.documentElement.dataset.nvsSharedPlanScopeChanging, "true");
 assert.equal(dispatched.at(-1)?.type, "nvs-shared-plan-scope-change",
   "scope changes should publish a privacy-safe lifecycle signal without plan identifiers");
+assert.equal(api.routeIntelligenceBlocked(), true,
+  "the in-flight recovery itself must remain a trust boundary until the replacement document loads");
+assert.doesNotThrow(() => handlers["nvs-shared-live-change"]({ type: "nvs-shared-live-change" }),
+  "a late old-plan Shared Live event may arrive before reload finishes but must be ignored");
+assert.equal(sharedPanel.hidden, true, "late live events must not revive the old Shared Live surface during recovery");
+assert.equal(guidancePanel.hidden, true, "late live events must not unhide stale route intelligence during recovery");
+assert.equal(guidancePanel.attributes["aria-hidden"], "true");
+assert.equal(guidancePanel.attributes.inert, "");
+assert.equal(reloads, 1, "late events must not cause a second recovery reload");
 assert.equal(api.enforcePlanScope(), false, "the same replacement plan must not trigger a reload loop");
 assert.equal(reloads, 1);
 
@@ -150,6 +159,8 @@ assert.match(source, /nvs-shared-live-change/, "shared-live events should trigge
 assert.match(source, /MAX_FUTURE_SKEW_MS/, "freshness handling should bound tolerated client/server clock skew");
 assert.match(source, /nvs-shared-plan-scope-change/,
   "same-document plan changes should expose a lifecycle boundary for adjacent recovery modules");
+assert.match(source, /scopeReloading \|\| hasPendingPlanUpdate\(\) \|\| sharedSessionExpired/,
+  "route intelligence must remain blocked for the entire cross-plan recovery window");
 assert.match(source, /setAttribute\?\.\("inert", ""\)/,
   "cross-plan fail-closed recovery should make stale interactive surfaces inert before reload");
 assert.doesNotMatch(JSON.stringify(dispatched), /ABCDEF|BCDEFG|\/p\//,
