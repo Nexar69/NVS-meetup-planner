@@ -165,11 +165,34 @@
       && focusIndex() === task.focus;
   }
 
+  function checkinOutcome(status, reason, extra = null) {
+    const outcome = Object.freeze({
+      ok: status === "sent",
+      status,
+      reason,
+      ...(extra && typeof extra === "object" ? extra : {}),
+    });
+    try { window.dispatchEvent(new CustomEvent("nvs-shared-checkin-outcome", { detail: outcome })); } catch {}
+    return outcome;
+  }
+
+  async function responseProblem(response) {
+    try {
+      const data = await response.json();
+      return data && typeof data === "object" ? data : {};
+    } catch {
+      return {};
+    }
+  }
+
   async function sendStatus(status) {
     const url = apiUrl();
     const focus = focusIndex();
     const key = capabilityKey();
-    if (!url || focus < 0 || !key || sending || pendingRevision != null || sessionExpired()) return;
+    if (!url || focus < 0 || !key) return checkinOutcome("blocked", "unavailable");
+    if (sending) return checkinOutcome("blocked", "busy");
+    if (pendingRevision != null) return checkinOutcome("rejected", "plan_updated", { revision: pendingRevision });
+    if (sessionExpired()) return checkinOutcome("rejected", "expired", { expiresAt: authoritativeExpiry() });
 
     const generation = ++sendGeneration;
     const controller = new AbortController();
@@ -185,26 +208,52 @@
         body: JSON.stringify({ member: focus, key, status, note: status === "clear" ? "" : suggestedNote(status), revision: loadedRevision }),
         signal: controller.signal,
       });
-      if (!sendStillCurrent(task)) return;
-      if (response.status === 403) {
-        forgetCapability();
-        const note = document.getElementById("v010CheckinNote");
-        if (note) note.textContent = "This private check-in link was reset by the organizer and is now read-only. Ask for a fresh personal link to check in again.";
-        throw new Error("CHECKIN_CAPABILITY_REVOKED");
+      if (!sendStillCurrent(task)) {
+        if (sessionExpired()) return checkinOutcome("rejected", "expired", { expiresAt: authoritativeExpiry() });
+        if (pendingRevision != null) return checkinOutcome("rejected", "plan_updated", { revision: pendingRevision });
+        return checkinOutcome("aborted", "superseded");
       }
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        const problem = await responseProblem(response);
+        if (!sendStillCurrent(task)) {
+          if (sessionExpired()) return checkinOutcome("rejected", "expired", { expiresAt: authoritativeExpiry() });
+          if (pendingRevision != null) return checkinOutcome("rejected", "plan_updated", { revision: pendingRevision });
+          return checkinOutcome("aborted", "superseded");
+        }
+        if (response.status === 403) {
+          forgetCapability();
+          const note = document.getElementById("v010CheckinNote");
+          if (note) note.textContent = "This private check-in link was reset by the organizer and is now read-only. Ask for a fresh personal link to check in again.";
+          render();
+          return checkinOutcome("rejected", "capability_revoked", { httpStatus: 403 });
+        }
+        if (response.status === 409 && problem?.error === "plan_updated") {
+          const revision = Math.max(1, Number(problem?.revision) || 1);
+          if (loadedRevision == null || revision > loadedRevision) pendingRevision = revision;
+          const expiresAt = Number(problem?.expiresAt);
+          if (Number.isFinite(expiresAt) && expiresAt > 0) liveState = { ...(liveState || {}), expiresAt };
+          render();
+          return checkinOutcome("rejected", "plan_updated", { httpStatus: 409, revision, expiresAt: Number.isFinite(expiresAt) ? expiresAt : null });
+        }
+        if (sessionExpired()) return checkinOutcome("rejected", "expired", { httpStatus: response.status, expiresAt: authoritativeExpiry() });
+        return checkinOutcome("rejected", "http_error", { httpStatus: response.status, error: String(problem?.error || "") });
+      }
       const next = await response.json();
-      if (!sendStillCurrent(task)) return;
+      if (!sendStillCurrent(task)) {
+        if (sessionExpired()) return checkinOutcome("rejected", "expired", { expiresAt: authoritativeExpiry() });
+        if (pendingRevision != null) return checkinOutcome("rejected", "plan_updated", { revision: pendingRevision });
+        return checkinOutcome("aborted", "superseded");
+      }
       liveState = { ...(liveState || {}), ...next };
       render();
       window.dispatchEvent(new CustomEvent("nvs-shared-live-change", { detail: liveState }));
+      return checkinOutcome("sent", "confirmed", { httpStatus: response.status, updatedAt: Number(next?.updatedAt) || null });
     } catch (error) {
-      if (error?.name === "AbortError") return;
+      if (error?.name === "AbortError") return checkinOutcome("aborted", "cancelled");
       console.warn("Shared check-in failed", error);
       const note = document.getElementById("v010CheckinNote");
-      if (note && error?.message !== "CHECKIN_CAPABILITY_REVOKED") {
-        note.textContent = "Could not update the shared status. This link may be an older read-only link, or you may be offline.";
-      }
+      if (note) note.textContent = "Could not update the shared status. This link may be an older read-only link, or you may be offline.";
+      return checkinOutcome("uncertain", "network_error");
     } finally {
       if (sendTask === task) {
         sendTask = null;
