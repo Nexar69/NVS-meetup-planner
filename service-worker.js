@@ -1,5 +1,5 @@
-const CACHE_NAME = "meet-schwerin-v0.11.1-r21";
-// Cache lineage: r14 -> r15 -> r16 -> r17 -> r18 -> r19 -> r20 -> r21. r21 refreshes personal Trip Guidance fallback timestamp-trust hardening.
+const CACHE_NAME = "meet-schwerin-v0.11.1-r20";
+// Cache lineage: r14 -> r15 -> r16 -> r17 -> r18 -> r19 -> r20. r20 refreshes Shared Live poll ownership and stale-completion protection.
 const NETWORK_TIMEOUT_MS = 5_000;
 
 const APP_SHELL = [
