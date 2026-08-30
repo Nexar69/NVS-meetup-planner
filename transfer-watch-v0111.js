@@ -2,6 +2,8 @@
   const UPDATE_MS = 20_000;
   const MAX_WATCH_MIN = 6;
   const MAX_LEAD_MIN = 30;
+  const MAX_FUTURE_SKEW_MS = 5 * 60_000;
+  const STALE_AFTER_MS = 15 * 60_000;
   const BLOCKING_VOLUNTARY = new Set(["missed", "arrived", "at-stop"]);
   let timer = null;
   let lastMarkup = "";
@@ -186,7 +188,9 @@
     const freshness = window.NVSIntelligenceCore?.checkinFreshness?.(entry, new Date(now));
     if (freshness) return freshness.fresh ? entry : null;
     const at = Number(entry.at);
-    return Number.isFinite(at) && now >= at && now - at <= 15 * 60_000 ? entry : null;
+    if (!Number.isFinite(at)) return null;
+    const age = now - at;
+    return age >= -MAX_FUTURE_SKEW_MS && age <= STALE_AFTER_MS ? entry : null;
   }
 
   function blockingVoluntaryState(now = Date.now()) {
