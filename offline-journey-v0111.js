@@ -6,6 +6,7 @@
   const COMPLETED_GRACE_MS = 2 * 60 * 1000;
   let freshnessTimer = null;
   let memorySnapshot = null;
+  let awaitingFreshRoute = false;
 
   function asDate(value) {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -364,6 +365,7 @@
   }
 
   function hasUsableLiveRoute() {
+    if (awaitingFreshRoute) return false;
     const liveAssignment = assignment();
     const personalPlan = document.getElementById("personalSharedPlan");
     return Boolean(liveAssignment?.route?.segments?.length && personalPlan);
@@ -423,13 +425,27 @@
       <p class="v0111-offline-journey-meta">${arrival ? `Planned arrival ${escapeHtml(arrival)} · ` : ""}Completed legs are hidden when possible. Authoritative shared-session expiry is honored offline when known, including while reconnecting. No GPS, names, coordinates, plan IDs or private check-in keys are stored in this fallback.</p>`;
   }
 
-  function captureAndRender() {
-    if (navigator.onLine) capture();
+  function captureFreshRouteAndRender() {
+    if (navigator.onLine) {
+      const snapshot = capture();
+      if (snapshot && document.getElementById("personalSharedPlan")) awaitingFreshRoute = false;
+    }
     render();
   }
 
-  function resumeRender() {
+  function resumeRender(event) {
+    if (event?.type === "pageshow" && event.persisted && navigator.onLine) awaitingFreshRoute = true;
     render();
+  }
+
+  function markConnectionBoundary() {
+    awaitingFreshRoute = true;
+    render();
+  }
+
+  function handlePageHide() {
+    awaitingFreshRoute = true;
+    clearFreshnessTimer();
   }
 
   function reconcileExpiryAndRender() {
@@ -437,14 +453,15 @@
     render();
   }
 
-  window.addEventListener("nvs-group-recommendations-rendered", captureAndRender);
+  window.addEventListener("nvs-group-recommendations-rendered", captureFreshRouteAndRender);
   window.addEventListener("nvs-live-plan-synced", reconcileExpiryAndRender);
-  window.addEventListener("online", resumeRender);
-  window.addEventListener("offline", render);
+  window.addEventListener("online", markConnectionBoundary);
+  window.addEventListener("offline", markConnectionBoundary);
+  window.addEventListener("pagehide", handlePageHide);
   window.addEventListener("pageshow", resumeRender);
   window.addEventListener("nvs-shared-view-resumed", resumeRender);
   window.addEventListener("nvs-shared-session-expired", clearSnapshot);
-  window.addEventListener("load", captureAndRender);
+  window.addEventListener("load", captureFreshRouteAndRender);
   document.addEventListener?.("visibilitychange", () => {
     if (document.hidden) clearFreshnessTimer();
     else render();
@@ -465,10 +482,11 @@
     scopeFingerprint,
     authoritativeExpiry,
     hasUsableLiveRoute,
-    captureAndRender,
+    captureFreshRouteAndRender,
     resumeRender,
+    markConnectionBoundary,
     reconcileExpiryAndRender,
   });
 
-  captureAndRender();
+  captureFreshRouteAndRender();
 })();
