@@ -103,13 +103,13 @@
   }
 
   function routeIntelligenceBlocked(now = Date.now()) {
-    return hasPendingPlanUpdate() || sharedSessionExpired(now);
+    return scopeReloading || hasPendingPlanUpdate() || sharedSessionExpired(now);
   }
 
   function applyPlanTrustBoundary(now = Date.now()) {
     const pending = hasPendingPlanUpdate();
     const expired = sharedSessionExpired(now);
-    const blocked = pending || expired;
+    const blocked = scopeReloading || pending || expired;
     const root = document.documentElement;
     if (root?.dataset) {
       if (pending) root.dataset.nvsPlanUpdatePending = "true";
@@ -185,7 +185,7 @@
   }
 
   function refresh(now = Date.now()) {
-    if (enforcePlanScope()) return 0;
+    if (enforcePlanScope() || scopeReloading) return 0;
     const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
     applyPlanTrustBoundary(timestamp);
     syncTrustObserver(timestamp);
@@ -214,7 +214,7 @@
   }
 
   function start() {
-    if (enforcePlanScope()) return;
+    if (enforcePlanScope() || scopeReloading) return;
     refresh();
     schedule();
   }
