@@ -9,9 +9,22 @@
   let retryTimer = null;
   let retryCooldownUntil = 0;
   let checking = false;
+  let retryGeneration = 0;
+  let retryTask = null;
 
   function clearStaleTimer() { clearTimeout(staleTimer); staleTimer = null; }
   function clearRetryTimer() { clearTimeout(retryTimer); retryTimer = null; }
+  function invalidateRetry() {
+    retryGeneration += 1;
+    retryTask = null;
+    checking = false;
+  }
+  function retryStillCurrent(task) {
+    return retryTask === task
+      && task?.generation === retryGeneration
+      && !document.hidden
+      && navigator.onLine;
+  }
   function formatAge(ageMs) {
     const seconds = Math.max(0, Math.round(Number(ageMs || 0) / 1000));
     if (seconds < 60) return `${seconds}s`;
@@ -116,22 +129,29 @@
     const refresh = window.NVSSharedLive?.refresh;
     if (typeof refresh !== "function") return false;
     const beforeVersion = successVersion;
+    const generation = ++retryGeneration;
+    const task = { generation };
+    retryTask = task;
     let acknowledged = false;
     checking = true;
     render(now);
     try {
       window.NVSSharedLiveTimeout0111?.allowNextGet?.();
       await refresh();
+      if (!retryStillCurrent(task)) return false;
       acknowledged = successVersion > beforeVersion;
       return acknowledged;
     } catch { return false; }
     finally {
-      checking = false;
-      if (acknowledged) { retryCooldownUntil = 0; clearRetryTimer(); }
-      else if (navigator.onLine) retryCooldownUntil = Date.now() + RETRY_COOLDOWN_MS;
-      render();
-      scheduleStale();
-      scheduleRetryReady();
+      if (retryTask === task && generation === retryGeneration) {
+        retryTask = null;
+        checking = false;
+        if (acknowledged) { retryCooldownUntil = 0; clearRetryTimer(); }
+        else if (navigator.onLine && !document.hidden) retryCooldownUntil = Date.now() + RETRY_COOLDOWN_MS;
+        render();
+        scheduleStale();
+        scheduleRetryReady();
+      }
     }
   }
 
@@ -145,9 +165,15 @@
   ["online", "offline", "pageshow", "nvs-group-recommendations-rendered", "nvs-display-options-change", "nvs-shared-view-resumed"].forEach((name) => {
     window.addEventListener(name, () => { render(); scheduleStale(); scheduleRetryReady(); });
   });
+  window.addEventListener("pagehide", () => {
+    clearStaleTimer();
+    clearRetryTimer();
+    invalidateRetry();
+  });
   document.addEventListener("visibilitychange", () => {
     clearStaleTimer();
     clearRetryTimer();
+    if (document.hidden) invalidateRetry();
     if (!document.hidden) {
       if (retryCooldownUntil <= Date.now()) retryCooldownUntil = 0;
       render();
