@@ -25,10 +25,28 @@ const row = {
   },
 };
 const list = { querySelectorAll: () => [row] };
+const sharedPanel = {
+  hidden: false,
+  attributes: {},
+  setAttribute(name, value) { this.attributes[name] = value; },
+};
+const guidancePanel = {
+  hidden: false,
+  dataset: {},
+  attributes: {},
+  setAttribute(name, value) { this.attributes[name] = value; },
+  removeAttribute(name) { delete this.attributes[name]; },
+};
 const now = Date.now();
 const state = { members: { "0": { status: "missed", at: now - 20 * 60_000 } } };
 const handlers = {};
+const dispatched = [];
+let reloads = 0;
 const window = {
+  location: {
+    pathname: "/p/ABCDEF",
+    reload() { reloads += 1; },
+  },
   __NVS_LAST_RECOMMENDATIONS__: { primary: { assignments: [{ route: { segments: [] } }] } },
   NVSSharedLive: { getState: () => state },
   NVSLiveMeetup: { routeState: () => ({ label: "On Tram 2", detail: "Expected toward Stauffenbergstraße" }) },
@@ -39,16 +57,27 @@ const window = {
     },
   },
   addEventListener(type, handler) { handlers[type] = handler; },
+  dispatchEvent(event) { dispatched.push(event); return true; },
 };
 const document = {
   hidden: true,
-  getElementById(id) { return id === "v010StatusList" ? list : null; },
+  documentElement: { dataset: {} },
+  getElementById(id) {
+    if (id === "v010StatusList") return list;
+    if (id === "sharedLiveV010") return sharedPanel;
+    if (id === "v0111TripGuidance") return guidancePanel;
+    return null;
+  },
   addEventListener() {},
 };
+class FakeCustomEvent {
+  constructor(type, init = {}) { this.type = type; this.detail = init.detail; }
+}
 
 vm.runInNewContext(source, {
   window,
   document,
+  CustomEvent: FakeCustomEvent,
   Date,
   Math,
   Number,
@@ -62,6 +91,7 @@ vm.runInNewContext(source, {
 
 const api = window.NVSSharedLiveFreshness0111;
 assert.ok(api, "freshness guard should expose a testable API");
+assert.equal(api.getScopedPlanId(), "ABCDEF", "the guard should bind itself to the current shared-plan path");
 assert.equal(api.freshnessFor({ at: now - 16 * 60_000 }, now).stale, true);
 assert.equal(api.freshnessFor({ at: now - 2 * 60_000 }, now).fresh, true);
 assert.equal(api.freshnessFor({ at: now + 4 * 60_000 }, now).fresh, true,
@@ -94,12 +124,31 @@ assert.equal(typeof handlers["nvs-shared-live-change"], "function");
 assert.doesNotThrow(() => handlers["nvs-shared-live-change"]({ type: "nvs-shared-live-change" }), "DOM events must not be mistaken for timestamps");
 assert.equal(sourceBadge.textContent, "INVALID TIME · TIMETABLE");
 
+window.location.pathname = "/p/BCDEFG";
+assert.equal(api.enforcePlanScope(), true,
+  "a same-document shared-plan path change must become an immediate trust boundary");
+assert.equal(reloads, 1, "cross-plan state should recover through a clean document reload");
+assert.equal(sharedPanel.hidden, true, "the old Shared Live panel must fail closed before reload");
+assert.equal(sharedPanel.attributes["aria-hidden"], "true", "old shared state must leave the accessibility tree too");
+assert.equal(guidancePanel.hidden, true, "route-derived intelligence must not remain visible under the new plan path");
+assert.equal(document.documentElement.dataset.nvsSharedPlanScopeChanging, "true");
+assert.equal(dispatched.at(-1)?.type, "nvs-shared-plan-scope-change",
+  "scope changes should publish a privacy-safe lifecycle signal without plan identifiers");
+assert.equal(api.enforcePlanScope(), false, "the same replacement plan must not trigger a reload loop");
+assert.equal(reloads, 1);
+
 assert.match(release, /loadSharedLiveFreshness0111/, "release owner must load the stale-status consistency guard");
 assert.match(release, /shared-live-freshness-v0111\.js/);
 assert.match(serviceWorker, /shared-live-freshness-v0111\.js/, "stale-status consistency guard must be available in the offline shell");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "freshness handling must not introduce location tracking");
+assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/i,
+  "cross-plan ownership must remain memory-only rather than persisting personal live state");
 assert.match(source, /document\.hidden/, "periodic freshness checks should pause while hidden");
 assert.match(source, /nvs-shared-live-change/, "shared-live events should trigger freshness and plan-trust reevaluation");
 assert.match(source, /MAX_FUTURE_SKEW_MS/, "freshness handling should bound tolerated client/server clock skew");
+assert.match(source, /nvs-shared-plan-scope-change/,
+  "same-document plan changes should expose a lifecycle boundary for adjacent recovery modules");
+assert.doesNotMatch(JSON.stringify(dispatched), /ABCDEF|BCDEFG|\/p\//,
+  "scope-change lifecycle events must not leak shared plan IDs or paths");
 
-console.log("shared-live-freshness: stale and impossible-future manual confirmations downgrade to timetable guidance");
+console.log("shared-live-freshness: stale timestamps and cross-plan same-document state fail closed");
