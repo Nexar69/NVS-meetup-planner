@@ -52,7 +52,6 @@
     if (!item || context.kind !== "person") return Boolean(item);
     if (Number.isInteger(item.memberIndex)) return item.memberIndex === context.focus;
     if (item.memberId) return String(item.memberId) === context.memberId;
-    // Alerts without a member owner describe a whole-plan condition and remain useful.
     return true;
   }
 
@@ -135,8 +134,6 @@
     const reliableReload = window.NVSSharedReload0111?.reloadUpdatedPlan;
     if (typeof reliableReload === "function") return reliableReload(button);
 
-    // Compatibility fallback for a partially updated app shell. Prefer same-URL
-    // navigation if reload itself throws, matching the shared Safari reload guard.
     try {
       window.location.reload();
       return true;
@@ -270,9 +267,13 @@
     return recommendationsActive || Boolean(window.NVSSharedLive?.hasPendingPlanUpdate?.());
   }
 
-  function schedule() {
+  function suspend() {
     clearTimeout(timer);
     timer = null;
+  }
+
+  function schedule() {
+    suspend();
     if (document.hidden || !shouldPoll()) return;
     timer = setTimeout(() => {
       render();
@@ -310,13 +311,13 @@
   }));
 
   document.addEventListener("visibilitychange", () => {
-    clearTimeout(timer);
-    timer = null;
+    suspend();
     if (!document.hidden) {
       render();
       schedule();
     }
   });
+  window.addEventListener("pagehide", suspend);
   window.addEventListener("pageshow", start);
   window.addEventListener("load", start);
 
