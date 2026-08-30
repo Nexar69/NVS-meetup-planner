@@ -38,7 +38,7 @@ assert.match(runtime, /body\.replaceChildren\(routingLine, detailLine, meta\)/, 
 assert.match(release, /loadProviderHealth0111/, "release owner should load provider diagnostics");
 assert.match(release, /provider-health-v0111\.js/, "provider diagnostics runtime must be wired");
 assert.match(release, /provider-health-v0111\.css/, "provider diagnostics styles must be wired");
-assert.match(sw, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r19";/, "provider diagnostics should follow the current offline app shell revision");
+assert.match(sw, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r20";/, "provider diagnostics should follow the current offline app shell revision");
 assert.match(sw, /provider-health-v0111\.js/, "provider diagnostics runtime must be cached for the PWA");
 assert.match(sw, /provider-health-v0111\.css/, "provider diagnostics styles must be cached for the PWA");
 assert.match(sw, /test-lab-v0111\.js/, "hardened Test Lab should remain available in the current PWA shell");
@@ -46,4 +46,4 @@ assert.match(sw, /test-lab-journey-v0111\.js/, "journey simulation should be ava
 assert.match(styles, /min-height:44px/, "system status disclosure should preserve a mobile-sized touch target");
 assert.match(styles, /forced-colors:active/, "provider diagnostics should support high-contrast mode");
 
-console.log("provider-health: backend drift, stale-probe isolation, safe text rendering, lifecycle, privacy and PWA r19 wiring look consistent");
+console.log("provider-health: backend drift, stale-probe isolation, safe text rendering, lifecycle, privacy and PWA r20 wiring look consistent");
