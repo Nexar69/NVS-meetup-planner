@@ -16,6 +16,8 @@
   let recentAttempt = null;
   let confirmationTimer = null;
   let sendingPending = false;
+  let pendingSendGeneration = 0;
+  let pendingSendTask = null;
   let lastNotice = "";
 
   function focusIndex() {
@@ -37,6 +39,29 @@
     confirmationTimer = null;
   }
 
+  function invalidatePendingSend() {
+    pendingSendGeneration += 1;
+    pendingSendTask = null;
+    sendingPending = false;
+  }
+
+  function samePendingItem(item) {
+    if (!item || !pending) return false;
+    return String(pending.status) === String(item.status)
+      && Number(pending.at) === Number(item.at)
+      && Number(pending.memberIndex) === Number(item.memberIndex)
+      && String(pending.source || "") === String(item.source || "");
+  }
+
+  function pendingSendStillOwned(task) {
+    return Boolean(task)
+      && pendingSendTask === task
+      && task.generation === pendingSendGeneration
+      && !document.hidden
+      && samePendingItem(task.item)
+      && Number(task.item.memberIndex) === focusIndex();
+  }
+
   function scheduleExpiry(now = Date.now()) {
     clearExpiryTimer();
     if (document.hidden || !pending) return;
@@ -54,7 +79,7 @@
       return false;
     }
     pending = null;
-    sendingPending = false;
+    invalidatePendingSend();
     lastNotice = "Pending status expired without being shared. Tap your current status again if you still want to report it.";
     clearExpiryTimer();
     render();
@@ -69,7 +94,7 @@
   function invalidateMemberMismatch() {
     if (!pending || pendingMatchesMember(pending)) return false;
     pending = null;
-    sendingPending = false;
+    invalidatePendingSend();
     lastNotice = "Personal route changed, so the pending status was discarded. Nothing was shared.";
     clearExpiryTimer();
     return true;
@@ -86,6 +111,7 @@
     const memberIndex = focusIndex();
     if (!ALLOWED.has(value) || memberIndex < 0) return null;
     const extra = metadata && typeof metadata === "object" ? metadata : {};
+    invalidatePendingSend();
     pending = {
       status: value,
       at: Number(now),
@@ -94,7 +120,6 @@
       baselineAt: Number.isFinite(Number(extra.baselineAt)) ? Number(extra.baselineAt) : null,
       baselineStatus: String(extra.baselineStatus || ""),
     };
-    sendingPending = false;
     lastNotice = "";
     scheduleExpiry(Number(now));
     render();
@@ -102,9 +127,12 @@
   }
 
   function discardPending(message = "Pending status discarded. Nothing was shared.") {
-    if (!pending) return false;
+    if (!pending) {
+      invalidatePendingSend();
+      return false;
+    }
     pending = null;
-    sendingPending = false;
+    invalidatePendingSend();
     lastNotice = message;
     clearExpiryTimer();
     render();
@@ -153,7 +181,7 @@
     const item = pending;
     if (!item || item.source !== "unconfirmed" || !pendingMatchesMember(item) || !confirmedAgainstBaseline(item)) return false;
     pending = null;
-    sendingPending = false;
+    invalidatePendingSend();
     clearExpiryTimer();
     lastNotice = "The shared meetup confirmed this status after the slow response. Nothing needs to be sent again.";
     render();
@@ -191,6 +219,7 @@
       return false;
     }
     recentAttempt = null;
+    invalidatePendingSend();
     pending = {
       status: item.status,
       at: Number(item.at),
@@ -199,7 +228,6 @@
       baselineAt: item.baselineAt,
       baselineStatus: item.baselineStatus,
     };
-    sendingPending = false;
     lastNotice = "Meet Schwerin could not confirm that the original status tap was shared. It is kept pending only in this tab; verify it is still true before sending again.";
     scheduleExpiry(now);
     render();
@@ -239,6 +267,7 @@
     if (!item || sendingPending) return false;
     if (item.source === "unconfirmed" && confirmedAgainstBaseline(item)) {
       pending = null;
+      invalidatePendingSend();
       lastNotice = "This status was already confirmed by the shared meetup. Nothing was sent again.";
       clearExpiryTimer();
       render();
@@ -259,16 +288,22 @@
       return false;
     }
 
+    const generation = ++pendingSendGeneration;
+    const task = { generation, item };
+    pendingSendTask = task;
     sendingPending = true;
     lastNotice = "";
     const before = liveEntry();
     render();
     try {
       await window.NVSSharedLive.checkIn(item.status);
-      if (!pendingMatchesMember(item)) {
-        pending = null;
-        lastNotice = "Personal route changed while the status was sending. Check the current shared status before reporting again.";
-        clearExpiryTimer();
+      if (!pendingSendStillOwned(task)) return false;
+      if (window.NVSSharedLive?.hasPendingPlanUpdate?.()) {
+        lastNotice = "The meetup plan changed while this status was sending. Reload the updated plan before deciding whether to send it again.";
+        return false;
+      }
+      if (isExpired(item)) {
+        expirePending(Date.now());
         return false;
       }
       if (confirmedByFreshLiveState(item.status, before)) {
@@ -286,8 +321,11 @@
       lastNotice = "Meet Schwerin could not confirm a fresh shared update. Check your connection and tap Send now again if the status is still correct.";
       return false;
     } finally {
-      sendingPending = false;
-      render();
+      if (pendingSendTask === task) {
+        pendingSendTask = null;
+        sendingPending = false;
+        render();
+      }
     }
   }
 
@@ -376,18 +414,25 @@
   document.addEventListener("visibilitychange", () => {
     clearExpiryTimer();
     clearConfirmationTimer();
-    if (!document.hidden) {
-      settleConfirmedAttempt();
-      settleUnconfirmedPending();
-      promoteUnconfirmedAttempt(Date.now());
-      expirePending(Date.now());
-      scheduleExpiry();
-      scheduleConfirmation();
-      render();
+    if (document.hidden) {
+      clearRecentAttempt();
+      invalidatePendingSend();
+      return;
     }
+    settleConfirmedAttempt();
+    settleUnconfirmedPending();
+    promoteUnconfirmedAttempt(Date.now());
+    expirePending(Date.now());
+    scheduleExpiry();
+    scheduleConfirmation();
+    render();
   });
   ["online", "offline", "pageshow", "nvs-shared-live-change", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => {
     window.addEventListener(name, () => {
+      if (window.NVSSharedLive?.hasPendingPlanUpdate?.()) {
+        clearRecentAttempt();
+        invalidatePendingSend();
+      }
       if (name === "nvs-shared-live-change") {
         settleConfirmedAttempt();
         settleUnconfirmedPending();
@@ -397,6 +442,12 @@
       scheduleConfirmation();
       render();
     });
+  });
+  window.addEventListener("pagehide", () => {
+    clearExpiryTimer();
+    clearConfirmationTimer();
+    clearRecentAttempt();
+    invalidatePendingSend();
   });
   window.addEventListener("nvs-shared-session-expired", () => {
     clearRecentAttempt();
