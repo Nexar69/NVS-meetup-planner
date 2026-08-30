@@ -15,8 +15,13 @@ assert.match(
 );
 assert.match(
   source,
-  /function schedule\(\) \{[\s\S]*timer = null;[\s\S]*if \(document\.hidden \|\| !shouldPoll\(\)\) return;/,
-  'Scheduling must stay stopped when the page is hidden or recovery context is absent',
+  /function suspend\(\) \{[\s\S]*clearTimeout\(timer\);[\s\S]*timer = null;[\s\S]*\}/,
+  'Recovery Desk should have one explicit timer-suspension path for hidden/pagehide lifecycle boundaries',
+);
+assert.match(
+  source,
+  /function schedule\(\) \{[\s\S]*suspend\(\);[\s\S]*if \(document\.hidden \|\| !shouldPoll\(\)\) return;/,
+  'Scheduling must clear older work and stay stopped when the page is hidden or recovery context is absent',
 );
 assert.match(
   source,
@@ -27,6 +32,11 @@ assert.match(
   source,
   /addEventListener\("nvs-group-recommendations-rendered", \(\) => \{[\s\S]*recommendationsActive = Boolean\(window\.__NVS_LAST_RECOMMENDATIONS__\?\.primary\);[\s\S]*schedule\(\);/,
   'Only a fresh authoritative recommendation render should reactivate route polling',
+);
+assert.match(
+  source,
+  /window\.addEventListener\("pagehide", suspend\);/,
+  'Safari/bfcache navigation must explicitly stop Recovery Desk timers before the page is frozen',
 );
 assert.match(
   source,
