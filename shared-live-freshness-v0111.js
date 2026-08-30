@@ -20,22 +20,24 @@
     return match?.[1] || "";
   }
 
+  function makeScopeInert(element) {
+    if (!element) return;
+    element.hidden = true;
+    element.setAttribute?.("aria-hidden", "true");
+    element.setAttribute?.("inert", "");
+  }
+
   function hideForPlanScopeChange() {
     const root = document.documentElement;
     if (root?.dataset) root.dataset.nvsSharedPlanScopeChanging = "true";
 
-    const panel = document.getElementById("sharedLiveV010");
-    if (panel) {
-      panel.hidden = true;
-      panel.setAttribute?.("aria-hidden", "true");
-    }
+    makeScopeInert(document.getElementById("sharedLiveV010"));
 
     ROUTE_INTELLIGENCE_IDS.forEach((id) => {
       const element = document.getElementById(id);
       if (!element) return;
-      element.hidden = true;
+      makeScopeInert(element);
       if (element.dataset) element.dataset.nvsPlanTrustHidden = "true";
-      element.setAttribute?.("aria-hidden", "true");
     });
   }
 
