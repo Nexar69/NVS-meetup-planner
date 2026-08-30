@@ -87,6 +87,7 @@ const atExpiry = api.reconcileAuthoritativeExpiry(new Date("2026-08-30T06:50:00.
 assert.equal(atExpiry, null, "snapshot must be rejected exactly at the authoritative deadline");
 assert.equal(sessionStorage.getItem(storageKey), null, "expired snapshot must be evicted instead of being extended or resurrected");
 
+liveState = { expiresAt: null };
 api.capture(capturedAt);
 liveState = { expiresAt: "not-a-date" };
 const unchanged = api.reconcileAuthoritativeExpiry(new Date("2026-08-30T06:05:00.000Z").getTime());
