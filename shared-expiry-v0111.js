@@ -2,6 +2,8 @@
   let timer = null;
   let expiredAnnounced = false;
   let authoritativeExpiryAt = null;
+  let lifecycleFrozen = false;
+  let observer = null;
 
   function sharedState() {
     return window.NVSSharedLive?.getState?.() || null;
@@ -39,6 +41,7 @@
   }
 
   function ensureIndicator() {
+    if (lifecycleFrozen) return null;
     const panel = document.getElementById("sharedLiveV010");
     if (!panel) return null;
     let indicator = panel.querySelector("#v0111SharedExpiry");
@@ -69,6 +72,7 @@
   }
 
   function render() {
+    if (lifecycleFrozen) return;
     const panel = document.getElementById("sharedLiveV010");
     const indicator = ensureIndicator();
     if (!panel || !indicator) return;
@@ -98,25 +102,48 @@
 
   function schedule() {
     clearTimeout(timer);
-    if (document.hidden) return;
+    timer = null;
+    if (lifecycleFrozen || document.hidden) return;
     render();
     timer = setTimeout(schedule, 30_000);
   }
 
+  function observeRoot() {
+    if (lifecycleFrozen || !observer || !document.documentElement) return;
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  function handlePageHide() {
+    lifecycleFrozen = true;
+    clearTimeout(timer);
+    timer = null;
+    observer?.disconnect();
+  }
+
+  function handlePageShow() {
+    lifecycleFrozen = false;
+    observeRoot();
+    schedule();
+  }
+
   window.addEventListener("nvs-shared-live-change", schedule);
-  window.addEventListener("pageshow", schedule);
+  window.addEventListener("pagehide", handlePageHide);
+  window.addEventListener("pageshow", handlePageShow);
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) clearTimeout(timer);
-    else schedule();
+    if (document.hidden || lifecycleFrozen) {
+      clearTimeout(timer);
+      timer = null;
+    } else schedule();
   });
 
-  const observer = new MutationObserver(() => {
+  observer = new MutationObserver(() => {
+    if (lifecycleFrozen) return;
     if (document.getElementById("sharedLiveV010")) {
       schedule();
-      observer.disconnect();
+      observer?.disconnect();
     }
   });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  observeRoot();
 
   window.NVSSharedExpiry0111 = Object.freeze({
     refresh: render,
