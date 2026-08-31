@@ -73,8 +73,10 @@ assert.equal(timers.length, timersWhileFrozen, 'frozen voluntary intelligence mu
 listeners.get('pageshow')({ type: 'pageshow', persisted: true });
 assert.equal(api.isLifecycleFrozen(), false);
 assert.ok(timers.length > timersWhileFrozen, 'pageshow should re-arm fresh reconciliation when recommendations remain active');
-const latest = timers.at(-1);
-if (latest.delay === 60) latest.callback();
+const restoredTimers = timers.slice(timersWhileFrozen);
+const settle = restoredTimers.find((entry) => entry.delay === 60);
+assert.ok(settle, 'pageshow should schedule the short settle reconciliation');
+settle.callback();
 assert.match(currentAction.innerHTML, /missed connection|Changed/i, 'restored lifecycle should reconcile the latest voluntary state');
 
 assert.doesNotMatch(source, /watchPosition|getCurrentPosition|geolocation/i,
