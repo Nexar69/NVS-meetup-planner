@@ -8,6 +8,9 @@ const handlers = {};
 let refreshResolve;
 let refreshCalls = 0;
 let pendingPlanUpdate = false;
+let nextTimerId = 1;
+const setTimeoutFake = () => nextTimerId++;
+const clearTimeoutFake = () => {};
 
 const sync = { dataset: {}, textContent: "", title: "", parentElement: { appendChild() {} } };
 const document = {
@@ -29,7 +32,18 @@ const window = {
   addEventListener(name, handler) { handlers[name] = handler; },
 };
 
-vm.runInNewContext(source, { window, document, navigator, Date, Math, Number, String, Object, setTimeout, clearTimeout });
+vm.runInNewContext(source, {
+  window,
+  document,
+  navigator,
+  Date,
+  Math,
+  Number,
+  String,
+  Object,
+  setTimeout: setTimeoutFake,
+  clearTimeout: clearTimeoutFake,
+});
 const api = window.NVSSharedConnection0111;
 assert.ok(api, "connection layer should expose its API");
 
