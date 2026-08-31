@@ -129,7 +129,7 @@ assert.notEqual(escalatedSignature, firstSignature, "a material detail change un
 currentAlerts = [{ ...currentAlerts[0] }];
 assert.equal(api.getActiveSignature(), escalatedSignature, "an unchanged recovery condition should keep a stable snooze signature");
 
-assert.match(source, /if \(document\.hidden \|\| !shouldPoll\(\)\) return;/, "Recovery Desk must not arm periodic work while Safari is hidden or recovery context is inactive");
+assert.match(source, /if \(lifecycleFrozen \|\| document\.hidden \|\| !shouldPoll\(\)\) return;/, "Recovery Desk must not arm periodic work while Safari is frozen/hidden or recovery context is inactive");
 assert.doesNotMatch(source, /navigator\.geolocation|watchPosition|getCurrentPosition/, "Recovery reload hardening must not add location access");
 
-console.log("recovery-reload-safari: shared reload delegation, hidden-page scheduling and changed-condition snooze resurfacing passed");
+console.log("recovery-reload-safari: shared reload delegation, frozen/hidden scheduling and changed-condition snooze resurfacing passed");
