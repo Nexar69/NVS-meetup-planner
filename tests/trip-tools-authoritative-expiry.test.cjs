@@ -14,8 +14,8 @@ assert.match(expirySource, /getAuthoritativeExpiryAt:\s*\(\)\s*=>\s*authoritativ
 
 assert.match(tripToolsSource, /NVSSharedExpiry0111\?\.isAuthoritativelyExpired\?\.\(\)/,
   'Trip Tools should fail closed when the newer expiry layer has already latched authoritative expiry');
-assert.match(tripToolsSource, /addEventListener\("nvs-shared-session-expired",\s*\(\)\s*=>\s*\{\s*invalidateCheckinUi\(\);\s*render\(\);\s*\}\)/,
-  'authoritative expiry should invalidate an in-flight Trip Tools check-in UI generation immediately');
+assert.match(tripToolsSource, /addEventListener\("nvs-shared-session-expired",\s*\(\)\s*=>\s*\{\s*invalidateCheckinUi\(\);\s*if\s*\(!lifecycleFrozen\)\s*render\(\);\s*\}\)/,
+  'authoritative expiry should invalidate an in-flight Trip Tools check-in generation even while bfcache-frozen');
 
 assert.doesNotMatch(expirySource + tripToolsSource, /watchPosition\s*\(/,
   'mixed-cache expiry hardening must not add continuous or hidden location tracking');
