@@ -4,6 +4,7 @@
   const POST_TRIP_GUARD_MS = 5 * 60_000;
   let forceUntil = 0;
   let resetTimer = null;
+  let lifecycleFrozen = false;
 
   function asTime(value) {
     if (value instanceof Date) return value.getTime();
@@ -54,6 +55,7 @@
   }
 
   function restoreBanner() {
+    if (lifecycleFrozen) return;
     clearTimeout(resetTimer);
     resetTimer = null;
     forceUntil = 0;
@@ -71,6 +73,7 @@
   function armRestoreTimer(now = Date.now()) {
     clearTimeout(resetTimer);
     resetTimer = null;
+    if (lifecycleFrozen) return;
     const remaining = forceUntil - Number(now);
     if (!forceUntil || !Number.isFinite(remaining) || remaining <= 0) {
       if (forceUntil) restoreBanner();
@@ -81,6 +84,7 @@
   }
 
   function showDeferredWarning(button, now = Date.now()) {
+    if (lifecycleFrozen) return;
     const banner = button?.closest?.("#v011UpdateBanner") || document.getElementById("v011UpdateBanner");
     if (!banner) return;
     forceUntil = Number(now) + FORCE_WINDOW_MS;
@@ -94,6 +98,7 @@
   }
 
   function handleUpdateClick(event, now = Date.now()) {
+    if (lifecycleFrozen) return false;
     const button = updateButtonFromEvent(event);
     if (!button) return false;
     const stamp = Number(now);
@@ -113,13 +118,26 @@
     return true;
   }
 
+  function handlePageHide() {
+    lifecycleFrozen = true;
+    clearTimeout(resetTimer);
+    resetTimer = null;
+  }
+
+  function handlePageShow() {
+    lifecycleFrozen = false;
+    restoreBanner();
+  }
+
   document.addEventListener("click", handleUpdateClick, true);
-  window.addEventListener("pageshow", restoreBanner);
+  window.addEventListener("pagehide", handlePageHide);
+  window.addEventListener("pageshow", handlePageShow);
   window.addEventListener("nvs-group-recommendations-rendered", () => {
+    if (lifecycleFrozen) return;
     if (!isJourneyActive()) restoreBanner();
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
+    if (document.hidden || lifecycleFrozen) {
       clearTimeout(resetTimer);
       resetTimer = null;
       return;
