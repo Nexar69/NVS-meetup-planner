@@ -15,6 +15,14 @@
     },
   };
 
+  let lifecycleFrozen = false;
+  let focusGeneration = 0;
+  let focusFrame = 0;
+
+  function ownsDocument(generation = focusGeneration) {
+    return !lifecycleFrozen && generation === focusGeneration;
+  }
+
   function isUsableOpener(element) {
     if (!element?.isConnected || element.hidden || element.disabled) return false;
     if (element.getAttribute?.("aria-hidden") === "true") return false;
@@ -22,8 +30,8 @@
     return true;
   }
 
-  function focusSafely(element) {
-    if (!isUsableOpener(element) || !element?.focus) return;
+  function focusSafely(element, generation = focusGeneration) {
+    if (!ownsDocument(generation) || !isUsableOpener(element) || !element?.focus) return;
     try { element.focus({ preventScroll: true }); } catch { try { element.focus(); } catch {} }
   }
 
@@ -36,6 +44,7 @@
   }
 
   function enhanceDialog(dialog) {
+    if (lifecycleFrozen) return;
     const config = DIALOGS[dialog?.id];
     if (!dialog || !config || dialog.dataset.v0111A11y === "true") return;
     dialog.dataset.v0111A11y = "true";
@@ -47,16 +56,19 @@
     dialog.addEventListener("close", () => {
       const opener = activeOpenerFor(dialog);
       OPENERS.delete(dialog.id);
-      queueMicrotask(() => focusSafely(opener));
+      const generation = focusGeneration;
+      queueMicrotask(() => focusSafely(opener, generation));
     });
 
     dialog.addEventListener("cancel", () => {
+      if (lifecycleFrozen) return;
       // Native <dialog> handles Escape; the close listener restores focus.
       OPENERS.set(dialog.id, activeOpenerFor(dialog));
     });
   }
 
   function enhanceSharedStatusList() {
+    if (lifecycleFrozen) return;
     const list = document.getElementById("v010StatusList");
     if (!list) return;
     list.setAttribute("role", "list");
@@ -67,6 +79,7 @@
   }
 
   function enhanceLiveRegions() {
+    if (lifecycleFrozen) return;
     const primary = document.getElementById("v011PrimaryAlert");
     if (primary) {
       primary.setAttribute("role", "status");
@@ -100,36 +113,57 @@
   }
 
   function enhance() {
-    if (document.hidden) return;
+    if (lifecycleFrozen || document.hidden) return;
     Object.keys(DIALOGS).forEach((id) => enhanceDialog(document.getElementById(id)));
     enhanceLiveRegions();
   }
 
   function rememberDialogOpener(event) {
+    if (lifecycleFrozen) return;
     const button = event.target?.closest?.("#v011TripModeButton,#v011AlertSettingsButton,#v011TripSettings");
     if (!button) return;
     const dialogId = button.id === "v011TripModeButton" ? "v011TripDialog" : "v011SettingsDialog";
     OPENERS.set(dialogId, button);
-    requestAnimationFrame(() => {
+    const generation = focusGeneration;
+    if (focusFrame && typeof cancelAnimationFrame === "function") cancelAnimationFrame(focusFrame);
+    focusFrame = requestAnimationFrame(() => {
+      focusFrame = 0;
+      if (!ownsDocument(generation)) return;
       const dialog = document.getElementById(dialogId);
       if (!dialog?.open) return;
       enhanceDialog(dialog);
       enhanceLiveRegions();
       const close = dialog.querySelector(DIALOGS[dialogId]?.close || "button");
-      focusSafely(close);
+      focusSafely(close, generation);
     });
+  }
+
+  function freezeLifecycle() {
+    lifecycleFrozen = true;
+    focusGeneration += 1;
+    OPENERS.clear();
+    if (focusFrame && typeof cancelAnimationFrame === "function") cancelAnimationFrame(focusFrame);
+    focusFrame = 0;
+  }
+
+  function resumeLifecycle(event) {
+    if (!event?.persisted && !lifecycleFrozen) return;
+    lifecycleFrozen = false;
+    focusGeneration += 1;
+    enhance();
   }
 
   document.addEventListener("click", rememberDialogOpener, true);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) enhance();
   });
+  window.addEventListener("pagehide", freezeLifecycle);
+  window.addEventListener("pageshow", resumeLifecycle);
   [
     "nvs-group-recommendations-rendered",
     "nvs-shared-live-change",
     "nvs-live-plan-synced",
     "nvs-shared-view-resumed",
-    "pageshow",
     "load",
   ].forEach((name) => window.addEventListener(name, enhance));
 
