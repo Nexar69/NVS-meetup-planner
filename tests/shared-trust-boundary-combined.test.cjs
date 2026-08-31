@@ -16,14 +16,21 @@ const sources = {
 
 const joined = Object.values(sources).join("\n");
 
+function registersLifecycleEvent(source, eventName) {
+  const escaped = eventName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const direct = new RegExp(`addEventListener\\(["']${escaped}["']`);
+  const grouped = new RegExp(`\\[[^\\]]*["']${escaped}["'][^\\]]*\\]\\.forEach\\(`);
+  return direct.test(source) || grouped.test(source);
+}
+
 // Safari/PWA ownership: every UI/stateful consumer in this combined path must
 // explicitly freeze on pagehide and reconcile from current state on pageshow.
 for (const [name, source] of Object.entries(sources)) {
   assert.match(source, /lifecycleFrozen/,
     `${name} must own an explicit in-memory lifecycle freeze boundary`);
-  assert.match(source, /addEventListener\(["']pagehide["']/,
+  assert.equal(registersLifecycleEvent(source, "pagehide"), true,
     `${name} must freeze work on pagehide`);
-  assert.match(source, /addEventListener\(["']pageshow["']/,
+  assert.equal(registersLifecycleEvent(source, "pageshow"), true,
     `${name} must reconcile current state on pageshow`);
 }
 
