@@ -3,6 +3,7 @@
   let selectedIndex = 0;
   let selectedDelay = 5;
   let lastMarkup = "";
+  let lifecycleFrozen = false;
 
   function asDate(value) {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -192,6 +193,7 @@
   }
 
   function ensureCard() {
+    if (lifecycleFrozen) return null;
     let card = document.getElementById("v0111WhatIf");
     if (card) return card;
     const radar = document.getElementById("v0111MeetupRadar");
@@ -206,7 +208,7 @@
   }
 
   function renderStateCard(card, tone, small, title, detail, footer) {
-    if (!card) return;
+    if (lifecycleFrozen || !card) return;
     card.dataset.tone = tone;
     const markup = `<summary><span aria-hidden="true">◇</span><strong>What if?</strong><small>${escapeHtml(small)}</small></summary><div class="v0111-what-if-body"><div class="v0111-what-if-result" role="status"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p><small>${escapeHtml(footer)}</small></div></div>`;
     if (markup !== lastMarkup) {
@@ -218,6 +220,7 @@
   }
 
   function render(now = Date.now()) {
+    if (lifecycleFrozen) return null;
     const group = window.__NVS_LAST_RECOMMENDATIONS__?.primary || null;
     const list = assignments(group);
     if (list.length < 2 || typeof window.NVSConvergence?.analyze !== "function") {
@@ -252,7 +255,18 @@
     return model;
   }
 
+  function freezeLifecycle() {
+    lifecycleFrozen = true;
+  }
+
+  function resumeLifecycle() {
+    lifecycleFrozen = false;
+    lastMarkup = "";
+    render();
+  }
+
   document.addEventListener("change", (event) => {
+    if (lifecycleFrozen) return;
     const select = event.target?.closest?.("[data-what-if-member]");
     if (!select) return;
     selectedIndex = Math.max(0, Number(select.value) || 0);
@@ -261,6 +275,7 @@
   });
 
   document.addEventListener("click", (event) => {
+    if (lifecycleFrozen) return;
     const button = event.target?.closest?.("[data-what-if-delay]");
     if (!button) return;
     const delay = Number(button.dataset.whatIfDelay);
@@ -270,7 +285,9 @@
     render();
   });
 
-  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-recommendations-cleared", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-group-change", "nvs-timing-change", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, () => render()));
+  ["load", "nvs-group-recommendations-rendered", "nvs-recommendations-cleared", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-group-change", "nvs-timing-change", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, () => render()));
+  window.addEventListener("pagehide", freezeLifecycle);
+  window.addEventListener("pageshow", resumeLifecycle);
 
   window.NVSWhatIf0111 = Object.freeze({ simulate, delayedGroup, shiftRoute, recoveryActive, meetupConfirmed, render });
   render();
