@@ -13,6 +13,7 @@
   let trustObserver = null;
   let scopedPlanId = null;
   let scopeReloading = false;
+  let lifecycleFrozen = false;
 
   function currentPlanId() {
     const pathname = String(window.location?.pathname || "");
@@ -42,6 +43,7 @@
   }
 
   function enforcePlanScope() {
+    if (lifecycleFrozen) return false;
     const nextPlanId = currentPlanId();
     if (scopedPlanId == null) {
       scopedPlanId = nextPlanId;
@@ -116,6 +118,7 @@
   }
 
   function applyPlanTrustBoundary(now = Date.now()) {
+    if (lifecycleFrozen) return 0;
     const pending = hasPendingPlanUpdate();
     const expired = sharedSessionExpired(now);
     const blocked = scopeReloading || pending || expired;
@@ -149,10 +152,10 @@
   }
 
   function syncTrustObserver(now = Date.now()) {
-    if (!("MutationObserver" in window) || !document.body) return;
+    if (lifecycleFrozen || !("MutationObserver" in window) || !document.body) return;
     if (!trustObserver) {
       trustObserver = new MutationObserver(() => {
-        if (routeIntelligenceBlocked()) applyPlanTrustBoundary();
+        if (!lifecycleFrozen && routeIntelligenceBlocked()) applyPlanTrustBoundary();
       });
     }
     trustObserver.disconnect();
@@ -194,7 +197,7 @@
   }
 
   function refresh(now = Date.now()) {
-    if (enforcePlanScope() || scopeReloading) return 0;
+    if (lifecycleFrozen || enforcePlanScope() || scopeReloading) return 0;
     const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
     applyPlanTrustBoundary(timestamp);
     syncTrustObserver(timestamp);
@@ -215,7 +218,7 @@
 
   function schedule() {
     clearTimeout(timer);
-    if (document.hidden || scopeReloading) return;
+    if (lifecycleFrozen || document.hidden || scopeReloading) return;
     timer = setTimeout(() => {
       refresh();
       schedule();
@@ -223,24 +226,33 @@
   }
 
   function start() {
-    if (enforcePlanScope() || scopeReloading) return;
+    if (lifecycleFrozen || enforcePlanScope() || scopeReloading) return;
     refresh();
     schedule();
   }
 
   ["nvs-shared-live-change", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "nvs-shared-view-resumed", "nvs-shared-session-expired", "online"].forEach((name) => {
-    window.addEventListener(name, () => refresh());
+    window.addEventListener(name, () => {
+      if (lifecycleFrozen) return;
+      refresh();
+    });
   });
   window.addEventListener("popstate", () => {
+    if (lifecycleFrozen) return;
     if (!enforcePlanScope()) refresh();
   });
-  window.addEventListener("pageshow", start);
+  window.addEventListener("pageshow", () => {
+    lifecycleFrozen = false;
+    start();
+  });
   window.addEventListener("pagehide", () => {
+    lifecycleFrozen = true;
     clearTimeout(timer);
     trustObserver?.disconnect?.();
   });
   document.addEventListener("visibilitychange", () => {
     clearTimeout(timer);
+    if (lifecycleFrozen) return;
     if (document.hidden) trustObserver?.disconnect?.();
     else start();
   });
