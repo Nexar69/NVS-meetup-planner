@@ -1,4 +1,7 @@
 (() => {
+  let lifecycleFrozen = false;
+  let copyGeneration = 0;
+
   function focusIndex() {
     const value = Number(window.NVSShare?.getFocusIndex?.() ?? -1);
     return Number.isInteger(value) ? value : -1;
@@ -136,6 +139,7 @@
   }
 
   function ensurePanel() {
+    if (lifecycleFrozen) return null;
     let panel = document.getElementById("v0111DiagnosticsExport");
     if (panel) return panel;
     const health = document.getElementById("v0111ProviderHealth");
@@ -152,7 +156,7 @@
   }
 
   function fallbackClipboardCopy(text) {
-    if (!document.createElement || !document.body?.appendChild || typeof document.execCommand !== "function") return false;
+    if (lifecycleFrozen || !document.createElement || !document.body?.appendChild || typeof document.execCommand !== "function") return false;
     let textarea = null;
     try {
       textarea = document.createElement("textarea");
@@ -177,6 +181,8 @@
   }
 
   async function copyDiagnostics() {
+    if (lifecycleFrozen) return false;
+    const generation = ++copyGeneration;
     const panel = ensurePanel();
     const status = panel?.querySelector("#v0111DiagnosticsStatus");
     const text = JSON.stringify(buildSnapshot(new Date()), null, 2);
@@ -190,8 +196,9 @@
       // iOS/Safari can reject the modern Clipboard API even after an explicit tap.
       // Fall through to a short-lived textarea copy without persisting diagnostics.
     }
+    if (lifecycleFrozen || generation !== copyGeneration) return false;
     if (!copied) copied = fallbackClipboardCopy(text);
-    if (status) {
+    if (status && !lifecycleFrozen && generation === copyGeneration) {
       status.textContent = copied
         ? "Copied. Safe to paste into a bug report."
         : "Clipboard access was unavailable. Keep this tab active and try again.";
@@ -199,8 +206,23 @@
     return copied;
   }
 
-  function refresh() { ensurePanel(); }
-  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-routing-provider", "nvs-shared-live-change"].forEach((name) => window.addEventListener(name, refresh));
-  window.NVSDiagnostics0111 = Object.freeze({ buildSnapshot, sharedConnectionSummary, offlineSummary, fallbackClipboardCopy, copyDiagnostics, refresh });
+  function refresh() {
+    if (!lifecycleFrozen) ensurePanel();
+  }
+
+  function handlePageHide() {
+    lifecycleFrozen = true;
+    copyGeneration += 1;
+  }
+
+  function handlePageShow() {
+    lifecycleFrozen = false;
+    refresh();
+  }
+
+  ["load", "nvs-group-recommendations-rendered", "nvs-routing-provider", "nvs-shared-live-change"].forEach((name) => window.addEventListener(name, refresh));
+  window.addEventListener("pagehide", handlePageHide);
+  window.addEventListener("pageshow", handlePageShow);
+  window.NVSDiagnostics0111 = Object.freeze({ buildSnapshot, sharedConnectionSummary, offlineSummary, fallbackClipboardCopy, copyDiagnostics, refresh, handlePageHide, handlePageShow });
   refresh();
 })();
