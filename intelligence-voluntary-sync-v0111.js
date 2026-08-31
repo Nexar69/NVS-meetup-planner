@@ -149,15 +149,20 @@
     timer = null;
   }
 
-  function clearRecommendationSurfaces() {
-    recommendationsActive = false;
-    clearPeriodicSync();
-    cancelScheduledSync();
-    if (lifecycleFrozen) return;
+  function hideRecommendationSurfaces() {
+    if (lifecycleFrozen) return false;
     const panel = document.getElementById("v011CommandCenter");
     panel?.classList?.remove?.("visible");
     const dialog = document.getElementById("v011TripDialog");
     if (dialog?.open && typeof dialog.close === "function") dialog.close();
+    return true;
+  }
+
+  function clearRecommendationSurfaces() {
+    recommendationsActive = false;
+    clearPeriodicSync();
+    cancelScheduledSync();
+    hideRecommendationSurfaces();
   }
 
   function activateRecommendations() {
@@ -202,6 +207,10 @@
   });
   window.addEventListener("pageshow", () => {
     lifecycleFrozen = false;
+    if (!recommendationsActive) {
+      hideRecommendationSurfaces();
+      return;
+    }
     schedule();
     arm();
   });
