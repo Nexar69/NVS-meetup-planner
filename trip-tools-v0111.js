@@ -140,8 +140,6 @@
       const outcome = await window.NVSSharedLive.checkIn(status);
       if (lifecycleFrozen || generation !== checkinUiGeneration || document.hidden) return;
 
-      // Compatibility with an older cached Shared Live module: only infer success
-      // from state when no structured outcome is available.
       const hasOutcome = Boolean(outcome && typeof outcome === "object" && typeof outcome.status === "string");
       if (!hasOutcome) {
         if (!statusWasApplied(status, beforeAt)) {
@@ -241,6 +239,7 @@
     clearTimeout(timer);
     timer = null;
     if (lifecycleFrozen || document.hidden) return;
+    if (document.hidden) return;
     if (!recommendationsActive) return;
     timer = setTimeout(() => {
       if (lifecycleFrozen) return;
@@ -327,7 +326,6 @@
     scheduleRender();
   });
 
-  // The v0.11 dialog is created dynamically, so tolerate either load order.
   const observer = new MutationObserver(() => {
     if (tripDialog()) {
       start();
