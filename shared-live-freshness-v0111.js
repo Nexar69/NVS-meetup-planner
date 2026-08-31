@@ -91,12 +91,21 @@
     return Boolean(window.NVSSharedLive?.hasPendingPlanUpdate?.());
   }
 
+  function isAuthoritativelyExpired() {
+    return Boolean(window.NVSSharedExpiry0111?.isAuthoritativelyExpired?.());
+  }
+
   function authoritativeExpiresAt() {
+    if (isAuthoritativelyExpired()) {
+      const stickyValue = Number(window.NVSSharedExpiry0111?.getAuthoritativeExpiryAt?.());
+      if (Number.isFinite(stickyValue) && stickyValue > 0) return stickyValue;
+    }
     const value = Number(window.NVSSharedLive?.getState?.()?.expiresAt);
     return Number.isFinite(value) && value > 0 ? value : null;
   }
 
   function sharedSessionExpired(now = Date.now()) {
+    if (isAuthoritativelyExpired()) return true;
     const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
     const expiry = authoritativeExpiresAt();
     return expiry != null && expiry <= timestamp;
@@ -241,6 +250,7 @@
     freshnessFor,
     markStaleRow,
     hasPendingPlanUpdate,
+    isAuthoritativelyExpired,
     authoritativeExpiresAt,
     sharedSessionExpired,
     routeIntelligenceBlocked,
