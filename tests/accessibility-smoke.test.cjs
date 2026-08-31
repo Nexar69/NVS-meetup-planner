@@ -19,7 +19,7 @@ assert.match(serviceWorker, /accessibility-v0111\.css/, "accessibility styles sh
 assert.match(runtime, /aria-modal/, "dialogs should identify themselves as modal to assistive technology");
 assert.match(runtime, /aria-labelledby/, "dialogs should expose an accessible name when possible");
 assert.match(runtime, /aria-describedby/, "Trip Mode should expose its changing journey detail as a description");
-assert.match(runtime, /queueMicrotask\(\(\) => focusSafely\(opener\)\)/, "closing a dialog should return keyboard focus to its opener");
+assert.match(runtime, /queueMicrotask\(\(\) => focusSafely\(opener, generation\)\)/, "closing a dialog should return keyboard focus to its opener while lifecycle ownership is current");
 assert.match(runtime, /requestAnimationFrame/, "opened dialogs should move focus after native showModal completes");
 assert.match(runtime, /v010Sync/, "shared-live sync changes should be surfaced as a live region");
 assert.match(runtime, /v010Alert/, "shared-live disruption changes should be surfaced as a live region");
@@ -34,6 +34,8 @@ assert.match(runtime, /nvs-live-plan-synced/, "plan sync should refresh accessib
 assert.match(runtime, /nvs-shared-view-resumed/, "Safari shared-view resume should refresh accessibility semantics");
 assert.match(runtime, /visibilitychange/, "foreground resume should refresh accessibility semantics");
 assert.match(runtime, /if \(!document\.hidden\) enhance\(\)/, "hidden pages should not perform accessibility rescans");
+assert.match(runtime, /pagehide/, "Safari/PWA suspension should explicitly revoke accessibility DOM ownership");
+assert.match(runtime, /pageshow/, "Safari/PWA restoration should explicitly reacquire accessibility DOM ownership");
 
 assert.match(styles, /min-width:44px;min-height:44px/, "important touch controls should meet a 44px minimum target");
 assert.match(styles, /:focus-visible/, "keyboard users should receive a visible focus indicator");
@@ -41,4 +43,4 @@ assert.match(styles, /prefers-reduced-motion:\s*reduce/, "the app should honor t
 assert.match(styles, /animation-duration:\.001ms/, "reduced-motion mode should suppress animated transitions globally");
 assert.match(styles, /forced-colors:\s*active/, "high-contrast/forced-colors environments should receive a compatible fallback");
 
-console.log("accessibility-smoke: event-first dialog, live-region, semantic-list, motion and touch-target contracts passed");
+console.log("accessibility-smoke: event-first dialog, live-region, semantic-list, lifecycle, motion and touch-target contracts passed");
