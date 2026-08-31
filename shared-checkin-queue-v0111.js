@@ -25,6 +25,14 @@
     return Number.isInteger(value) ? value : -1;
   }
 
+  function authoritativelyExpired() {
+    return Boolean(window.NVSSharedExpiry0111?.isAuthoritativelyExpired?.());
+  }
+
+  function authoritativeExpiryMessage() {
+    return "The shared meetup session expired, so the pending status was discarded. Nothing was shared.";
+  }
+
   function isExpired(item, now = Date.now()) {
     return !item || !Number.isFinite(Number(item.at)) || now - Number(item.at) >= MAX_PENDING_MS;
   }
@@ -58,13 +66,14 @@
       && pendingSendTask === task
       && task.generation === pendingSendGeneration
       && !document.hidden
+      && !authoritativelyExpired()
       && samePendingItem(task.item)
       && Number(task.item.memberIndex) === focusIndex();
   }
 
   function scheduleExpiry(now = Date.now()) {
     clearExpiryTimer();
-    if (document.hidden || !pending) return;
+    if (document.hidden || !pending || authoritativelyExpired()) return;
     const remaining = MAX_PENDING_MS - (now - Number(pending.at));
     if (remaining <= 0) {
       expirePending(now);
@@ -101,6 +110,12 @@
   }
 
   function currentPending(now = Date.now()) {
+    if (authoritativelyExpired() && pending) {
+      pending = null;
+      invalidatePendingSend();
+      clearExpiryTimer();
+      lastNotice = authoritativeExpiryMessage();
+    }
     invalidateMemberMismatch();
     if (pending && isExpired(pending, now)) expirePending(now);
     return pending ? { ...pending } : null;
@@ -110,6 +125,15 @@
     const value = String(status || "");
     const memberIndex = focusIndex();
     if (!ALLOWED.has(value) || memberIndex < 0) return null;
+    if (authoritativelyExpired()) {
+      clearRecentAttempt();
+      invalidatePendingSend();
+      pending = null;
+      clearExpiryTimer();
+      lastNotice = authoritativeExpiryMessage();
+      render();
+      return null;
+    }
     const extra = metadata && typeof metadata === "object" ? metadata : {};
     invalidatePendingSend();
     pending = {
@@ -179,7 +203,7 @@
 
   function settleUnconfirmedPending() {
     const item = pending;
-    if (!item || item.source !== "unconfirmed" || !pendingMatchesMember(item) || !confirmedAgainstBaseline(item)) return false;
+    if (!item || authoritativelyExpired() || item.source !== "unconfirmed" || !pendingMatchesMember(item) || !confirmedAgainstBaseline(item)) return false;
     pending = null;
     invalidatePendingSend();
     clearExpiryTimer();
@@ -189,7 +213,10 @@
   }
 
   function settleConfirmedAttempt() {
-    if (!recentAttempt) return false;
+    if (!recentAttempt || authoritativelyExpired()) {
+      if (authoritativelyExpired()) clearRecentAttempt();
+      return false;
+    }
     const item = recentAttempt;
     if (!recentAttemptMatchesMember(item)) {
       clearRecentAttempt();
@@ -206,6 +233,15 @@
     const item = recentAttempt;
     if (!item || !recentAttemptMatchesMember(item)) {
       clearRecentAttempt();
+      return false;
+    }
+    if (authoritativelyExpired()) {
+      clearRecentAttempt();
+      pending = null;
+      invalidatePendingSend();
+      clearExpiryTimer();
+      lastNotice = authoritativeExpiryMessage();
+      render();
       return false;
     }
     if (settleConfirmedAttempt()) return false;
@@ -236,7 +272,7 @@
 
   function scheduleConfirmation(now = Date.now()) {
     clearConfirmationTimer();
-    if (document.hidden || !recentAttempt) return;
+    if (document.hidden || !recentAttempt || authoritativelyExpired()) return;
     const remaining = CONFIRM_WAIT_MS - (now - Number(recentAttempt.at));
     if (remaining <= 0) {
       promoteUnconfirmedAttempt(now);
@@ -248,7 +284,14 @@
   function rememberOnlineAttempt(status, now = Date.now()) {
     const value = String(status || "");
     const memberIndex = focusIndex();
-    if (!ALLOWED.has(value) || memberIndex < 0) return null;
+    if (!ALLOWED.has(value) || memberIndex < 0 || authoritativelyExpired()) {
+      if (authoritativelyExpired()) {
+        clearRecentAttempt();
+        lastNotice = authoritativeExpiryMessage();
+        render();
+      }
+      return null;
+    }
     const before = liveEntry();
     if (value === "clear" && !before?.status) return null;
     recentAttempt = {
@@ -276,6 +319,12 @@
   function handleCheckinOutcome(event) {
     const outcome = event?.detail;
     if (!outcome || !recentAttempt) return;
+    if (authoritativelyExpired()) {
+      clearRecentAttempt();
+      lastNotice = authoritativeExpiryMessage();
+      render();
+      return;
+    }
     if (outcome.status === "sent" || outcome.status === "uncertain" || outcome.status === "aborted") return;
     clearRecentAttempt();
     lastNotice = definiteOutcomeMessage(outcome);
@@ -285,6 +334,11 @@
   async function sendPending() {
     const item = currentPending();
     if (!item || sendingPending) return false;
+    if (authoritativelyExpired()) {
+      discardPending(authoritativeExpiryMessage());
+      clearRecentAttempt();
+      return false;
+    }
     if (item.source === "unconfirmed" && confirmedAgainstBaseline(item)) {
       pending = null;
       invalidatePendingSend();
@@ -317,7 +371,20 @@
     render();
     try {
       const outcome = await window.NVSSharedLive.checkIn(item.status);
-      if (!pendingSendStillOwned(task)) return false;
+      if (!pendingSendStillOwned(task)) {
+        if (authoritativelyExpired()) {
+          pending = null;
+          clearExpiryTimer();
+          lastNotice = authoritativeExpiryMessage();
+        }
+        return false;
+      }
+      if (authoritativelyExpired()) {
+        pending = null;
+        lastNotice = authoritativeExpiryMessage();
+        clearExpiryTimer();
+        return false;
+      }
       if (outcome?.ok === true || outcome?.status === "sent") {
         pending = null;
         lastNotice = item.status === "clear" ? "No active check-in remains." : "Pending status sent successfully.";
@@ -347,6 +414,12 @@
         lastNotice = item.status === "clear" ? "No active check-in remains." : "Pending status sent successfully.";
         clearExpiryTimer();
         return true;
+      }
+      if (authoritativelyExpired()) {
+        pending = null;
+        lastNotice = authoritativeExpiryMessage();
+        clearExpiryTimer();
+        return false;
       }
       if (!window.NVSSharedLive?.canCheckIn?.()) {
         pending = null;
@@ -405,18 +478,20 @@
     const label = LABELS[item.status] || item.status;
     const ageSeconds = Math.max(0, Math.round((now - item.at) / 1000));
     const planChanged = Boolean(window.NVSSharedLive?.hasPendingPlanUpdate?.());
-    const writable = Boolean(window.NVSSharedLive?.canCheckIn?.());
+    const expired = authoritativelyExpired();
+    const writable = !expired && Boolean(window.NVSSharedLive?.canCheckIn?.());
     const online = Boolean(navigator.onLine);
     let detail = `“${label}” is saved only in this open tab and has not been shared.`;
     if (item.source === "unconfirmed") detail = `Meet Schwerin could not confirm whether “${label}” reached the shared meetup. It is saved only in this open tab and will never retry automatically.`;
-    if (planChanged) detail += " The organizer changed the plan; reload before sending it.";
+    if (expired) detail += " The shared meetup session has expired; this status cannot be sent.";
+    else if (planChanged) detail += " The organizer changed the plan; reload before sending it.";
     else if (!writable) detail += " This personal link is currently read-only.";
     else if (online) detail += " Confirm it is still true, then send it only if needed.";
     else detail += " Reconnect within 5 minutes, then confirm and send it.";
     if (lastNotice) detail += ` ${lastNotice}`;
 
     banner.className = `v0111-pending-checkin ${online ? "online" : "offline"}`;
-    banner.innerHTML = `<div><strong>Pending — not shared</strong><small>${escapeHtml(detail)}</small><em>Queued ${ageSeconds < 10 ? "just now" : `${ageSeconds}s ago`}</em></div><div class="v0111-pending-actions"><button type="button" data-v0111-pending-send ${!online || planChanged || !writable || sendingPending ? "disabled" : ""}>${sendingPending ? "Sending…" : "Send now"}</button><button type="button" data-v0111-pending-discard>Discard</button></div>`;
+    banner.innerHTML = `<div><strong>Pending — not shared</strong><small>${escapeHtml(detail)}</small><em>Queued ${ageSeconds < 10 ? "just now" : `${ageSeconds}s ago`}</em></div><div class="v0111-pending-actions"><button type="button" data-v0111-pending-send ${!online || expired || planChanged || !writable || sendingPending ? "disabled" : ""}>${sendingPending ? "Sending…" : "Send now"}</button><button type="button" data-v0111-pending-discard>Discard</button></div>`;
   }
 
   function escapeHtml(value) {
@@ -432,7 +507,18 @@
     const button = event.target?.closest?.("[data-v010-status]");
     if (!button) return;
     const status = String(button.dataset.v010Status || "");
-    if (!ALLOWED.has(status) || button.disabled || focusIndex() < 0) return;
+    if (!ALLOWED.has(status) || focusIndex() < 0) return;
+    if (authoritativelyExpired()) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      clearRecentAttempt();
+      if (!discardPending(authoritativeExpiryMessage())) {
+        lastNotice = authoritativeExpiryMessage();
+        render();
+      }
+      return;
+    }
+    if (button.disabled) return;
     if (navigator.onLine) {
       rememberOnlineAttempt(status);
       return;
@@ -458,6 +544,14 @@
       invalidatePendingSend();
       return;
     }
+    if (authoritativelyExpired()) {
+      clearRecentAttempt();
+      if (!discardPending(authoritativeExpiryMessage())) {
+        lastNotice = authoritativeExpiryMessage();
+        render();
+      }
+      return;
+    }
     settleConfirmedAttempt();
     settleUnconfirmedPending();
     promoteUnconfirmedAttempt(Date.now());
@@ -468,6 +562,14 @@
   });
   ["online", "offline", "pageshow", "nvs-shared-live-change", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => {
     window.addEventListener(name, () => {
+      if (authoritativelyExpired()) {
+        clearRecentAttempt();
+        if (!discardPending(authoritativeExpiryMessage())) {
+          lastNotice = authoritativeExpiryMessage();
+          render();
+        }
+        return;
+      }
       if (window.NVSSharedLive?.hasPendingPlanUpdate?.()) {
         clearRecentAttempt();
         invalidatePendingSend();
@@ -490,7 +592,10 @@
   });
   window.addEventListener("nvs-shared-session-expired", () => {
     clearRecentAttempt();
-    discardPending("The shared meetup session expired, so the pending status was discarded. Nothing was shared.");
+    if (!discardPending(authoritativeExpiryMessage())) {
+      lastNotice = authoritativeExpiryMessage();
+      render();
+    }
   });
 
   window.NVSCheckinQueue0111 = Object.freeze({
