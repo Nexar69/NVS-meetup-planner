@@ -7,6 +7,7 @@
   let checking = false;
   let requestGeneration = 0;
   let activeController = null;
+  let lifecycleFrozen = false;
 
   function backendBase() {
     return String(window.NVSConfig?.backendUrl || "").replace(/\/$/, "");
@@ -40,6 +41,7 @@
   }
 
   function ensurePanel() {
+    if (lifecycleFrozen) return null;
     let panel = document.getElementById("v0111ProviderHealth");
     if (panel) return panel;
     const diagnostics = document.getElementById("v011Diagnostics");
@@ -55,6 +57,7 @@
   }
 
   function render() {
+    if (lifecycleFrozen) return;
     const panel = ensurePanel();
     if (!panel) return;
     const provider = providerState();
@@ -97,21 +100,24 @@
 
   function schedule() {
     clearTimeout(timer);
-    if (document.hidden) return;
+    timer = null;
+    if (lifecycleFrozen || document.hidden) return;
     timer = setTimeout(check, CHECK_INTERVAL);
   }
 
   async function check() {
-    if (checking) return;
+    if (lifecycleFrozen || checking) return;
     const generation = ++requestGeneration;
     const base = backendBase();
     if (!base) {
+      if (lifecycleFrozen || generation !== requestGeneration) return;
       state = { status: "warn", checkedAt: Date.now(), detail: "No backend URL is configured.", health: null };
       render();
       schedule();
       return;
     }
     if (!navigator.onLine) {
+      if (lifecycleFrozen || generation !== requestGeneration) return;
       state = { ...state, status: "offline", checkedAt: Date.now(), detail: "Offline — cached app features remain available, but backend health cannot be checked." };
       render();
       schedule();
@@ -131,11 +137,11 @@
       });
       if (!response.ok) throw new Error(`HTTP_${response.status}`);
       const health = await response.json();
-      if (generation !== requestGeneration) return;
+      if (lifecycleFrozen || generation !== requestGeneration) return;
       const result = classify(health);
       state = { ...result, checkedAt: Date.now(), health };
     } catch (error) {
-      if (generation !== requestGeneration) return;
+      if (lifecycleFrozen || generation !== requestGeneration) return;
       state = {
         status: navigator.onLine ? "error" : "offline",
         checkedAt: Date.now(),
@@ -145,7 +151,7 @@
     } finally {
       clearTimeout(timeout);
       if (activeController === controller) activeController = null;
-      if (generation !== requestGeneration) return;
+      if (lifecycleFrozen || generation !== requestGeneration) return;
       checking = false;
       render();
       schedule();
@@ -153,36 +159,49 @@
   }
 
   function start() {
+    if (lifecycleFrozen) return;
     render();
     void check();
     schedule();
   }
 
-  function suspend() {
+  function suspendWork() {
     clearTimeout(timer);
     timer = null;
     cancelActiveCheck();
   }
 
+  function freezeLifecycle() {
+    lifecycleFrozen = true;
+    suspendWork();
+  }
+
   function resumeFromPageCache(event) {
     if (!event?.persisted) return;
-    cancelActiveCheck();
+    suspendWork();
+    lifecycleFrozen = false;
     start();
   }
 
   ["online", "offline"].forEach((name) => window.addEventListener(name, () => {
+    if (lifecycleFrozen) return;
     cancelActiveCheck();
     render();
     void check();
   }));
-  window.addEventListener("nvs-routing-provider", render);
-  window.addEventListener("nvs-group-recommendations-rendered", render);
+  window.addEventListener("nvs-routing-provider", () => {
+    if (!lifecycleFrozen) render();
+  });
+  window.addEventListener("nvs-group-recommendations-rendered", () => {
+    if (!lifecycleFrozen) render();
+  });
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) suspend();
+    if (lifecycleFrozen) return;
+    if (document.hidden) suspendWork();
     else if (Date.now() - state.checkedAt > CHECK_INTERVAL) void check();
     else schedule();
   });
-  window.addEventListener("pagehide", suspend);
+  window.addEventListener("pagehide", freezeLifecycle);
   window.addEventListener("pageshow", resumeFromPageCache);
 
   window.NVSProviderHealth0111 = Object.freeze({
