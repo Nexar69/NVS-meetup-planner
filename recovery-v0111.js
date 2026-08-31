@@ -2,6 +2,7 @@
   let timer = null;
   let snoozedSignature = "";
   let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary);
+  let lifecycleFrozen = false;
 
   function alerts() {
     const values = window.NVSIntelligence?.getAlerts?.();
@@ -130,6 +131,7 @@
   }
 
   function reloadPendingPlan() {
+    if (lifecycleFrozen) return false;
     const button = document.getElementById("v0111RecoveryAction");
     const reliableReload = window.NVSSharedReload0111?.reloadUpdatedPlan;
     if (typeof reliableReload === "function") return reliableReload(button);
@@ -148,6 +150,7 @@
   }
 
   function ensureDesk() {
+    if (lifecycleFrozen) return null;
     let desk = document.getElementById("v0111RecoveryDesk");
     if (desk) return desk;
     desk = document.createElement("section");
@@ -176,10 +179,12 @@
     else document.querySelector("main.app")?.appendChild(desk);
 
     desk.querySelector("#v0111RecoveryLater")?.addEventListener("click", () => {
+      if (lifecycleFrozen) return;
       snoozedSignature = activeSignature();
       render();
     });
     desk.querySelector("#v0111RecoveryAction")?.addEventListener("click", () => {
+      if (lifecycleFrozen) return;
       if (window.NVSSharedLive?.hasPendingPlanUpdate?.()) {
         reloadPendingPlan();
         return;
@@ -230,6 +235,7 @@
   }
 
   function render() {
+    if (lifecycleFrozen) return;
     const desk = ensureDesk();
     if (!desk) return;
     const item = recoveryAlert();
@@ -267,33 +273,49 @@
     return recommendationsActive || Boolean(window.NVSSharedLive?.hasPendingPlanUpdate?.());
   }
 
-  function suspend() {
+  function suspendWork() {
     clearTimeout(timer);
     timer = null;
   }
 
   function schedule() {
-    suspend();
-    if (document.hidden || !shouldPoll()) return;
+    suspendWork();
+    if (lifecycleFrozen || document.hidden || !shouldPoll()) return;
     timer = setTimeout(() => {
+      if (lifecycleFrozen) return;
       render();
       schedule();
     }, 5_000);
   }
 
   function start() {
+    if (lifecycleFrozen) return;
     ensureDesk();
     render();
     schedule();
   }
 
+  function freezeLifecycle() {
+    lifecycleFrozen = true;
+    suspendWork();
+  }
+
+  function resumeLifecycle(event) {
+    if (!event?.persisted) return;
+    suspendWork();
+    lifecycleFrozen = false;
+    start();
+  }
+
   window.addEventListener("nvs-group-recommendations-rendered", () => {
+    if (lifecycleFrozen) return;
     recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary);
     if (snoozedSignature && activeSignature() !== snoozedSignature) snoozedSignature = "";
     render();
     schedule();
   });
   window.addEventListener("nvs-recommendations-cleared", () => {
+    if (lifecycleFrozen) return;
     recommendationsActive = false;
     if (snoozedSignature && activeSignature() !== snoozedSignature) snoozedSignature = "";
     render();
@@ -305,20 +327,22 @@
     "online",
     "offline",
   ].forEach((name) => window.addEventListener(name, () => {
+    if (lifecycleFrozen) return;
     if (snoozedSignature && activeSignature() !== snoozedSignature) snoozedSignature = "";
     render();
     schedule();
   }));
 
   document.addEventListener("visibilitychange", () => {
-    suspend();
+    if (lifecycleFrozen) return;
+    suspendWork();
     if (!document.hidden) {
       render();
       schedule();
     }
   });
-  window.addEventListener("pagehide", suspend);
-  window.addEventListener("pageshow", start);
+  window.addEventListener("pagehide", freezeLifecycle);
+  window.addEventListener("pageshow", resumeLifecycle);
   window.addEventListener("load", start);
 
   window.NVSRecovery0111 = Object.freeze({
