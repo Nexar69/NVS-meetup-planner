@@ -11,6 +11,7 @@
   let checking = false;
   let retryGeneration = 0;
   let recoveryBoundaryGeneration = 0;
+  let planUpdateBoundaryLocked = false;
   let retryTask = null;
 
   function clearStaleTimer() { clearTimeout(staleTimer); staleTimer = null; }
@@ -25,6 +26,13 @@
     clearRetryTimer();
     retryCooldownUntil = 0;
     invalidateRetry();
+  }
+  function reconcilePlanUpdateBoundary() {
+    const pending = Boolean(window.NVSSharedLive?.hasPendingPlanUpdate?.());
+    if (!pending || planUpdateBoundaryLocked) return false;
+    planUpdateBoundaryLocked = true;
+    crossRecoveryBoundary();
+    return true;
   }
   function retryStillCurrent(task) {
     return retryTask === task
@@ -163,7 +171,16 @@
     }
   }
 
-  function onLiveChange() { markSuccess(Date.now()); }
+  function onLiveChange() {
+    reconcilePlanUpdateBoundary();
+    markSuccess(Date.now());
+  }
+  function onCheckinOutcome(event) {
+    if (event?.detail?.reason !== "plan_updated") return;
+    reconcilePlanUpdateBoundary();
+    render();
+    scheduleStale();
+  }
   function onLiveTimeout() { markFailure(Date.now(), "timeout"); }
   function onLiveDegraded() { markFailure(Date.now(), "server"); }
   function onAuthoritativeExpiry() {
@@ -171,13 +188,20 @@
     render();
     scheduleStale();
   }
+  function reconcileLifecycle() {
+    reconcilePlanUpdateBoundary();
+    render();
+    scheduleStale();
+    scheduleRetryReady();
+  }
 
   window.addEventListener("nvs-shared-live-change", onLiveChange);
+  window.addEventListener("nvs-shared-checkin-outcome", onCheckinOutcome);
   window.addEventListener("nvs-shared-live-timeout", onLiveTimeout);
   window.addEventListener("nvs-shared-live-degraded", onLiveDegraded);
   window.addEventListener("nvs-shared-session-expired", onAuthoritativeExpiry);
   ["online", "offline", "pageshow", "nvs-group-recommendations-rendered", "nvs-display-options-change", "nvs-shared-view-resumed"].forEach((name) => {
-    window.addEventListener(name, () => { render(); scheduleStale(); scheduleRetryReady(); });
+    window.addEventListener(name, reconcileLifecycle);
   });
   window.addEventListener("pagehide", () => {
     clearStaleTimer();
@@ -190,9 +214,7 @@
     if (document.hidden) invalidateRetry();
     if (!document.hidden) {
       if (retryCooldownUntil <= Date.now()) retryCooldownUntil = 0;
-      render();
-      scheduleStale();
-      scheduleRetryReady();
+      reconcileLifecycle();
     }
   });
 
@@ -208,7 +230,9 @@
     getSuccessVersion: () => successVersion,
     getRetryCooldownUntil: () => retryCooldownUntil,
     getRecoveryBoundaryGeneration: () => recoveryBoundaryGeneration,
+    isPlanUpdateBoundaryLocked: () => planUpdateBoundaryLocked,
   });
 
+  reconcilePlanUpdateBoundary();
   render();
 })();
