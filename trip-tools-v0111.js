@@ -15,12 +15,14 @@
   let recommendationsActive = false;
   let lastRouteUpdate = 0;
   let timer = null;
+  let lifecycleFrozen = false;
 
   function tripDialog() {
     return document.getElementById("v011TripDialog");
   }
 
   function canCheckIn() {
+    if (lifecycleFrozen) return false;
     if (window.NVSSharedExpiry0111?.isAuthoritativelyExpired?.()) return false;
     return Boolean(window.NVSSharedLive?.canCheckIn?.());
   }
@@ -125,7 +127,7 @@
   }
 
   async function sendStatus(status) {
-    if (!canCheckIn() || sendingStatus || !window.NVSSharedLive?.checkIn) return;
+    if (lifecycleFrozen || !canCheckIn() || sendingStatus || !window.NVSSharedLive?.checkIn) return;
     const generation = ++checkinUiGeneration;
     sendingStatus = true;
     render();
@@ -136,7 +138,7 @@
     const beforeAt = Number(window.NVSSharedLive?.getState?.()?.members?.[String(focus)]?.at || 0);
     try {
       const outcome = await window.NVSSharedLive.checkIn(status);
-      if (generation !== checkinUiGeneration || document.hidden) return;
+      if (lifecycleFrozen || generation !== checkinUiGeneration || document.hidden) return;
 
       // Compatibility with an older cached Shared Live module: only infer success
       // from state when no structured outcome is available.
@@ -154,11 +156,11 @@
       if (state) state.textContent = outcomeMessage(outcome, status);
       if (outcome.status === "sent") window.NVSSharedLive.refresh?.();
     } catch {
-      if (generation === checkinUiGeneration && !document.hidden && state) {
+      if (!lifecycleFrozen && generation === checkinUiGeneration && !document.hidden && state) {
         state.textContent = "Could not confirm the update. Check the shared status before trying again.";
       }
     } finally {
-      if (generation === checkinUiGeneration) {
+      if (!lifecycleFrozen && generation === checkinUiGeneration) {
         sendingStatus = false;
         render();
       }
@@ -166,11 +168,11 @@
   }
 
   async function acquireWakeLock() {
-    if (!wakeWanted || document.hidden || !tripDialog()?.open || !navigator.wakeLock?.request || wakeLock) return;
+    if (lifecycleFrozen || !wakeWanted || document.hidden || !tripDialog()?.open || !navigator.wakeLock?.request || wakeLock) return;
     const generation = ++wakeRequestGeneration;
     try {
       const lock = await navigator.wakeLock.request("screen");
-      if (generation !== wakeRequestGeneration || !wakeWanted || document.hidden || !tripDialog()?.open) {
+      if (lifecycleFrozen || generation !== wakeRequestGeneration || !wakeWanted || document.hidden || !tripDialog()?.open) {
         try { await lock?.release?.(); } catch {}
         return;
       }
@@ -180,7 +182,7 @@
         render();
       }, { once: true });
     } catch {
-      if (generation === wakeRequestGeneration) wakeLock = null;
+      if (!lifecycleFrozen && generation === wakeRequestGeneration) wakeLock = null;
     }
     render();
   }
@@ -194,6 +196,7 @@
   }
 
   async function setWakeWanted(next) {
+    if (lifecycleFrozen) return;
     wakeWanted = Boolean(next);
     if (wakeWanted) await acquireWakeLock();
     else await releaseWakeLock();
@@ -201,6 +204,7 @@
   }
 
   function render() {
+    if (lifecycleFrozen) return;
     const tools = ensureTools();
     if (!tools) return;
 
@@ -236,9 +240,10 @@
   function scheduleRender() {
     clearTimeout(timer);
     timer = null;
-    if (document.hidden) return;
+    if (lifecycleFrozen || document.hidden) return;
     if (!recommendationsActive) return;
     timer = setTimeout(() => {
+      if (lifecycleFrozen) return;
       render();
       scheduleRender();
     }, 15_000);
@@ -257,6 +262,7 @@
   }
 
   function start() {
+    if (lifecycleFrozen) return;
     ensureTools();
     attachDialogLifecycle();
     render();
@@ -266,6 +272,7 @@
   window.addEventListener("nvs-group-recommendations-rendered", () => {
     recommendationsActive = true;
     lastRouteUpdate = Date.now();
+    if (lifecycleFrozen) return;
     render();
     scheduleRender();
   });
@@ -277,19 +284,39 @@
     wakeWanted = false;
     lastRouteUpdate = 0;
     releaseWakeLock();
-  });
-  window.addEventListener("nvs-shared-live-change", render);
-  window.addEventListener("nvs-shared-session-expired", () => {
-    invalidateCheckinUi();
+    if (lifecycleFrozen) return;
     render();
   });
-  window.addEventListener("online", render);
-  window.addEventListener("offline", render);
-  window.addEventListener("pagehide", invalidateCheckinUi);
-  window.addEventListener("pageshow", start);
+  window.addEventListener("nvs-shared-live-change", () => {
+    if (!lifecycleFrozen) render();
+  });
+  window.addEventListener("nvs-shared-session-expired", () => {
+    invalidateCheckinUi();
+    if (!lifecycleFrozen) render();
+  });
+  window.addEventListener("online", () => {
+    if (!lifecycleFrozen) render();
+  });
+  window.addEventListener("offline", () => {
+    if (!lifecycleFrozen) render();
+  });
+  window.addEventListener("pagehide", () => {
+    lifecycleFrozen = true;
+    invalidateCheckinUi();
+    clearTimeout(timer);
+    timer = null;
+    wakeRequestGeneration += 1;
+    if (wakeLock) releaseWakeLock();
+  });
+  window.addEventListener("pageshow", () => {
+    lifecycleFrozen = false;
+    start();
+    if (wakeWanted && tripDialog()?.open && !document.hidden) acquireWakeLock();
+  });
   document.addEventListener("visibilitychange", () => {
     clearTimeout(timer);
     timer = null;
+    if (lifecycleFrozen) return;
     if (document.hidden) {
       invalidateCheckinUi();
       releaseWakeLock();
@@ -314,6 +341,7 @@
     canCheckIn,
     setWakeLock: setWakeWanted,
     getWakeLockWanted: () => wakeWanted,
+    isLifecycleFrozen: () => lifecycleFrozen,
   });
 
   start();
