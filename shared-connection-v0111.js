@@ -12,6 +12,7 @@
   let retryGeneration = 0;
   let recoveryBoundaryGeneration = 0;
   let planUpdateBoundaryLocked = false;
+  let lifecycleFrozen = false;
   let retryTask = null;
 
   function clearStaleTimer() { clearTimeout(staleTimer); staleTimer = null; }
@@ -38,6 +39,7 @@
     return retryTask === task
       && task?.generation === retryGeneration
       && task?.boundaryGeneration === recoveryBoundaryGeneration
+      && !lifecycleFrozen
       && !document.hidden
       && navigator.onLine;
   }
@@ -70,14 +72,14 @@
 
   function scheduleStale(now = Date.now()) {
     clearStaleTimer();
-    if (document.hidden || !navigator.onLine || !(lastSuccessAt > 0) || hasNewerFailure()) return;
+    if (lifecycleFrozen || document.hidden || !navigator.onLine || !(lastSuccessAt > 0) || hasNewerFailure()) return;
     const remaining = STALE_AFTER_MS - Math.max(0, now - lastSuccessAt);
     if (remaining <= 0) return;
     staleTimer = setTimeout(() => { staleTimer = null; render(); }, remaining + 25);
   }
   function scheduleRetryReady(now = Date.now()) {
     clearRetryTimer();
-    if (document.hidden || !navigator.onLine || !(retryCooldownUntil > now)) return;
+    if (lifecycleFrozen || document.hidden || !navigator.onLine || !(retryCooldownUntil > now)) return;
     retryTimer = setTimeout(() => { retryTimer = null; retryCooldownUntil = 0; render(); }, Math.max(1, retryCooldownUntil - now) + 25);
   }
 
@@ -97,6 +99,7 @@
   }
 
   function render(now = Date.now()) {
+    if (lifecycleFrozen) return;
     const sync = document.getElementById("v010Sync");
     if (!sync) return;
     const model = connectionModel(now);
@@ -120,6 +123,7 @@
   }
 
   function markSuccess(now = Date.now()) {
+    if (lifecycleFrozen) return lastSuccessAt;
     lastSuccessAt = Number(now) || Date.now();
     lastFailureAt = 0;
     lastFailureKind = "";
@@ -132,6 +136,7 @@
     return lastSuccessAt;
   }
   function markFailure(now = Date.now(), kind = "timeout") {
+    if (lifecycleFrozen) return lastFailureAt;
     lastFailureAt = Number(now) || Date.now();
     lastFailureKind = kind === "server" ? "server" : "timeout";
     clearStaleTimer();
@@ -141,7 +146,7 @@
 
   async function retryNow() {
     const now = Date.now();
-    if (checking || document.hidden || !navigator.onLine || retryCooldownUntil > now) return false;
+    if (lifecycleFrozen || checking || document.hidden || !navigator.onLine || retryCooldownUntil > now) return false;
     const refresh = window.NVSSharedLive?.refresh;
     if (typeof refresh !== "function") return false;
     const beforeVersion = successVersion;
@@ -163,7 +168,7 @@
         retryTask = null;
         checking = false;
         if (acknowledged) { retryCooldownUntil = 0; clearRetryTimer(); }
-        else if (navigator.onLine && !document.hidden) retryCooldownUntil = Date.now() + RETRY_COOLDOWN_MS;
+        else if (navigator.onLine && !document.hidden && !lifecycleFrozen) retryCooldownUntil = Date.now() + RETRY_COOLDOWN_MS;
         render();
         scheduleStale();
         scheduleRetryReady();
@@ -172,27 +177,34 @@
   }
 
   function onLiveChange() {
+    if (lifecycleFrozen) return;
     reconcilePlanUpdateBoundary();
     markSuccess(Date.now());
   }
   function onCheckinOutcome(event) {
-    if (event?.detail?.reason !== "plan_updated") return;
+    if (lifecycleFrozen || event?.detail?.reason !== "plan_updated") return;
     reconcilePlanUpdateBoundary();
     render();
     scheduleStale();
   }
-  function onLiveTimeout() { markFailure(Date.now(), "timeout"); }
-  function onLiveDegraded() { markFailure(Date.now(), "server"); }
+  function onLiveTimeout() { if (!lifecycleFrozen) markFailure(Date.now(), "timeout"); }
+  function onLiveDegraded() { if (!lifecycleFrozen) markFailure(Date.now(), "server"); }
   function onAuthoritativeExpiry() {
     crossRecoveryBoundary();
+    if (lifecycleFrozen) return;
     render();
     scheduleStale();
   }
   function reconcileLifecycle() {
+    if (lifecycleFrozen) return;
     reconcilePlanUpdateBoundary();
     render();
     scheduleStale();
     scheduleRetryReady();
+  }
+  function onPageShow() {
+    lifecycleFrozen = false;
+    reconcileLifecycle();
   }
 
   window.addEventListener("nvs-shared-live-change", onLiveChange);
@@ -200,10 +212,12 @@
   window.addEventListener("nvs-shared-live-timeout", onLiveTimeout);
   window.addEventListener("nvs-shared-live-degraded", onLiveDegraded);
   window.addEventListener("nvs-shared-session-expired", onAuthoritativeExpiry);
-  ["online", "offline", "pageshow", "nvs-group-recommendations-rendered", "nvs-display-options-change", "nvs-shared-view-resumed"].forEach((name) => {
+  window.addEventListener("pageshow", onPageShow);
+  ["online", "offline", "nvs-group-recommendations-rendered", "nvs-display-options-change", "nvs-shared-view-resumed"].forEach((name) => {
     window.addEventListener(name, reconcileLifecycle);
   });
   window.addEventListener("pagehide", () => {
+    lifecycleFrozen = true;
     clearStaleTimer();
     clearRetryTimer();
     invalidateRetry();
@@ -212,7 +226,7 @@
     clearStaleTimer();
     clearRetryTimer();
     if (document.hidden) invalidateRetry();
-    if (!document.hidden) {
+    if (!document.hidden && !lifecycleFrozen) {
       if (retryCooldownUntil <= Date.now()) retryCooldownUntil = 0;
       reconcileLifecycle();
     }
@@ -231,6 +245,7 @@
     getRetryCooldownUntil: () => retryCooldownUntil,
     getRecoveryBoundaryGeneration: () => recoveryBoundaryGeneration,
     isPlanUpdateBoundaryLocked: () => planUpdateBoundaryLocked,
+    isLifecycleFrozen: () => lifecycleFrozen,
   });
 
   reconcilePlanUpdateBoundary();
