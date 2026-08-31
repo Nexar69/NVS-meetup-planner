@@ -5,6 +5,7 @@
   let timer = null;
   let lastMarkup = "";
   let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary);
+  let lifecycleFrozen = false;
 
   function asDate(value) {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -159,6 +160,7 @@
   }
 
   function render(now = Date.now()) {
+    if (lifecycleFrozen) return null;
     const { group, liveState, analysis } = currentContext(now);
     const model = radarModel(group, liveState, analysis, now);
     if (!model) {
@@ -179,36 +181,55 @@
   function schedule(delay = UPDATE_MS) {
     clearTimeout(timer);
     timer = null;
-    if (document.hidden || !recommendationsActive) return;
+    if (lifecycleFrozen || document.hidden || !recommendationsActive) return;
     timer = setTimeout(() => {
+      if (lifecycleFrozen) return;
       render();
       schedule();
     }, delay);
   }
 
   function refresh() {
+    if (lifecycleFrozen) return;
     render();
     schedule();
   }
 
   function activateRecommendations() {
+    if (lifecycleFrozen) return;
     recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary);
     refresh();
   }
 
   function clearRecommendations() {
+    if (lifecycleFrozen) return;
     recommendationsActive = false;
     clearTimeout(timer);
     timer = null;
     removeCard();
   }
 
-  ["load", "pageshow", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-group-change", "nvs-timing-change", "nvs-shared-view-resumed"].forEach((name) => {
+  function freezeLifecycle() {
+    lifecycleFrozen = true;
+    clearTimeout(timer);
+    timer = null;
+  }
+
+  function resumeLifecycle() {
+    lifecycleFrozen = false;
+    recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary);
+    refresh();
+  }
+
+  window.addEventListener("pagehide", freezeLifecycle);
+  window.addEventListener("pageshow", resumeLifecycle);
+  ["load", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-group-change", "nvs-timing-change", "nvs-shared-view-resumed"].forEach((name) => {
     window.addEventListener(name, refresh);
   });
   window.addEventListener("nvs-group-recommendations-rendered", activateRecommendations);
   window.addEventListener("nvs-recommendations-cleared", clearRecommendations);
   document.addEventListener("visibilitychange", () => {
+    if (lifecycleFrozen) return;
     if (document.hidden) {
       clearTimeout(timer);
       timer = null;
