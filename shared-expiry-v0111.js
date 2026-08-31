@@ -12,6 +12,10 @@
     return Number.isFinite(value) && value > 0 ? value : null;
   }
 
+  function isAuthoritativelyExpired() {
+    return expiredAnnounced;
+  }
+
   function exactLabel(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
@@ -117,6 +121,8 @@
   window.NVSSharedExpiry0111 = Object.freeze({
     refresh: render,
     getExpiresAt: expiresAt,
+    isAuthoritativelyExpired,
+    getAuthoritativeExpiryAt: () => authoritativeExpiryAt,
   });
 
   schedule();
