@@ -8,6 +8,7 @@
   let queued = false;
   let queuedTimer = null;
   let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary?.assignments?.length);
+  let lifecycleFrozen = false;
 
   function asDate(value) {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -108,6 +109,7 @@
   }
 
   function render() {
+    if (lifecycleFrozen) return;
     if (!recommendationsActive || !isPersonalSharedView()) {
       removeRow();
       return;
@@ -150,27 +152,28 @@
   function schedule() {
     clearTimeout(timer);
     timer = null;
-    if (document.hidden || !recommendationsActive || !isPersonalSharedView()) return;
+    if (lifecycleFrozen || document.hidden || !recommendationsActive || !isPersonalSharedView()) return;
     timer = setTimeout(() => {
+      if (lifecycleFrozen) return;
       render();
       schedule();
     }, UPDATE_MS);
   }
 
   function queueRender() {
-    if (queued || !recommendationsActive) return;
+    if (lifecycleFrozen || queued || !recommendationsActive) return;
     queued = true;
     queuedTimer = setTimeout(() => {
       queued = false;
       queuedTimer = null;
-      if (!recommendationsActive) return;
+      if (lifecycleFrozen || !recommendationsActive) return;
       render();
       observe();
     }, 0);
   }
 
   function observe() {
-    if (document.hidden || !recommendationsActive || !("MutationObserver" in window)) return;
+    if (lifecycleFrozen || document.hidden || !recommendationsActive || !("MutationObserver" in window)) return;
     if (!observer) observer = new MutationObserver(queueRender);
     observer.disconnect();
     const personal = document.getElementById("personalSharedPlan");
@@ -178,12 +181,14 @@
   }
 
   function refresh() {
+    if (lifecycleFrozen) return;
     render();
     observe();
     schedule();
   }
 
   function clearRecommendationState() {
+    if (lifecycleFrozen) return;
     recommendationsActive = false;
     clearTimeout(timer);
     timer = null;
@@ -195,11 +200,29 @@
   }
 
   function activateRecommendationState() {
+    if (lifecycleFrozen) return;
     recommendationsActive = true;
     refresh();
   }
 
+  function freezeLifecycle() {
+    lifecycleFrozen = true;
+    clearTimeout(timer);
+    timer = null;
+    if (queuedTimer != null) clearTimeout(queuedTimer);
+    queuedTimer = null;
+    queued = false;
+    observer?.disconnect?.();
+  }
+
+  function resumeLifecycle() {
+    lifecycleFrozen = false;
+    recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary?.assignments?.length);
+    refresh();
+  }
+
   document.addEventListener("visibilitychange", () => {
+    if (lifecycleFrozen) return;
     if (document.hidden) {
       clearTimeout(timer);
       timer = null;
@@ -209,7 +232,9 @@
     }
   });
 
-  ["load", "pageshow", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
+  window.addEventListener("pagehide", freezeLifecycle);
+  window.addEventListener("pageshow", resumeLifecycle);
+  ["load", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
   window.addEventListener("nvs-group-recommendations-rendered", activateRecommendationState);
   window.addEventListener("nvs-recommendations-cleared", clearRecommendationState);
 
