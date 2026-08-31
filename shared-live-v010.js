@@ -14,6 +14,7 @@
   let sending = false;
   let loadedRevision = null;
   let pendingRevision = null;
+  let expiryLocked = false;
   let pollGeneration = 0;
   let pollTask = null;
   let sendGeneration = 0;
@@ -86,6 +87,7 @@
   }
 
   function sessionExpired() {
+    if (expiryLocked) return true;
     const expiry = authoritativeExpiry();
     return expiry != null && Date.now() >= expiry;
   }
@@ -463,6 +465,8 @@
   window.addEventListener("nvs-group-recommendations-rendered", render);
   window.addEventListener("nvs-display-options-change", render);
   window.addEventListener("nvs-shared-session-expired", () => {
+    expiryLocked = true;
+    invalidatePoll();
     invalidateSend();
     render();
   });
