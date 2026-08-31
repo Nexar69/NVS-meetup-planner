@@ -7,6 +7,7 @@
   let freshnessTimer = null;
   let memorySnapshot = null;
   let awaitingFreshRoute = false;
+  let lifecycleFrozen = false;
 
   function asDate(value) {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -171,7 +172,7 @@
   }
 
   function capture(now = new Date()) {
-    if (!isPersonalSharedView() || hasPendingPlanUpdate()) return null;
+    if (lifecycleFrozen || !isPersonalSharedView() || hasPendingPlanUpdate()) return null;
     const snapshot = buildSnapshot(assignment(), now);
     if (snapshot) writeSnapshot(snapshot);
     return snapshot;
@@ -267,13 +268,13 @@
 
   function scheduleFreshnessRefresh(snapshot, now = Date.now()) {
     clearFreshnessTimer();
-    if (document.hidden || typeof setTimeout !== "function") return null;
+    if (lifecycleFrozen || document.hidden || typeof setTimeout !== "function") return null;
     const boundary = nextOfflineBoundary(snapshot, now);
     if (!Number.isFinite(boundary)) return null;
     const delay = Math.max(25, boundary - Number(now) + 25);
     freshnessTimer = setTimeout(() => {
       freshnessTimer = null;
-      render();
+      if (!lifecycleFrozen) render();
     }, delay);
     return delay;
   }
@@ -341,10 +342,12 @@
   }
 
   function removeCard() {
+    if (lifecycleFrozen) return;
     document.getElementById("offlineJourney0111")?.remove();
   }
 
   function ensureCard() {
+    if (lifecycleFrozen) return null;
     let card = document.getElementById("offlineJourney0111");
     if (card) return card;
     card = document.createElement("section");
@@ -360,8 +363,10 @@
   }
 
   function renderUnavailable() {
+    if (lifecycleFrozen) return;
     clearFreshnessTimer();
     const card = ensureCard();
+    if (!card) return;
     card.setAttribute("data-connection", "offline");
     card.innerHTML = `
       <div class="v0111-offline-journey-head">
@@ -380,6 +385,7 @@
   }
 
   function render() {
+    if (lifecycleFrozen) return;
     if (!personalViewerHint()) {
       clearFreshnessTimer();
       removeCard();
@@ -406,6 +412,7 @@
     const realtimeFresh = realtimeContextFresh(snapshot);
     scheduleFreshnessRefresh(snapshot);
     const card = ensureCard();
+    if (!card) return;
     card.setAttribute("data-connection", planUpdated ? "plan-updated" : reconnecting ? "reconnecting" : "offline");
     const steps = visibleSegments.map((segment) => {
       const time = formatTime(segment.departure);
@@ -439,6 +446,7 @@
   }
 
   function captureFreshRouteAndRender() {
+    if (lifecycleFrozen) return;
     if (hasPendingPlanUpdate()) {
       awaitingFreshRoute = true;
       render();
@@ -452,28 +460,38 @@
   }
 
   function resumeRender(event) {
+    if (lifecycleFrozen) return;
     if (event?.type === "pageshow" && event.persisted && navigator.onLine) awaitingFreshRoute = true;
+    render();
+  }
+
+  function handlePageShow(event) {
+    lifecycleFrozen = false;
+    if (event?.persisted && navigator.onLine) awaitingFreshRoute = true;
+    if (navigator.onLine) reconcileAuthoritativeExpiry();
     render();
   }
 
   function markConnectionBoundary() {
     awaitingFreshRoute = true;
-    render();
+    if (!lifecycleFrozen) render();
   }
 
   function handlePageHide() {
+    lifecycleFrozen = true;
     awaitingFreshRoute = true;
     clearFreshnessTimer();
   }
 
   function reconcileExpiryAndRender() {
+    if (lifecycleFrozen) return;
     if (navigator.onLine) reconcileAuthoritativeExpiry();
     render();
   }
 
   function handleSharedLiveChange() {
     if (hasPendingPlanUpdate()) awaitingFreshRoute = true;
-    render();
+    if (!lifecycleFrozen) render();
   }
 
   window.addEventListener("nvs-group-recommendations-rendered", captureFreshRouteAndRender);
@@ -482,12 +500,12 @@
   window.addEventListener("online", markConnectionBoundary);
   window.addEventListener("offline", markConnectionBoundary);
   window.addEventListener("pagehide", handlePageHide);
-  window.addEventListener("pageshow", resumeRender);
+  window.addEventListener("pageshow", handlePageShow);
   window.addEventListener("nvs-shared-view-resumed", resumeRender);
   window.addEventListener("nvs-shared-session-expired", clearSnapshot);
   window.addEventListener("load", captureFreshRouteAndRender);
   document.addEventListener?.("visibilitychange", () => {
-    if (document.hidden) clearFreshnessTimer();
+    if (document.hidden || lifecycleFrozen) clearFreshnessTimer();
     else render();
   });
 
@@ -509,6 +527,7 @@
     hasUsableLiveRoute,
     captureFreshRouteAndRender,
     resumeRender,
+    handlePageShow,
     markConnectionBoundary,
     reconcileExpiryAndRender,
     handleSharedLiveChange,
