@@ -1,6 +1,7 @@
 (() => {
   let timer = null;
   let expiredAnnounced = false;
+  let authoritativeExpiryAt = null;
 
   function sharedState() {
     return window.NVSSharedLive?.getState?.() || null;
@@ -50,7 +51,7 @@
     return indicator;
   }
 
-  function applyExpiredState(panel, expired) {
+  function applyExpiredState(panel, expired, expiry = null) {
     panel?.classList.toggle("v0111-session-expired", expired);
     if (!expired) return;
     panel?.querySelectorAll("[data-v010-status]").forEach((button) => { button.disabled = true; });
@@ -58,6 +59,7 @@
     if (note) note.textContent = "This shared session has expired. Ask the organizer for a new link to continue voluntary check-ins.";
     if (!expiredAnnounced) {
       expiredAnnounced = true;
+      authoritativeExpiryAt = Number.isFinite(Number(expiry)) ? Number(expiry) : Date.now();
       window.dispatchEvent(new CustomEvent("nvs-shared-session-expired"));
     }
   }
@@ -66,22 +68,28 @@
     const panel = document.getElementById("sharedLiveV010");
     const indicator = ensureIndicator();
     if (!panel || !indicator) return;
-    const expiry = expiresAt();
-    if (!expiry) {
+    const observedExpiry = expiresAt();
+    if (!observedExpiry && !expiredAnnounced) {
       indicator.hidden = true;
       panel.classList.remove("v0111-session-expiring", "v0111-session-expired");
       return;
     }
 
-    const remaining = expiry - Date.now();
-    const expired = remaining <= 0;
+    const displayExpiry = expiredAnnounced ? (authoritativeExpiryAt || observedExpiry) : observedExpiry;
+    const remaining = displayExpiry ? displayExpiry - Date.now() : 0;
+    const expired = expiredAnnounced || remaining <= 0;
     const soon = !expired && remaining <= 6 * 60 * 60 * 1000;
+    const exact = displayExpiry ? exactLabel(displayExpiry) : "";
     indicator.hidden = false;
     indicator.className = `v0111-shared-expiry${expired ? " expired" : soon ? " soon" : ""}`;
-    indicator.innerHTML = `<strong>${relativeLabel(expiry)}</strong><small>Automatic shared-session deadline · ${exactLabel(expiry)}</small>`;
-    indicator.title = `This deadline comes from the Meet Schwerin backend and is not extended by check-ins or replans. Exact expiry: ${exactLabel(expiry)}.`;
+    indicator.innerHTML = expired
+      ? `<strong>Shared session expired</strong><small>Automatic shared-session deadline${exact ? ` · ${exact}` : ""}</small>`
+      : `<strong>${relativeLabel(displayExpiry)}</strong><small>Automatic shared-session deadline · ${exact}</small>`;
+    indicator.title = expired
+      ? `This shared session is read-only because its authoritative deadline has passed${exact ? `. Exact expiry: ${exact}.` : "."}`
+      : `This deadline comes from the Meet Schwerin backend and is not extended by check-ins or replans. Exact expiry: ${exact}.`;
     panel.classList.toggle("v0111-session-expiring", soon);
-    applyExpiredState(panel, expired);
+    applyExpiredState(panel, expired, displayExpiry);
   }
 
   function schedule() {
