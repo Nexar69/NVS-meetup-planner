@@ -5,7 +5,7 @@ const vm = require("node:vm");
 
 const source = fs.readFileSync(path.resolve(__dirname, "../shared-live-freshness-v0111.js"), "utf8");
 
-let now = 500_000;
+let now = Date.now();
 let authoritativeExpired = false;
 let authoritativeExpiryAt = null;
 const state = {
