@@ -21,6 +21,7 @@
   }
 
   function canCheckIn() {
+    if (window.NVSSharedExpiry0111?.isAuthoritativelyExpired?.()) return false;
     return Boolean(window.NVSSharedLive?.canCheckIn?.());
   }
 
@@ -278,6 +279,10 @@
     releaseWakeLock();
   });
   window.addEventListener("nvs-shared-live-change", render);
+  window.addEventListener("nvs-shared-session-expired", () => {
+    invalidateCheckinUi();
+    render();
+  });
   window.addEventListener("online", render);
   window.addEventListener("offline", render);
   window.addEventListener("pagehide", invalidateCheckinUi);
