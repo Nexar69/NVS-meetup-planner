@@ -10,6 +10,7 @@
   let retryCooldownUntil = 0;
   let checking = false;
   let retryGeneration = 0;
+  let recoveryBoundaryGeneration = 0;
   let retryTask = null;
 
   function clearStaleTimer() { clearTimeout(staleTimer); staleTimer = null; }
@@ -19,9 +20,16 @@
     retryTask = null;
     checking = false;
   }
+  function crossRecoveryBoundary() {
+    recoveryBoundaryGeneration += 1;
+    clearRetryTimer();
+    retryCooldownUntil = 0;
+    invalidateRetry();
+  }
   function retryStillCurrent(task) {
     return retryTask === task
       && task?.generation === retryGeneration
+      && task?.boundaryGeneration === recoveryBoundaryGeneration
       && !document.hidden
       && navigator.onLine;
   }
@@ -130,7 +138,7 @@
     if (typeof refresh !== "function") return false;
     const beforeVersion = successVersion;
     const generation = ++retryGeneration;
-    const task = { generation };
+    const task = { generation, boundaryGeneration: recoveryBoundaryGeneration };
     retryTask = task;
     let acknowledged = false;
     checking = true;
@@ -143,7 +151,7 @@
       return acknowledged;
     } catch { return false; }
     finally {
-      if (retryTask === task && generation === retryGeneration) {
+      if (retryTask === task && generation === retryGeneration && task.boundaryGeneration === recoveryBoundaryGeneration) {
         retryTask = null;
         checking = false;
         if (acknowledged) { retryCooldownUntil = 0; clearRetryTimer(); }
@@ -158,10 +166,16 @@
   function onLiveChange() { markSuccess(Date.now()); }
   function onLiveTimeout() { markFailure(Date.now(), "timeout"); }
   function onLiveDegraded() { markFailure(Date.now(), "server"); }
+  function onAuthoritativeExpiry() {
+    crossRecoveryBoundary();
+    render();
+    scheduleStale();
+  }
 
   window.addEventListener("nvs-shared-live-change", onLiveChange);
   window.addEventListener("nvs-shared-live-timeout", onLiveTimeout);
   window.addEventListener("nvs-shared-live-degraded", onLiveDegraded);
+  window.addEventListener("nvs-shared-session-expired", onAuthoritativeExpiry);
   ["online", "offline", "pageshow", "nvs-group-recommendations-rendered", "nvs-display-options-change", "nvs-shared-view-resumed"].forEach((name) => {
     window.addEventListener(name, () => { render(); scheduleStale(); scheduleRetryReady(); });
   });
@@ -193,6 +207,7 @@
     getLastFailureKind: () => lastFailureKind,
     getSuccessVersion: () => successVersion,
     getRetryCooldownUntil: () => retryCooldownUntil,
+    getRecoveryBoundaryGeneration: () => recoveryBoundaryGeneration,
   });
 
   render();
