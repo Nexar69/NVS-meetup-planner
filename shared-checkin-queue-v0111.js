@@ -19,6 +19,7 @@
   let pendingSendGeneration = 0;
   let pendingSendTask = null;
   let lastNotice = "";
+  let lifecycleFrozen = false;
 
   function focusIndex() {
     const value = Number(window.NVSShare?.getFocusIndex?.() ?? -1);
@@ -65,6 +66,7 @@
     return Boolean(task)
       && pendingSendTask === task
       && task.generation === pendingSendGeneration
+      && !lifecycleFrozen
       && !document.hidden
       && !authoritativelyExpired()
       && samePendingItem(task.item)
@@ -73,7 +75,7 @@
 
   function scheduleExpiry(now = Date.now()) {
     clearExpiryTimer();
-    if (document.hidden || !pending || authoritativelyExpired()) return;
+    if (lifecycleFrozen || document.hidden || !pending || authoritativelyExpired()) return;
     const remaining = MAX_PENDING_MS - (now - Number(pending.at));
     if (remaining <= 0) {
       expirePending(now);
@@ -122,6 +124,7 @@
   }
 
   function queueStatus(status, now = Date.now(), metadata = null) {
+    if (lifecycleFrozen) return null;
     const value = String(status || "");
     const memberIndex = focusIndex();
     if (!ALLOWED.has(value) || memberIndex < 0) return null;
@@ -202,6 +205,7 @@
   }
 
   function settleUnconfirmedPending() {
+    if (lifecycleFrozen) return false;
     const item = pending;
     if (!item || authoritativelyExpired() || item.source !== "unconfirmed" || !pendingMatchesMember(item) || !confirmedAgainstBaseline(item)) return false;
     pending = null;
@@ -213,6 +217,7 @@
   }
 
   function settleConfirmedAttempt() {
+    if (lifecycleFrozen) return false;
     if (!recentAttempt || authoritativelyExpired()) {
       if (authoritativelyExpired()) clearRecentAttempt();
       return false;
@@ -230,6 +235,7 @@
 
   function promoteUnconfirmedAttempt(now = Date.now()) {
     clearConfirmationTimer();
+    if (lifecycleFrozen) return false;
     const item = recentAttempt;
     if (!item || !recentAttemptMatchesMember(item)) {
       clearRecentAttempt();
@@ -272,7 +278,7 @@
 
   function scheduleConfirmation(now = Date.now()) {
     clearConfirmationTimer();
-    if (document.hidden || !recentAttempt || authoritativelyExpired()) return;
+    if (lifecycleFrozen || document.hidden || !recentAttempt || authoritativelyExpired()) return;
     const remaining = CONFIRM_WAIT_MS - (now - Number(recentAttempt.at));
     if (remaining <= 0) {
       promoteUnconfirmedAttempt(now);
@@ -282,6 +288,7 @@
   }
 
   function rememberOnlineAttempt(status, now = Date.now()) {
+    if (lifecycleFrozen) return null;
     const value = String(status || "");
     const memberIndex = focusIndex();
     if (!ALLOWED.has(value) || memberIndex < 0 || authoritativelyExpired()) {
@@ -317,6 +324,7 @@
   }
 
   function handleCheckinOutcome(event) {
+    if (lifecycleFrozen) return;
     const outcome = event?.detail;
     if (!outcome || !recentAttempt) return;
     if (authoritativelyExpired()) {
@@ -332,6 +340,7 @@
   }
 
   async function sendPending() {
+    if (lifecycleFrozen) return false;
     const item = currentPending();
     if (!item || sendingPending) return false;
     if (authoritativelyExpired()) {
@@ -459,6 +468,7 @@
   }
 
   function render(now = Date.now()) {
+    if (lifecycleFrozen) return;
     const item = currentPending(now);
     const banner = ensureBanner();
     if (!banner) return;
@@ -504,6 +514,7 @@
   }
 
   function interceptCheckin(event) {
+    if (lifecycleFrozen) return;
     const button = event.target?.closest?.("[data-v010-status]");
     if (!button) return;
     const status = String(button.dataset.v010Status || "");
@@ -532,6 +543,7 @@
 
   document.addEventListener("click", interceptCheckin, true);
   document.addEventListener("click", (event) => {
+    if (lifecycleFrozen) return;
     if (event.target?.closest?.("[data-v0111-pending-send]")) void sendPending();
     if (event.target?.closest?.("[data-v0111-pending-discard]")) discardPending();
   });
@@ -539,6 +551,7 @@
   document.addEventListener("visibilitychange", () => {
     clearExpiryTimer();
     clearConfirmationTimer();
+    if (lifecycleFrozen) return;
     if (document.hidden) {
       clearRecentAttempt();
       invalidatePendingSend();
@@ -562,6 +575,8 @@
   });
   ["online", "offline", "pageshow", "nvs-shared-live-change", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => {
     window.addEventListener(name, () => {
+      if (name === "pageshow") lifecycleFrozen = false;
+      else if (lifecycleFrozen) return;
       if (authoritativelyExpired()) {
         clearRecentAttempt();
         if (!discardPending(authoritativeExpiryMessage())) {
@@ -585,6 +600,7 @@
     });
   });
   window.addEventListener("pagehide", () => {
+    lifecycleFrozen = true;
     clearExpiryTimer();
     clearConfirmationTimer();
     clearRecentAttempt();
