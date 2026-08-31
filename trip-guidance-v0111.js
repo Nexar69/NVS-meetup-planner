@@ -4,6 +4,7 @@
   let lastAnnouncement = "";
   let mutationRefreshQueued = false;
   let observer = null;
+  let lifecycleFrozen = false;
 
   function escapeHtml(value) {
     return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -183,6 +184,7 @@
   }
   function removeGuidance() { const card = document.getElementById("v0111TripGuidance"); if (card) card.remove(); lastAnnouncement = ""; }
   function renderGuidance() {
+    if (lifecycleFrozen) return;
     if (!isPersonalSharedView()) { removeGuidance(); return; }
     positionSharedLivePanel();
     const personalPlan = document.getElementById("personalSharedPlan"); const current = assignment();
@@ -197,20 +199,26 @@
     const announcement = `${guidance.title}. ${guidance.detail}`; if (announcement === lastAnnouncement && card.childElementCount) return; lastAnnouncement = announcement;
     card.innerHTML = `<span class="v0111-trip-guidance-icon" aria-hidden="true">${escapeHtml(guidance.icon)}</span><div><small>${escapeHtml(guidance.eyebrow)}</small><strong>${escapeHtml(guidance.title)}</strong><p>${escapeHtml(guidance.detail)}</p></div>`;
   }
-  function schedule(delay = UPDATE_MS) { clearTimeout(timer); if (document.hidden || !isPersonalSharedView()) return; timer = setTimeout(() => { renderGuidance(); schedule(); }, delay); }
-  function refresh() { renderGuidance(); observeGuidanceSurfaces(); schedule(); }
+  function schedule(delay = UPDATE_MS) { clearTimeout(timer); if (lifecycleFrozen || document.hidden || !isPersonalSharedView()) return; timer = setTimeout(() => { if (lifecycleFrozen) return; renderGuidance(); schedule(); }, delay); }
+  function refresh() { if (lifecycleFrozen) return; renderGuidance(); observeGuidanceSurfaces(); schedule(); }
   function queueMutationRefresh() {
-    if (mutationRefreshQueued) return; mutationRefreshQueued = true;
-    setTimeout(() => { mutationRefreshQueued = false; if (document.getElementById("personalSharedPlan") || document.getElementById("sharedLiveV010") || document.getElementById("v0111TripGuidance")) renderGuidance(); observeGuidanceSurfaces(); }, 0);
+    if (lifecycleFrozen || mutationRefreshQueued) return; mutationRefreshQueued = true;
+    setTimeout(() => {
+      mutationRefreshQueued = false;
+      if (lifecycleFrozen) return;
+      if (document.getElementById("personalSharedPlan") || document.getElementById("sharedLiveV010") || document.getElementById("v0111TripGuidance")) renderGuidance();
+      observeGuidanceSurfaces();
+    }, 0);
   }
   function stopObserving() { observer?.disconnect?.(); }
   function clearRecommendationGuidance() {
+    if (lifecycleFrozen) return;
     clearTimeout(timer);
     stopObserving();
     removeGuidance();
   }
   function observeGuidanceSurfaces() {
-    if (document.hidden || !("MutationObserver" in window)) return;
+    if (lifecycleFrozen || document.hidden || !("MutationObserver" in window)) return;
     if (!observer) observer = new MutationObserver(queueMutationRefresh);
     observer.disconnect();
     const resultsRoot = document.getElementById("results");
@@ -220,11 +228,23 @@
       observer.observe(node, { childList: true, subtree: true, characterData: true });
     });
   }
+  function freezeLifecycle() {
+    lifecycleFrozen = true;
+    clearTimeout(timer);
+    stopObserving();
+  }
+  function resumeLifecycle() {
+    lifecycleFrozen = false;
+    refresh();
+  }
   document.addEventListener("visibilitychange", () => {
+    if (lifecycleFrozen) return;
     if (document.hidden) { clearTimeout(timer); stopObserving(); }
     else refresh();
   });
-  ["load", "pageshow", "nvs-group-recommendations-rendered", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
+  window.addEventListener("pagehide", freezeLifecycle);
+  window.addEventListener("pageshow", resumeLifecycle);
+  ["load", "nvs-group-recommendations-rendered", "nvs-shared-live-change", "nvs-live-plan-synced", "nvs-shared-view-resumed"].forEach((name) => window.addEventListener(name, refresh));
   window.addEventListener("nvs-recommendations-cleared", clearRecommendationGuidance);
   window.NVSTripGuidance0111 = Object.freeze({ guidanceForRoute, freshVoluntaryEntry, refresh, observeGuidanceSurfaces, clearRecommendationGuidance });
   observeGuidanceSurfaces();
