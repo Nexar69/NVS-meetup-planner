@@ -14,6 +14,14 @@ const tripPill = { textContent: '' };
 const tripAction = { textContent: '' };
 const tripDetail = { textContent: '' };
 const nextBox = { innerHTML: '' };
+const panel = {
+  visible: true,
+  classList: {
+    remove(name) {
+      if (name === 'visible') panel.visible = false;
+    },
+  },
+};
 const dialog = {
   open: true,
   querySelector(selector) {
@@ -44,7 +52,11 @@ const document = {
   body: null,
   addEventListener(name, handler) { listeners.set(`document:${name}`, handler); },
   getElementById(id) {
-    return { v011CurrentAction: currentAction, v011TripDialog: dialog }[id] || null;
+    return {
+      v011CurrentAction: currentAction,
+      v011TripDialog: dialog,
+      v011CommandCenter: panel,
+    }[id] || null;
   },
 };
 
@@ -79,6 +91,18 @@ assert.ok(settle, 'pageshow should schedule the short settle reconciliation');
 settle.callback();
 assert.match(currentAction.innerHTML, /missed connection|Changed/i, 'restored lifecycle should reconcile the latest voluntary state');
 
+panel.visible = true;
+dialog.open = true;
+listeners.get('pagehide')({ type: 'pagehide', persisted: true });
+const timersBeforeFrozenClear = timers.length;
+listeners.get('nvs-recommendations-cleared')({ type: 'nvs-recommendations-cleared' });
+assert.equal(panel.visible, true, 'recommendation clear must not mutate command-center DOM while frozen');
+assert.equal(dialog.open, true, 'recommendation clear must not close dialogs while frozen');
+listeners.get('pageshow')({ type: 'pageshow', persisted: true });
+assert.equal(panel.visible, false, 'pageshow must reconcile a recommendation clear that happened while frozen');
+assert.equal(dialog.open, false, 'pageshow must close stale trip guidance after a frozen recommendation clear');
+assert.equal(timers.length, timersBeforeFrozenClear, 'cleared recommendations must not re-arm voluntary reconciliation on restore');
+
 assert.doesNotMatch(source, /watchPosition|getCurrentPosition|geolocation/i,
   'lifecycle ownership must not add hidden/background location tracking');
 assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/i,
@@ -86,4 +110,4 @@ assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/i,
 assert.doesNotMatch(source, /MutationObserver/,
   'voluntary intelligence should remain event-driven rather than observing DOM mutations');
 
-console.log('intelligence-voluntary-sync-bfcache: frozen voluntary intelligence stays inert and reconciles after restore');
+console.log('intelligence-voluntary-sync-bfcache: frozen voluntary intelligence stays inert and reconciles active or cleared state after restore');
