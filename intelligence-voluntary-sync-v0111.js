@@ -5,6 +5,7 @@
   let timer = null;
   let reconcileTimer = null;
   let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary?.assignments?.length);
+  let lifecycleFrozen = false;
 
   function loadCheckinQueueAssets() {
     if (typeof document.querySelector !== "function" || typeof document.createElement !== "function") return;
@@ -113,6 +114,7 @@
   }
 
   function sync(now = Date.now()) {
+    if (lifecycleFrozen) return false;
     const assignment = focusedAssignment();
     const entry = freshEntry(now);
     if (!assignment?.route || !entry) return false;
@@ -151,6 +153,7 @@
     recommendationsActive = false;
     clearPeriodicSync();
     cancelScheduledSync();
+    if (lifecycleFrozen) return;
     const panel = document.getElementById("v011CommandCenter");
     panel?.classList?.remove?.("visible");
     const dialog = document.getElementById("v011TripDialog");
@@ -159,14 +162,15 @@
 
   function activateRecommendations() {
     recommendationsActive = true;
-    schedule();
+    if (!lifecycleFrozen) schedule();
   }
 
   function schedule(delay = SETTLE_MS) {
-    if (document.hidden || !recommendationsActive) return;
+    if (lifecycleFrozen || document.hidden || !recommendationsActive) return;
     cancelScheduledSync();
     reconcileTimer = setTimeout(() => {
       reconcileTimer = null;
+      if (lifecycleFrozen) return;
       sync();
       arm();
     }, Math.max(0, Number(delay) || 0));
@@ -174,8 +178,9 @@
 
   function arm() {
     clearPeriodicSync();
-    if (document.hidden || !recommendationsActive) return;
+    if (lifecycleFrozen || document.hidden || !recommendationsActive) return;
     timer = setTimeout(() => {
+      if (lifecycleFrozen) return;
       sync();
       arm();
     }, SYNC_MS);
@@ -185,14 +190,24 @@
     "nvs-shared-live-change",
     "nvs-live-plan-synced",
     "nvs-shared-view-resumed",
-    "pageshow",
   ].forEach((name) => {
     window.addEventListener(name, () => schedule());
   });
   window.addEventListener("nvs-group-recommendations-rendered", activateRecommendations);
   window.addEventListener("nvs-recommendations-cleared", clearRecommendationSurfaces);
+  window.addEventListener("pagehide", () => {
+    lifecycleFrozen = true;
+    clearPeriodicSync();
+    cancelScheduledSync();
+  });
+  window.addEventListener("pageshow", () => {
+    lifecycleFrozen = false;
+    schedule();
+    arm();
+  });
 
   document.addEventListener("visibilitychange", () => {
+    if (lifecycleFrozen) return;
     if (document.hidden) {
       clearPeriodicSync();
       cancelScheduledSync();
@@ -203,7 +218,14 @@
   });
 
   loadCheckinQueueAssets();
-  window.NVSIntelligenceVoluntarySync0111 = Object.freeze({ modelForEntry, sync, freshEntry, schedule, clearRecommendationSurfaces });
+  window.NVSIntelligenceVoluntarySync0111 = Object.freeze({
+    modelForEntry,
+    sync,
+    freshEntry,
+    schedule,
+    clearRecommendationSurfaces,
+    isLifecycleFrozen: () => lifecycleFrozen,
+  });
   schedule(0);
   arm();
 })();
