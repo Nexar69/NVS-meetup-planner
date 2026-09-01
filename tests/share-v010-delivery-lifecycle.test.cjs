@@ -17,13 +17,14 @@ assert.match(source, /let activePlanSync = null;/, "organizer plan sync should r
 assert.match(source, /activePlanSync\?\.session === session && activePlanSync\.signature === sig[\s\S]*return activePlanSync\.promise;/, "matching plan syncs should coalesce onto one request");
 assert.match(source, /generation !== syncGeneration/, "superseded plan sync responses must not mutate the active session");
 assert.match(source, /function invalidatePlanSync\(\)/, "plan sync work should support explicit lifecycle invalidation");
-assert.match(source, /window\.addEventListener\("pagehide", \(\) => \{[\s\S]*invalidatePlanSync\(\);[\s\S]*invalidateDelivery/, "navigation should invalidate both plan sync and delivery work");
+assert.match(source, /function suspendPlanSync\(\) \{\s*cancelScheduledSync\(\);\s*invalidatePlanSync\(\);\s*\}/, "plan sync suspension should cancel both queued and in-flight work");
+assert.match(source, /window\.addEventListener\("pagehide", \(\) => \{[\s\S]*lifecycleFrozen = true;[\s\S]*suspendPlanSync\(\);[\s\S]*invalidateDelivery/, "navigation should freeze lifecycle ownership and invalidate both plan sync and delivery work");
 assert.match(source, /pendingShare = \{ type, index, signature: signature\(plan\) \}/, "the share dialog target should be bound to the plan it described");
 assert.match(source, /if \(currentPlanSignature\(\) !== action\.signature\)/, "confirming a stale share dialog must be rejected");
 assert.match(source, /if \(!deliveryIsCurrent\(token\)\) return false;[\s\S]*navigator\.share/, "Web Share must not start for superseded planner state");
 assert.match(source, /await navigator\.clipboard\.writeText\(url\);[\s\S]*if \(!deliveryIsCurrent\(token\)\) return false;[\s\S]*window\.alert\("Link copied\."\)/, "late clipboard success must not announce stale delivery");
 assert.match(source, /if \(error\?\.name === "AbortError" \|\| !deliveryIsCurrent\(token\)\) return;/, "late secure-share failures must not trigger fallback delivery");
-assert.match(source, /const session = secureCache;[\s\S]*if \(secureCache !== session/, "async organizer session mutations should be identity-guarded");
+assert.match(source, /const session = secureCache;[\s\S]*if \(!ownsLifecycle\(\) \|\| secureCache !== session/, "async organizer session mutations should be identity- and lifecycle-guarded");
 assert.match(source, /confirm\.setAttribute\("aria-busy", "true"\)/, "share controls should expose busy state accessibly while delivery is active");
 assert.doesNotMatch(source, /watchPosition\s*\(/, "organizer sharing must not introduce continuous location tracking");
 
