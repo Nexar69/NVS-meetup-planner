@@ -15,6 +15,10 @@
   let scopeReloading = false;
   let lifecycleFrozen = false;
 
+  function ownsVisibleLifecycle() {
+    return !lifecycleFrozen && !document.hidden;
+  }
+
   function currentPlanId() {
     const pathname = String(window.location?.pathname || "");
     const match = pathname.match(/^\/p\/([23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{6,12})\/?$/);
@@ -43,7 +47,7 @@
   }
 
   function enforcePlanScope() {
-    if (lifecycleFrozen) return false;
+    if (!ownsVisibleLifecycle()) return false;
     const nextPlanId = currentPlanId();
     if (scopedPlanId == null) {
       scopedPlanId = nextPlanId;
@@ -118,7 +122,7 @@
   }
 
   function applyPlanTrustBoundary(now = Date.now()) {
-    if (lifecycleFrozen) return 0;
+    if (!ownsVisibleLifecycle()) return 0;
     const pending = hasPendingPlanUpdate();
     const expired = sharedSessionExpired(now);
     const blocked = scopeReloading || pending || expired;
@@ -152,10 +156,10 @@
   }
 
   function syncTrustObserver(now = Date.now()) {
-    if (lifecycleFrozen || !("MutationObserver" in window) || !document.body) return;
+    if (!ownsVisibleLifecycle() || !("MutationObserver" in window) || !document.body) return;
     if (!trustObserver) {
       trustObserver = new MutationObserver(() => {
-        if (!lifecycleFrozen && routeIntelligenceBlocked()) applyPlanTrustBoundary();
+        if (ownsVisibleLifecycle() && routeIntelligenceBlocked()) applyPlanTrustBoundary();
       });
     }
     trustObserver.disconnect();
@@ -197,7 +201,7 @@
   }
 
   function refresh(now = Date.now()) {
-    if (lifecycleFrozen || enforcePlanScope() || scopeReloading) return 0;
+    if (!ownsVisibleLifecycle() || enforcePlanScope() || scopeReloading) return 0;
     const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
     applyPlanTrustBoundary(timestamp);
     syncTrustObserver(timestamp);
@@ -218,27 +222,28 @@
 
   function schedule() {
     clearTimeout(timer);
-    if (lifecycleFrozen || document.hidden || scopeReloading) return;
+    if (!ownsVisibleLifecycle() || scopeReloading) return;
     timer = setTimeout(() => {
+      if (!ownsVisibleLifecycle() || scopeReloading) return;
       refresh();
       schedule();
     }, UPDATE_MS);
   }
 
   function start() {
-    if (lifecycleFrozen || enforcePlanScope() || scopeReloading) return;
+    if (!ownsVisibleLifecycle() || enforcePlanScope() || scopeReloading) return;
     refresh();
     schedule();
   }
 
   ["nvs-shared-live-change", "nvs-group-recommendations-rendered", "nvs-live-plan-synced", "nvs-shared-view-resumed", "nvs-shared-session-expired", "online"].forEach((name) => {
     window.addEventListener(name, () => {
-      if (lifecycleFrozen) return;
+      if (!ownsVisibleLifecycle()) return;
       refresh();
     });
   });
   window.addEventListener("popstate", () => {
-    if (lifecycleFrozen) return;
+    if (!ownsVisibleLifecycle()) return;
     if (!enforcePlanScope()) refresh();
   });
   window.addEventListener("pageshow", () => {
