@@ -6,6 +6,7 @@
     ["missed", "! Missed it"],
     ["arrived", "✓ I'm here"],
   ];
+  const CHECKIN_IDLE_TEXT = "Only what you tap is shared. No GPS.";
 
   let wakeLock = null;
   let wakeWanted = false;
@@ -81,7 +82,7 @@
         <div class="v0111-checkin-grid">
           ${STATUS_OPTIONS.map(([status, label]) => `<button type="button" data-v0111-status="${status}">${label}</button>`).join("")}
         </div>
-        <div class="v0111-checkin-foot"><small id="v0111CheckinState">Only what you tap is shared. No GPS.</small><button type="button" data-v0111-status="clear" class="clear">Clear</button></div>
+        <div class="v0111-checkin-foot"><small id="v0111CheckinState">${CHECKIN_IDLE_TEXT}</small><button type="button" data-v0111-status="clear" class="clear">Clear</button></div>
       </div>
       <div class="v0111-utility-row">
         <button type="button" id="v0111WakeToggle" class="v0111-wake" aria-pressed="false"><span>☀</span><div><strong>Keep screen awake</strong><small id="v0111WakeDetail">Useful in Trip Mode</small></div><em>Off</em></button>
@@ -124,6 +125,12 @@
   function invalidateCheckinUi() {
     checkinUiGeneration += 1;
     sendingStatus = false;
+  }
+
+  function reconcileCheckinUiMessage() {
+    if (lifecycleFrozen) return;
+    const state = document.getElementById("v0111CheckinState");
+    if (state?.textContent === "Updating…") state.textContent = CHECKIN_IDLE_TEXT;
   }
 
   async function sendStatus(status) {
@@ -284,6 +291,7 @@
     lastRouteUpdate = 0;
     releaseWakeLock();
     if (lifecycleFrozen) return;
+    reconcileCheckinUiMessage();
     render();
   });
   window.addEventListener("nvs-shared-live-change", () => {
@@ -291,7 +299,10 @@
   });
   window.addEventListener("nvs-shared-session-expired", () => {
     invalidateCheckinUi();
-    if (!lifecycleFrozen) render();
+    if (!lifecycleFrozen) {
+      reconcileCheckinUiMessage();
+      render();
+    }
   });
   window.addEventListener("online", () => {
     if (!lifecycleFrozen) render();
@@ -309,6 +320,7 @@
   });
   window.addEventListener("pageshow", () => {
     lifecycleFrozen = false;
+    reconcileCheckinUiMessage();
     start();
     if (wakeWanted && tripDialog()?.open && !document.hidden) acquireWakeLock();
   });
@@ -321,6 +333,7 @@
       releaseWakeLock();
       return;
     }
+    reconcileCheckinUiMessage();
     if (wakeWanted && tripDialog()?.open) acquireWakeLock();
     render();
     scheduleRender();
