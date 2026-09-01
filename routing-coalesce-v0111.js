@@ -7,6 +7,11 @@
   const originalFetchRoutes = transit.fetchRoutes.bind(transit);
   let plannerConsumerController = null;
   let armedPlannerCalls = 0;
+  let lifecycleFrozen = false;
+
+  function ownsPlannerLifecycle() {
+    return !lifecycleFrozen && (typeof document === "undefined" || !document.hidden);
+  }
 
   function targetTime(value) {
     const date = value instanceof Date ? value : new Date(value);
@@ -62,8 +67,18 @@
     });
   }
 
+  function cancelPlannerConsumerBatch() {
+    armedPlannerCalls = 0;
+    plannerConsumerController?.abort();
+    plannerConsumerController = null;
+  }
+
   function beginPlannerConsumerBatch() {
     if (typeof AbortController !== "function") return;
+    if (!ownsPlannerLifecycle()) {
+      cancelPlannerConsumerBatch();
+      return;
+    }
     plannerConsumerController?.abort();
     const controller = new AbortController();
     plannerConsumerController = controller;
@@ -83,7 +98,7 @@
   }
 
   function takePlannerConsumerSignal() {
-    if (!plannerConsumerController || armedPlannerCalls <= 0) return undefined;
+    if (!ownsPlannerLifecycle() || !plannerConsumerController || armedPlannerCalls <= 0) return undefined;
     armedPlannerCalls -= 1;
     return plannerConsumerController.signal;
   }
@@ -108,6 +123,22 @@
         beginPlannerConsumerBatch();
       }
     }, true);
+  }
+
+  function installPlannerLifecycleCancellation() {
+    if (typeof window?.addEventListener !== "function") return;
+    window.addEventListener("pagehide", () => {
+      lifecycleFrozen = true;
+      cancelPlannerConsumerBatch();
+    });
+    window.addEventListener("pageshow", () => {
+      lifecycleFrozen = false;
+    });
+    if (typeof document?.addEventListener === "function") {
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) cancelPlannerConsumerBatch();
+      });
+    }
   }
 
   async function fetchRoutes(origin, destination, target, options = undefined) {
@@ -141,8 +172,11 @@
     pendingCount: () => pending.size,
     requestKey,
     beginPlannerConsumerBatch,
+    cancelPlannerConsumerBatch,
+    isLifecycleFrozen: () => lifecycleFrozen,
     isConsumerAbort: (error) => error?.name === "AbortError" && error?.code === "NVS_CONSUMER_ABORTED",
   });
 
   installPlannerSearchCancellation();
+  installPlannerLifecycleCancellation();
 })();
