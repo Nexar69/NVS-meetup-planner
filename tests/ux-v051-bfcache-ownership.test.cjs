@@ -18,7 +18,7 @@ assert.match(source, /async function photonSearch\([\s\S]*ensureLifecycleActive\
   'Photon search must reject late response and JSON completions after lifecycle ownership changes');
 assert.match(source, /credentials: "omit"/,
   'Photon search must continue omitting ambient credentials');
-assert.match(source, /function runOriginSearch\(state, value\) \{\s*if \(lifecycleFrozen\) return;[\s\S]*lifecycle !== lifecycleGeneration/,
+assert.match(source, /async function runOriginSearch\(state, value\) \{\s*if \(lifecycleFrozen\) return;[\s\S]*lifecycle !== lifecycleGeneration/,
   'origin debounce work must fail closed while frozen or generation-stale');
 assert.match(source, /dialog\.openSearch = \(\) => \{\s*if \(lifecycleFrozen\) return;[\s\S]*destinationFocusTimer = setTimeout\([\s\S]*lifecycleFrozen \|\| lifecycle !== lifecycleGeneration \|\| !dialog\.open/,
   'destination dialog entry and delayed focus must be lifecycle-owned');

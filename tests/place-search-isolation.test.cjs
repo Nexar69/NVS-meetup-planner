@@ -81,13 +81,13 @@ assert.match(
 );
 assert.match(
   source,
-  /dialog\.addEventListener\("close", cancelSearch\);/,
-  "closing the destination dialog must cancel pending search work",
+  /dialog\.addEventListener\("close", \(\) => \{[\s\S]*?cancelDestinationFocus\(\);[\s\S]*?cancelSearch\(\);[\s\S]*?\}\);/,
+  "closing the destination dialog must cancel pending search and delayed focus work",
 );
 assert.match(
   source,
-  /dialog\.openSearch = \(\) => \{\s*cancelSearch\(\);/,
-  "reopening destination search must invalidate any prior completion before resetting UI",
+  /dialog\.openSearch = \(\) => \{\s*if \(lifecycleFrozen\) return;\s*cancelSearch\(\);/,
+  "reopening destination search must fail closed while frozen and invalidate prior completions before resetting UI",
 );
 
 assert.match(
