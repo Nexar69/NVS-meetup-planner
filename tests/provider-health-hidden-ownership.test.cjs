@@ -88,8 +88,7 @@ const source = fs.readFileSync(path.resolve(__dirname, "../provider-health-v0111
 
   document.hidden = false;
   documentHandlers.get("visibilitychange")?.();
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(fetches, 1, "becoming visible should reconcile provider health once");
 
   const periodic = [...timers.values()].find((entry) => entry.delay === 5 * 60 * 1000);
