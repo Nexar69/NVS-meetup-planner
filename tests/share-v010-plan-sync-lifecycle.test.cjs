@@ -28,9 +28,9 @@ assert.match(source, /function suspendPlanSync\(\) \{\s*cancelScheduledSync\(\);
   'page and visibility suspension should share one sync cancellation path');
 assert.match(source, /addEventListener\("pagehide", \(\) => \{\s*lifecycleFrozen = true;\s*suspendPlanSync\(\);/,
   'pagehide must freeze ownership before cancelling queued/in-flight organizer sync');
-assert.match(source, /addEventListener\("pageshow", \(\) => \{\s*lifecycleFrozen = false;\s*if \(!document\.hidden\) scheduleSync\(\);/,
-  'pageshow should reconcile the current plan rather than replay stale queued work');
-assert.match(source, /document\.addEventListener\("visibilitychange", \(\) => \{\s*if \(document\.hidden\) \{\s*suspendPlanSync\(\);/,
+assert.match(source, /addEventListener\("pageshow", \(\) => \{\s*lifecycleFrozen = false;\s*if \(!document\.hidden\) \{[\s\S]*scheduleSync\(\);\s*\}/,
+  'pageshow should reconcile visible organizer UI and the current plan rather than replay stale queued work');
+assert.match(source, /document\.addEventListener\("visibilitychange", \(\) => \{\s*if \(document\.hidden\) \{\s*suspendPlanSync\(\);[\s\S]*return;\s*\}/,
   'hidden transitions must cancel pending and in-flight organizer sync even without pagehide');
 assert.match(source, /if \(error\?\.name !== "AbortError"\) console\.warn/,
   'expected lifecycle aborts should not be reported as sync failures');
