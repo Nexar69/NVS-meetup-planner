@@ -91,6 +91,32 @@ assert.ok(settle, 'pageshow should schedule the short settle reconciliation');
 settle.callback();
 assert.match(currentAction.innerHTML, /missed connection|Changed/i, 'restored lifecycle should reconcile the latest voluntary state');
 
+const periodic = [...timers].reverse().find((entry) => entry.delay === 30_000);
+assert.ok(periodic, 'visible lifecycle should own a periodic voluntary reconciliation timer');
+const hiddenMarkup = currentAction.innerHTML;
+liveEntry = { status: 'arrived', at: now };
+document.hidden = true;
+listeners.get('document:visibilitychange')({ type: 'visibilitychange' });
+assert.equal(api.sync(now), false, 'direct sync calls must lose DOM ownership while the document is hidden');
+periodic.callback();
+assert.equal(currentAction.innerHTML, hiddenMarkup, 'a stale periodic callback must re-check visibility before touching trip guidance');
+const timersWhileHidden = timers.length;
+listeners.get('nvs-shared-live-change')({ type: 'nvs-shared-live-change' });
+api.schedule();
+assert.equal(timers.length, timersWhileHidden, 'hidden live events and direct schedule calls must not arm reconciliation work');
+
+panel.visible = true;
+dialog.open = true;
+listeners.get('nvs-recommendations-cleared')({ type: 'nvs-recommendations-cleared' });
+assert.equal(panel.visible, true, 'authoritative recommendation clear must not mutate command-center DOM while hidden');
+assert.equal(dialog.open, true, 'authoritative recommendation clear must not close dialogs while hidden');
+document.hidden = false;
+listeners.get('document:visibilitychange')({ type: 'visibilitychange' });
+assert.equal(panel.visible, true, 'visibility restore alone must not replay cleared recommendation work before lifecycle reconciliation');
+listeners.get('pageshow')({ type: 'pageshow', persisted: true });
+assert.equal(panel.visible, false, 'pageshow must reconcile a recommendation clear that happened while hidden');
+assert.equal(dialog.open, false, 'pageshow must close stale trip guidance after a hidden recommendation clear');
+
 panel.visible = true;
 dialog.open = true;
 listeners.get('pagehide')({ type: 'pagehide', persisted: true });
@@ -103,6 +129,10 @@ assert.equal(panel.visible, false, 'pageshow must reconcile a recommendation cle
 assert.equal(dialog.open, false, 'pageshow must close stale trip guidance after a frozen recommendation clear');
 assert.equal(timers.length, timersBeforeFrozenClear, 'cleared recommendations must not re-arm voluntary reconciliation on restore');
 
+assert.match(source, /function ownsLifecycle\(\) \{\s*return !lifecycleFrozen && !document\.hidden;/,
+  'voluntary intelligence should use one visible lifecycle ownership boundary');
+assert.match(source, /if \(!ownsLifecycle\(\) \|\| !recommendationsActive\) return;/,
+  'queued reconciliation must independently re-check lifecycle ownership and active recommendations');
 assert.doesNotMatch(source, /watchPosition|getCurrentPosition|geolocation/i,
   'lifecycle ownership must not add hidden/background location tracking');
 assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/i,
@@ -110,4 +140,4 @@ assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/i,
 assert.doesNotMatch(source, /MutationObserver/,
   'voluntary intelligence should remain event-driven rather than observing DOM mutations');
 
-console.log('intelligence-voluntary-sync-bfcache: frozen voluntary intelligence stays inert and reconciles active or cleared state after restore');
+console.log('intelligence-voluntary-sync-bfcache: frozen/hidden voluntary intelligence stays inert and reconciles cleared state only after visible restore');
