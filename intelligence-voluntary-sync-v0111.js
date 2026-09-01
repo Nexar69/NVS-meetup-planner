@@ -7,6 +7,10 @@
   let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary?.assignments?.length);
   let lifecycleFrozen = false;
 
+  function ownsLifecycle() {
+    return !lifecycleFrozen && !document.hidden;
+  }
+
   function loadCheckinQueueAssets() {
     if (typeof document.querySelector !== "function" || typeof document.createElement !== "function") return;
     if (!document.querySelector('link[data-shared-checkin-queue-v0111="true"]')) {
@@ -114,7 +118,7 @@
   }
 
   function sync(now = Date.now()) {
-    if (lifecycleFrozen) return false;
+    if (!ownsLifecycle()) return false;
     const assignment = focusedAssignment();
     const entry = freshEntry(now);
     if (!assignment?.route || !entry) return false;
@@ -150,7 +154,7 @@
   }
 
   function hideRecommendationSurfaces() {
-    if (lifecycleFrozen) return false;
+    if (!ownsLifecycle()) return false;
     const panel = document.getElementById("v011CommandCenter");
     panel?.classList?.remove?.("visible");
     const dialog = document.getElementById("v011TripDialog");
@@ -167,15 +171,15 @@
 
   function activateRecommendations() {
     recommendationsActive = true;
-    if (!lifecycleFrozen) schedule();
+    if (ownsLifecycle()) schedule();
   }
 
   function schedule(delay = SETTLE_MS) {
-    if (lifecycleFrozen || document.hidden || !recommendationsActive) return;
+    if (!ownsLifecycle() || !recommendationsActive) return;
     cancelScheduledSync();
     reconcileTimer = setTimeout(() => {
       reconcileTimer = null;
-      if (lifecycleFrozen) return;
+      if (!ownsLifecycle() || !recommendationsActive) return;
       sync();
       arm();
     }, Math.max(0, Number(delay) || 0));
@@ -183,9 +187,10 @@
 
   function arm() {
     clearPeriodicSync();
-    if (lifecycleFrozen || document.hidden || !recommendationsActive) return;
+    if (!ownsLifecycle() || !recommendationsActive) return;
     timer = setTimeout(() => {
-      if (lifecycleFrozen) return;
+      timer = null;
+      if (!ownsLifecycle() || !recommendationsActive) return;
       sync();
       arm();
     }, SYNC_MS);
