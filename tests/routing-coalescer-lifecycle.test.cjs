@@ -108,7 +108,7 @@ function deferred() {
 
   coalescer.beginPlannerConsumerBatch();
   hiddenProvider.resolve([{ id: "hidden-provider", departure: target, arrival: target, segments: [] }]);
-  await Promise.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(coalescer.pendingCount(), 0, "provider work should still settle normally while hidden");
 
   assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "routing lifecycle hardening must not add location access");
