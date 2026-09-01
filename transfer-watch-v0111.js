@@ -231,7 +231,7 @@
   }
 
   function render(now = Date.now()) {
-    if (lifecycleFrozen) return null;
+    if (lifecycleFrozen || document.hidden) return null;
     if (!recommendationsActive) {
       removeCard();
       return null;
@@ -262,14 +262,15 @@
     timer = null;
     if (lifecycleFrozen || document.hidden || !recommendationsActive) return;
     timer = setTimeout(() => {
-      if (lifecycleFrozen) return;
+      timer = null;
+      if (lifecycleFrozen || document.hidden || !recommendationsActive) return;
       render();
       schedule();
     }, UPDATE_MS);
   }
 
   function refresh() {
-    if (lifecycleFrozen) return;
+    if (lifecycleFrozen || document.hidden) return;
     render();
     schedule();
   }
