@@ -11,10 +11,11 @@ const release = read("release-v080.js");
 
 assert.match(convergence, /let recommendationsActive = Boolean\(window\.__NVS_LAST_RECOMMENDATIONS__\)/);
 assert.match(convergence, /window\.addEventListener\("nvs-recommendations-cleared", clearRecommendations\)/);
-assert.match(convergence, /function clearRecommendations\(\) \{\s*recommendationsActive = false;\s*cancelDecoration\(\);\s*clearGeneratedDecoration\(\);/s);
-assert.match(convergence, /function decorateExisting\(\) \{\s*cancelDecoration\(\);\s*if \(!recommendationsActive\) return;/s);
-assert.match(convergence, /decorateTimer = setTimeout\(\(\) => \{\s*decorateTimer = null;\s*if \(!recommendationsActive\) return;/s);
-assert.match(convergence, /function activateRecommendations\(\) \{\s*recommendationsActive = true;\s*decorateExisting\(\);/s);
+assert.match(convergence, /function clearRecommendations\(\) \{\s*recommendationsActive = false;\s*cancelDecoration\(\);\s*if \(frozenDocument\) return;\s*clearGeneratedDecoration\(\);/s);
+assert.match(convergence, /function decorateExisting\(\) \{\s*cancelDecoration\(\);\s*if \(frozenDocument \|\| !recommendationsActive\) return;/s);
+assert.match(convergence, /decorateTimer = setTimeout\(\(\) => \{\s*decorateTimer = null;\s*if \(frozenDocument \|\| !recommendationsActive\) return;/s);
+assert.match(convergence, /function activateRecommendations\(\) \{\s*if \(frozenDocument\) return;\s*recommendationsActive = true;\s*decorateExisting\(\);/s);
+assert.match(convergence, /function resumeDocument\(\)[\s\S]*recommendationsActive = Boolean\(window\.__NVS_LAST_RECOMMENDATIONS__\)[\s\S]*if \(recommendationsActive\) decorateExisting\(\)[\s\S]*else clearGeneratedDecoration\(\)/s);
 
 assert.match(release, /let recommendationsActive = Boolean\(window\.__NVS_LAST_RECOMMENDATIONS__\)/);
 assert.match(release, /window\.addEventListener\("nvs-recommendations-cleared", clearRecommendations\)/);
