@@ -4,6 +4,11 @@
 
   const REFRESH_MS = 30_000;
   let timer = null;
+  let lifecycleFrozen = false;
+
+  function ownsDocument() {
+    return !lifecycleFrozen;
+  }
 
   function ago(entry) {
     const freshness = core.checkinFreshness(entry, new Date());
@@ -12,6 +17,7 @@
   }
 
   function render() {
+    if (!ownsDocument()) return;
     const panel = document.getElementById("sharedLiveV010");
     const state = window.NVSSharedLive?.getState?.();
     if (!panel || !state?.members) return;
@@ -39,16 +45,32 @@
 
   function schedule(delay = REFRESH_MS) {
     clearTimeout(timer);
-    if (document.hidden) return;
+    timer = null;
+    if (!ownsDocument() || document.hidden) return;
     timer = setTimeout(() => {
+      timer = null;
+      if (!ownsDocument()) return;
       render();
       schedule();
     }, delay);
   }
 
   function refresh() {
+    if (!ownsDocument()) return;
     render();
     schedule();
+  }
+
+  function freezeLifecycle() {
+    lifecycleFrozen = true;
+    clearTimeout(timer);
+    timer = null;
+  }
+
+  function resumeLifecycle(event) {
+    if (!event?.persisted && !lifecycleFrozen) return;
+    lifecycleFrozen = false;
+    refresh();
   }
 
   const style = document.createElement("style");
@@ -58,10 +80,15 @@
   window.addEventListener("nvs-shared-live-change", refresh);
   window.addEventListener("nvs-group-recommendations-rendered", refresh);
   window.addEventListener("nvs-shared-view-resumed", refresh);
-  window.addEventListener("pageshow", refresh);
+  window.addEventListener("pagehide", freezeLifecycle);
+  window.addEventListener("pageshow", resumeLifecycle);
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) clearTimeout(timer);
-    else refresh();
+    if (document.hidden || lifecycleFrozen) {
+      clearTimeout(timer);
+      timer = null;
+    } else {
+      refresh();
+    }
   });
 
   refresh();
