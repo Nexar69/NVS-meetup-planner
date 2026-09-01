@@ -247,6 +247,7 @@
     clearTimeout(timer);
     timer = null;
     if (lifecycleFrozen || document.hidden) return;
+    if (document.hidden) return;
     if (!recommendationsActive) return;
     timer = setTimeout(() => {
       if (lifecycleFrozen) return;
