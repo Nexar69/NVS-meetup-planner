@@ -112,10 +112,9 @@ assert.equal(panel.visible, true, 'authoritative recommendation clear must not m
 assert.equal(dialog.open, true, 'authoritative recommendation clear must not close dialogs while hidden');
 document.hidden = false;
 listeners.get('document:visibilitychange')({ type: 'visibilitychange' });
-assert.equal(panel.visible, true, 'visibility restore alone must not replay cleared recommendation work before lifecycle reconciliation');
-listeners.get('pageshow')({ type: 'pageshow', persisted: true });
-assert.equal(panel.visible, false, 'pageshow must reconcile a recommendation clear that happened while hidden');
-assert.equal(dialog.open, false, 'pageshow must close stale trip guidance after a hidden recommendation clear');
+assert.equal(panel.visible, false, 'visibility restore must reconcile a recommendation clear that happened while hidden');
+assert.equal(dialog.open, false, 'visibility restore must close stale trip guidance after a hidden recommendation clear');
+assert.equal(timers.length, timersWhileHidden, 'cleared recommendations must not re-arm reconciliation on ordinary visibility restore');
 
 panel.visible = true;
 dialog.open = true;
@@ -140,4 +139,4 @@ assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/i,
 assert.doesNotMatch(source, /MutationObserver/,
   'voluntary intelligence should remain event-driven rather than observing DOM mutations');
 
-console.log('intelligence-voluntary-sync-bfcache: frozen/hidden voluntary intelligence stays inert and reconciles cleared state only after visible restore');
+console.log('intelligence-voluntary-sync-bfcache: frozen/hidden voluntary intelligence stays inert and reconciles cleared state on visible restore');
