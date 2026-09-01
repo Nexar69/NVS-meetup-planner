@@ -3,6 +3,8 @@
   const destinationInput = document.getElementById("destination");
   const FALLBACK_COLORS = ["#2563eb", "#db2777", "#7c3aed", "#ea580c", "#0891b2", "#65a30d"];
   let decorateTimer = null;
+  let resultsObserver = null;
+  let frozenDocument = false;
   let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__);
 
   function escapeHtml(value) {
@@ -59,6 +61,7 @@
   }
 
   function decorateMeetupSummary(card, group, analysis) {
+    if (frozenDocument) return;
     const summary = card.querySelector(".group-first-meetup");
     if (!summary) return;
     const first = firstIntermediateEvent(analysis);
@@ -164,6 +167,7 @@
   }
 
   function setEntryTime(entry, duplicate) {
+    if (frozenDocument) return;
     const cell = entry?.node?.querySelector?.(".timeline-time, .timeline-convergence-time");
     if (!cell) return;
     const readable = formatTime(entry.time);
@@ -179,6 +183,7 @@
   }
 
   function decorateTimelines(card, group, analysis) {
+    if (frozenDocument) return;
     const assignments = Array.isArray(group?.assignments) ? group.assignments : [];
     const timelines = [...card.querySelectorAll(".route-timeline")];
     if (!assignments.length || !timelines.length) return;
@@ -189,7 +194,6 @@
       const timelineSteps = timeline.querySelector(".timeline-steps");
       if (!timelineSteps) return;
 
-      // Remove the old v0.7.3 summary block if a cached copy left one behind.
       timeline.querySelector(".route-convergence-events")?.remove();
 
       const events = (analysis.memberEvents?.[assignment.member.id] || [])
@@ -205,7 +209,6 @@
       const originalSteps = [...timelineSteps.children].filter((node) => node.classList?.contains("timeline-step"));
       if (!originalSteps.length) return;
 
-      // Clear only previously generated lifecycle/join rows; keep the real route steps.
       [...timelineSteps.querySelectorAll('[data-convergence-generated="true"]')].forEach((node) => node.remove());
 
       const entries = originalSteps.map((node, stepIndex) => ({
@@ -220,8 +223,6 @@
       events.forEach((event) => {
         const node = nodeFromHtml(eventHtml(event, assignment.member.id));
         if (!node) return;
-        // A join at the same timestamp as a new leg should be shown before boarding
-        // that next leg; the final arrival naturally sorts to the bottom.
         entries.push({ time: event.time, priority: event.final ? 3 : 1, node });
       });
 
@@ -245,7 +246,7 @@
   }
 
   function decorateCard(card, group) {
-    if (!card || !group) return;
+    if (frozenDocument || !card || !group) return;
     const analysis = analysisFor(group);
     decorateMeetupSummary(card, group, analysis);
     decorateTimelines(card, group, analysis);
@@ -257,7 +258,7 @@
   }
 
   function clearGeneratedDecoration() {
-    if (!results) return;
+    if (frozenDocument || !results) return;
     [...results.querySelectorAll('[data-convergence-generated="true"]')].forEach((node) => node.remove());
     results.querySelectorAll("[data-convergence-signature]").forEach((node) => {
       delete node.dataset.convergenceSignature;
@@ -266,10 +267,10 @@
 
   function decorateExisting() {
     cancelDecoration();
-    if (!recommendationsActive) return;
+    if (frozenDocument || !recommendationsActive) return;
     decorateTimer = setTimeout(() => {
       decorateTimer = null;
-      if (!recommendationsActive) return;
+      if (frozenDocument || !recommendationsActive) return;
       const recommendations = window.__NVS_LAST_RECOMMENDATIONS__;
       if (!recommendations || !results) return;
       [...results.querySelectorAll(":scope > .result[data-map-pair]")].forEach((card) => {
@@ -280,6 +281,7 @@
   }
 
   function activateRecommendations() {
+    if (frozenDocument) return;
     recommendationsActive = true;
     decorateExisting();
   }
@@ -287,7 +289,31 @@
   function clearRecommendations() {
     recommendationsActive = false;
     cancelDecoration();
+    if (frozenDocument) return;
     clearGeneratedDecoration();
+  }
+
+  function observeResults() {
+    if (!results || frozenDocument) return;
+    if (!resultsObserver) resultsObserver = new MutationObserver(() => decorateExisting());
+    resultsObserver.observe(results, {
+      childList: true,
+      subtree: true,
+    });
+  }
+
+  function suspendDocument() {
+    frozenDocument = true;
+    cancelDecoration();
+    resultsObserver?.disconnect();
+  }
+
+  function resumeDocument() {
+    frozenDocument = false;
+    recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__);
+    observeResults();
+    if (recommendationsActive) decorateExisting();
+    else clearGeneratedDecoration();
   }
 
   window.addEventListener("nvs-group-recommendations-rendered", activateRecommendations);
@@ -295,13 +321,9 @@
   window.addEventListener("nvs-group-change", decorateExisting);
   window.addEventListener("nvs-priority-change", decorateExisting);
   window.addEventListener("nvs-timing-change", decorateExisting);
+  window.addEventListener("pagehide", suspendDocument);
+  window.addEventListener("pageshow", resumeDocument);
 
-  if (results) {
-    new MutationObserver(() => decorateExisting()).observe(results, {
-      childList: true,
-      subtree: true,
-    });
-  }
-
+  observeResults();
   decorateExisting();
 })();
