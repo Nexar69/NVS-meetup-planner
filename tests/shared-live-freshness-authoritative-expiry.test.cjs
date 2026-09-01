@@ -58,8 +58,8 @@ vm.runInNewContext(source, {
   Boolean,
   Array,
   Object,
-  setTimeout,
-  clearTimeout,
+  setTimeout() { return 1; },
+  clearTimeout() {},
 });
 
 const api = window.NVSSharedLiveFreshness0111;
