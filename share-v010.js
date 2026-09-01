@@ -12,6 +12,11 @@
   let activePlanSync = null;
   let deliveryGeneration = 0;
   let activeDeliverySignature = null;
+  let lifecycleFrozen = false;
+
+  function ownsLifecycle() {
+    return !lifecycleFrozen && !document.hidden;
+  }
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -114,7 +119,7 @@
   }
 
   function beginDelivery(expectedSignature) {
-    if (sharing || !expectedSignature || currentPlanSignature() !== expectedSignature) return null;
+    if (!ownsLifecycle() || sharing || !expectedSignature || currentPlanSignature() !== expectedSignature) return null;
     sharing = true;
     activeDeliverySignature = expectedSignature;
     const token = Object.freeze({ generation: ++deliveryGeneration, signature: expectedSignature });
@@ -124,7 +129,8 @@
 
   function deliveryIsCurrent(token) {
     return Boolean(
-      token
+      ownsLifecycle()
+      && token
       && token.generation === deliveryGeneration
       && token.signature === activeDeliverySignature
       && currentPlanSignature() === token.signature,
@@ -143,7 +149,13 @@
     renderManagement();
   }
 
+  function cancelScheduledSync() {
+    clearTimeout(syncTimer);
+    syncTimer = null;
+  }
+
   function invalidatePlanSync() {
+    activePlanSync?.controller?.abort?.();
     syncGeneration += 1;
     activePlanSync = null;
   }
@@ -152,6 +164,7 @@
     if (!secureCache) return;
     const id = secureCache.id;
     secureCache = null;
+    cancelScheduledSync();
     invalidatePlanSync();
     renderManagement();
     window.dispatchEvent(new CustomEvent("nvs-share-session-cleared", {
@@ -197,7 +210,7 @@
   }
 
   async function syncExistingPlan(nextPlan, expectedSignature = null) {
-    if (!secureCache?.id || !secureCache?.ownerKey || !config.backendUrl) return false;
+    if (!ownsLifecycle() || !secureCache?.id || !secureCache?.ownerKey || !config.backendUrl) return false;
     if (cacheExpired()) {
       clearSecureCache("expired");
       return false;
@@ -221,22 +234,25 @@
     }
 
     const generation = ++syncGeneration;
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
     const promise = (async () => {
+      if (!ownsLifecycle() || secureCache !== session || generation !== syncGeneration) return false;
       const response = await fetch(`${String(config.backendUrl).replace(/\/$/, "")}/api/live/${session.id}/plan`, {
         method: "POST",
         mode: "cors",
         credentials: "omit",
         headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
         body: JSON.stringify({ key: session.ownerKey, plan }),
+        ...(controller ? { signal: controller.signal } : {}),
       });
-      if (secureCache !== session || generation !== syncGeneration || (expectedSignature && currentPlanSignature() !== expectedSignature)) return false;
+      if (!ownsLifecycle() || secureCache !== session || generation !== syncGeneration || (expectedSignature && currentPlanSignature() !== expectedSignature)) return false;
       if (response.status === 404 || response.status === 409) {
         clearSecureCache(response.status === 404 ? "missing-or-expired" : "identity-changed");
         return false;
       }
       if (!response.ok) throw new Error(`LIVE_PLAN_SYNC_HTTP_${response.status}`);
       const data = await response.json();
-      if (secureCache !== session || generation !== syncGeneration || (expectedSignature && currentPlanSignature() !== expectedSignature)) return false;
+      if (!ownsLifecycle() || secureCache !== session || generation !== syncGeneration || (expectedSignature && currentPlanSignature() !== expectedSignature)) return false;
       session.signature = sig;
       session.revision = Number(data?.revision) || session.revision || 1;
       const expiry = Number(data?.expiresAt);
@@ -247,7 +263,7 @@
       return true;
     })();
 
-    activePlanSync = { session, signature: sig, generation, promise };
+    activePlanSync = { session, signature: sig, generation, promise, controller };
     try {
       return await promise;
     } finally {
@@ -256,14 +272,18 @@
   }
 
   function scheduleSync() {
-    clearTimeout(syncTimer);
-    if (!secureCache) return;
+    cancelScheduledSync();
+    if (!ownsLifecycle() || !secureCache) return;
     if (cacheExpired()) {
       clearSecureCache("expired");
       return;
     }
     syncTimer = setTimeout(() => {
-      syncExistingPlan().catch((error) => console.warn("Shared live plan sync failed", error));
+      syncTimer = null;
+      if (!ownsLifecycle()) return;
+      syncExistingPlan().catch((error) => {
+        if (error?.name !== "AbortError") console.warn("Shared live plan sync failed", error);
+      });
     }, 700);
   }
 
@@ -421,7 +441,7 @@
   }
 
   function confirmShare(type, index = -1) {
-    if (window.NVSShare?.isViewer?.()) return;
+    if (!ownsLifecycle() || window.NVSShare?.isViewer?.()) return;
     const plan = payload();
     if (!plan) {
       window.alert("Find a live group recommendation before sharing it.");
@@ -530,7 +550,7 @@
   }
 
   document.addEventListener("click", (event) => {
-    if (window.NVSShare?.isViewer?.()) return;
+    if (!ownsLifecycle() || window.NVSShare?.isViewer?.()) return;
 
     const personButton = event.target.closest?.(".person-share-link");
     if (personButton) {
@@ -551,6 +571,7 @@
   }, true);
 
   function handlePlannerMutation() {
+    if (!ownsLifecycle()) return;
     const current = currentPlanSignature();
     const pendingChanged = Boolean(pendingShare?.signature && pendingShare.signature !== current);
     const activeChanged = Boolean(sharing && activeDeliverySignature && activeDeliverySignature !== current);
@@ -558,12 +579,29 @@
     scheduleSync();
   }
 
+  function suspendPlanSync() {
+    cancelScheduledSync();
+    invalidatePlanSync();
+  }
+
   window.addEventListener("nvs-group-recommendations-rendered", handlePlannerMutation);
   window.addEventListener("nvs-priority-change", handlePlannerMutation);
   window.addEventListener("nvs-timing-change", handlePlannerMutation);
   window.addEventListener("pagehide", () => {
-    invalidatePlanSync();
+    lifecycleFrozen = true;
+    suspendPlanSync();
     invalidateDelivery({ dismissDialog: true });
+  });
+  window.addEventListener("pageshow", () => {
+    lifecycleFrozen = false;
+    if (!document.hidden) scheduleSync();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      suspendPlanSync();
+      return;
+    }
+    if (!lifecycleFrozen) scheduleSync();
   });
 
   window.NVSShare010 = Object.freeze({
@@ -575,5 +613,6 @@
     getPlanId: () => secureCache?.id || null,
     getExpiresAt: () => cacheExpiresAt(),
     isSessionExpired: () => cacheExpired(),
+    isLifecycleFrozen: () => lifecycleFrozen,
   });
 })();
