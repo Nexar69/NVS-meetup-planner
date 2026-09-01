@@ -2,6 +2,7 @@
   const FALLBACK_MS = 1_200;
   let navigating = false;
   let fallbackTimer = null;
+  let resumeTimer = null;
   let lifecycleFrozen = false;
 
   function reloadButtonFrom(target) {
@@ -24,6 +25,11 @@
   function clearFallback() {
     if (fallbackTimer != null) clearTimeout(fallbackTimer);
     fallbackTimer = null;
+  }
+
+  function clearResume() {
+    if (resumeTimer != null) clearTimeout(resumeTimer);
+    resumeTimer = null;
   }
 
   function recoverNavigation(button = document.getElementById("v010ReloadPlan")) {
@@ -54,6 +60,7 @@
 
     clearFallback();
     fallbackTimer = setTimeout(() => {
+      fallbackTimer = null;
       if (lifecycleFrozen || !navigating) return;
       tryAssign(button);
     }, FALLBACK_MS);
@@ -69,9 +76,11 @@
   function resetAfterPageShow(event) {
     lifecycleFrozen = false;
     recoverNavigation();
+    clearResume();
 
     if (!event?.persisted) return;
-    setTimeout(() => {
+    resumeTimer = setTimeout(() => {
+      resumeTimer = null;
       if (lifecycleFrozen) return;
       try { window.NVSSharedLive?.refresh?.(); } catch {}
       try { window.NVSIntelligence?.refresh?.(); } catch {}
@@ -82,6 +91,7 @@
   function freezeForPageHide() {
     lifecycleFrozen = true;
     clearFallback();
+    clearResume();
   }
 
   document.addEventListener("click", (event) => {
