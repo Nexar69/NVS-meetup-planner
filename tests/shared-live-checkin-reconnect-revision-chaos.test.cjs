@@ -153,6 +153,8 @@ vm.runInNewContext(source, {
     'a late pre-freeze POST response must not overwrite the last authoritative state');
   assert.equal(events.filter((event) => event.type === 'nvs-shared-live-change').length, baselineLiveEvents,
     'a late pre-freeze write completion must not publish a Shared Live change');
+  assert.equal(events.filter((event) => event.type === 'nvs-shared-checkin-outcome').length, 0,
+    'a late terminal check-in result must not emit UI-facing outcome events while the document is frozen');
 
   // During suspension the organizer revises the plan and the authoritative live
   // session expires. Restoration may refresh read-only state, but must never replay
@@ -180,17 +182,15 @@ vm.runInNewContext(source, {
   assert.equal(liveEvents.at(-1)?.detail?.revision, 8);
 
   const outcomes = events.filter((event) => event.type === 'nvs-shared-checkin-outcome');
-  assert.equal(outcomes.length, 1,
-    'the interrupted action should produce one terminal outcome, not a retry outcome');
-  assert.equal(outcomes[0]?.detail?.status, 'aborted');
-  assert.equal(outcomes[0]?.detail?.reason, 'superseded');
+  assert.equal(outcomes.length, 0,
+    'frozen interrupted actions stay event-inert; restoration must not synthesize or replay an outcome');
 
   assert.doesNotMatch(source, /watchPosition\s*\(/,
     'reconnect recovery must not introduce hidden or continuous location tracking');
   assert.doesNotMatch(source, /localStorage|indexedDB/i,
     'voluntary Shared Live state must remain tab-scoped and non-durable');
 
-  console.log('shared-live-checkin-reconnect-revision-chaos: interrupted write is never replayed; revised expired state wins after restore');
+  console.log('shared-live-checkin-reconnect-revision-chaos: interrupted write is event-inert and never replayed; revised expired state wins after restore');
 })().catch((error) => {
   console.error(error);
   process.exit(1);
