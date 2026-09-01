@@ -12,6 +12,8 @@
 
   let toastTimer = null;
   let running = false;
+  let frozenDocument = false;
+  let runGeneration = 0;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -22,12 +24,20 @@
       .replaceAll("'", "&#039;");
   }
 
+  function cancelToast() {
+    clearTimeout(toastTimer);
+    toastTimer = null;
+  }
+
   function showToast(message) {
-    if (!toast) return;
+    if (frozenDocument || !toast) return;
     toast.textContent = message;
     toast.classList.add("show");
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove("show"), 2800);
+    cancelToast();
+    toastTimer = setTimeout(() => {
+      toastTimer = null;
+      if (!frozenDocument) toast.classList.remove("show");
+    }, 2800);
   }
 
   function formatTime(date) {
@@ -80,8 +90,6 @@
     const maxTravel = Math.max(travelA, travelB);
     const totalTravel = travelA + travelB;
 
-    // Fairness is intentionally strongest. We still penalize long trips,
-    // large arrival gaps, and drifting too far from the requested meetup time.
     const fairScore =
       fairnessGap * 3 +
       pair.waitGap * 1.25 +
@@ -124,9 +132,11 @@
     `;
     document.body.appendChild(dialog);
 
-    dialog.querySelector(".fair-close")?.addEventListener("click", () => dialog.close());
+    dialog.querySelector(".fair-close")?.addEventListener("click", () => {
+      if (!frozenDocument) dialog.close();
+    });
     dialog.addEventListener("click", (event) => {
-      if (event.target === dialog && !running) dialog.close();
+      if (!frozenDocument && event.target === dialog && !running) dialog.close();
     });
 
     return {
@@ -139,7 +149,7 @@
   const fairDialog = buildDialog();
 
   function ensureOption(key) {
-    if (!destinationInput) return;
+    if (frozenDocument || !destinationInput) return;
     const exists = [...destinationInput.options].some((option) => option.value === key);
     if (exists) return;
     const location = window.NVSTransit?.LOCATIONS?.[key];
@@ -151,6 +161,7 @@
   }
 
   function useCandidate(candidate) {
+    if (frozenDocument) return;
     ensureOption(candidate);
     destinationInput.value = candidate;
     destinationInput.dispatchEvent(new Event("change", { bubbles: true }));
@@ -166,6 +177,7 @@
   }
 
   function renderResults(items) {
+    if (frozenDocument) return;
     fairDialog.results.innerHTML = "";
     if (!items.length) {
       fairDialog.results.innerHTML = `
@@ -216,7 +228,7 @@
   }
 
   async function runFairFinder() {
-    if (running) return;
+    if (frozenDocument || running) return;
     const target = getTargetDate();
     const originA = personAInput?.value;
     const originB = personBInput?.value;
@@ -234,6 +246,7 @@
       return;
     }
 
+    const runId = ++runGeneration;
     running = true;
     fairDialog.dialog.showModal();
     fairDialog.results.innerHTML = "";
@@ -243,6 +256,7 @@
 
     try {
       for (let index = 0; index < CANDIDATES.length; index += 1) {
+        if (frozenDocument || runId !== runGeneration) return;
         const candidate = CANDIDATES[index];
         fairDialog.progress.innerHTML = `<span class="fair-spinner"></span><strong>Checking ${escapeHtml(candidate)} · ${index + 1}/${CANDIDATES.length}</strong>`;
 
@@ -251,26 +265,33 @@
             window.NVSTransit.fetchRoutes(originA, candidate, target),
             window.NVSTransit.fetchRoutes(originB, candidate, target),
           ]);
+          if (frozenDocument || runId !== runGeneration) return;
           const pair = bestPair(routesA, routesB, target);
           if (pair) scored.push(scoreCandidate(candidate, pair));
         } catch (error) {
+          if (frozenDocument || runId !== runGeneration) return;
           console.warn(`Fair Meetup candidate failed: ${candidate}`, error);
         }
 
-        if (index < CANDIDATES.length - 1) await wait(BETWEEN_CANDIDATES_MS);
+        if (index < CANDIDATES.length - 1) {
+          await wait(BETWEEN_CANDIDATES_MS);
+          if (frozenDocument || runId !== runGeneration) return;
+        }
       }
 
+      if (frozenDocument || runId !== runGeneration) return;
       scored.sort((a, b) => a.fairScore - b.fairScore || a.maxTravel - b.maxTravel);
       renderResults(scored);
       fairDialog.progress.textContent = scored.length
         ? `Compared ${scored.length} central meetup options.`
         : "No candidate produced usable live journeys.";
     } finally {
-      running = false;
+      if (runId === runGeneration) running = false;
     }
   }
 
   function injectButton() {
+    if (frozenDocument) return;
     const field = destinationInput?.closest(".field");
     if (!field || document.getElementById("fairMeetupButton")) return;
 
@@ -290,8 +311,25 @@
     tools.appendChild(button);
   }
 
+  function suspendDocument() {
+    frozenDocument = true;
+    runGeneration += 1;
+    running = false;
+    cancelToast();
+  }
+
+  function resumeDocument() {
+    frozenDocument = false;
+    if (fairDialog.dialog.open) fairDialog.dialog.close();
+    fairDialog.progress.textContent = "";
+    fairDialog.results.innerHTML = "";
+    injectButton();
+  }
+
   CANDIDATES.forEach(ensureOption);
   injectButton();
+  window.addEventListener("pagehide", suspendDocument);
+  window.addEventListener("pageshow", resumeDocument);
 
   window.NVSFair = Object.freeze({
     run: runFairFinder,
