@@ -3,7 +3,12 @@
   window.NVSRelease012 = true;
   document.documentElement.dataset.nvsRelease = "012";
 
+  let lifecycleFrozen = false;
+  let lifecycleGeneration = 0;
+  const timers = new Set();
+
   function applyReleaseCopy() {
+    if (lifecycleFrozen) return;
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = VERSION;
     const liveNote = document.querySelector(".live-note div");
@@ -13,11 +18,43 @@
     document.title = "Meet Schwerin · Test Lab";
   }
 
-  applyReleaseCopy();
-  setTimeout(applyReleaseCopy, 520);
-  window.addEventListener("load", () => {
+  function cancelTimers() {
+    timers.forEach((timer) => clearTimeout(timer));
+    timers.clear();
+  }
+
+  function scheduleReleaseCopy(delay) {
+    if (lifecycleFrozen) return;
+    const generation = lifecycleGeneration;
+    const timer = setTimeout(() => {
+      timers.delete(timer);
+      if (lifecycleFrozen || generation !== lifecycleGeneration) return;
+      applyReleaseCopy();
+    }, delay);
+    timers.add(timer);
+  }
+
+  function freezeLifecycle() {
+    lifecycleFrozen = true;
+    lifecycleGeneration += 1;
+    cancelTimers();
+  }
+
+  function restoreLifecycle(event) {
+    if (!lifecycleFrozen && !event?.persisted) return;
+    lifecycleFrozen = false;
+    lifecycleGeneration += 1;
     applyReleaseCopy();
-    setTimeout(applyReleaseCopy, 260);
+  }
+
+  applyReleaseCopy();
+  scheduleReleaseCopy(520);
+  window.addEventListener("load", () => {
+    if (lifecycleFrozen) return;
+    applyReleaseCopy();
+    scheduleReleaseCopy(260);
   });
   window.addEventListener("nvs-group-recommendations-rendered", applyReleaseCopy);
+  window.addEventListener("pagehide", freezeLifecycle);
+  window.addEventListener("pageshow", restoreLifecycle);
 })();
