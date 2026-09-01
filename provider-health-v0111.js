@@ -41,7 +41,7 @@
   }
 
   function ensurePanel() {
-    if (lifecycleFrozen) return null;
+    if (lifecycleFrozen || document.hidden) return null;
     let panel = document.getElementById("v0111ProviderHealth");
     if (panel) return panel;
     const diagnostics = document.getElementById("v011Diagnostics");
@@ -57,7 +57,7 @@
   }
 
   function render() {
-    if (lifecycleFrozen) return;
+    if (lifecycleFrozen || document.hidden) return;
     const panel = ensurePanel();
     if (!panel) return;
     const provider = providerState();
@@ -106,18 +106,18 @@
   }
 
   async function check() {
-    if (lifecycleFrozen || checking) return;
+    if (lifecycleFrozen || document.hidden || checking) return;
     const generation = ++requestGeneration;
     const base = backendBase();
     if (!base) {
-      if (lifecycleFrozen || generation !== requestGeneration) return;
+      if (lifecycleFrozen || document.hidden || generation !== requestGeneration) return;
       state = { status: "warn", checkedAt: Date.now(), detail: "No backend URL is configured.", health: null };
       render();
       schedule();
       return;
     }
     if (!navigator.onLine) {
-      if (lifecycleFrozen || generation !== requestGeneration) return;
+      if (lifecycleFrozen || document.hidden || generation !== requestGeneration) return;
       state = { ...state, status: "offline", checkedAt: Date.now(), detail: "Offline — cached app features remain available, but backend health cannot be checked." };
       render();
       schedule();
@@ -137,11 +137,11 @@
       });
       if (!response.ok) throw new Error(`HTTP_${response.status}`);
       const health = await response.json();
-      if (lifecycleFrozen || generation !== requestGeneration) return;
+      if (lifecycleFrozen || document.hidden || generation !== requestGeneration) return;
       const result = classify(health);
       state = { ...result, checkedAt: Date.now(), health };
     } catch (error) {
-      if (lifecycleFrozen || generation !== requestGeneration) return;
+      if (lifecycleFrozen || document.hidden || generation !== requestGeneration) return;
       state = {
         status: navigator.onLine ? "error" : "offline",
         checkedAt: Date.now(),
@@ -151,7 +151,7 @@
     } finally {
       clearTimeout(timeout);
       if (activeController === controller) activeController = null;
-      if (lifecycleFrozen || generation !== requestGeneration) return;
+      if (lifecycleFrozen || document.hidden || generation !== requestGeneration) return;
       checking = false;
       render();
       schedule();
@@ -159,7 +159,7 @@
   }
 
   function start() {
-    if (lifecycleFrozen) return;
+    if (lifecycleFrozen || document.hidden) return;
     render();
     void check();
     schedule();
@@ -180,20 +180,20 @@
     if (!event?.persisted) return;
     suspendWork();
     lifecycleFrozen = false;
-    start();
+    if (!document.hidden) start();
   }
 
   ["online", "offline"].forEach((name) => window.addEventListener(name, () => {
-    if (lifecycleFrozen) return;
+    if (lifecycleFrozen || document.hidden) return;
     cancelActiveCheck();
     render();
     void check();
   }));
   window.addEventListener("nvs-routing-provider", () => {
-    if (!lifecycleFrozen) render();
+    if (!lifecycleFrozen && !document.hidden) render();
   });
   window.addEventListener("nvs-group-recommendations-rendered", () => {
-    if (!lifecycleFrozen) render();
+    if (!lifecycleFrozen && !document.hidden) render();
   });
   document.addEventListener("visibilitychange", () => {
     if (lifecycleFrozen) return;
