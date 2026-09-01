@@ -19,6 +19,11 @@
   let pollTask = null;
   let sendGeneration = 0;
   let sendTask = null;
+  let documentFrozen = false;
+
+  function documentOwned() {
+    return !documentFrozen && !document.hidden;
+  }
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -160,7 +165,7 @@
   function pollStillCurrent(task) {
     return pollTask === task
       && task.generation === pollGeneration
-      && !document.hidden
+      && documentOwned()
       && !sending
       && planId() === task.planId;
   }
@@ -168,7 +173,7 @@
   function sendStillCurrent(task) {
     return sendTask === task
       && task.generation === sendGeneration
-      && !document.hidden
+      && documentOwned()
       && pendingRevision == null
       && !sessionExpired()
       && planId() === task.planId
@@ -182,7 +187,9 @@
       reason,
       ...(extra && typeof extra === "object" ? extra : {}),
     });
-    try { window.dispatchEvent(new CustomEvent("nvs-shared-checkin-outcome", { detail: outcome })); } catch {}
+    if (documentOwned()) {
+      try { window.dispatchEvent(new CustomEvent("nvs-shared-checkin-outcome", { detail: outcome })); } catch {}
+    }
     return outcome;
   }
 
@@ -199,6 +206,7 @@
     const url = apiUrl();
     const focus = focusIndex();
     const key = capabilityKey();
+    if (!documentOwned()) return checkinOutcome("blocked", "suspended");
     if (!url || focus < 0 || !key) return checkinOutcome("blocked", "unavailable");
     if (sending) return checkinOutcome("blocked", "busy");
     if (pendingRevision != null) return checkinOutcome("rejected", "plan_updated", { revision: pendingRevision });
@@ -259,6 +267,9 @@
       window.dispatchEvent(new CustomEvent("nvs-shared-live-change", { detail: liveState }));
       return checkinOutcome("sent", "confirmed", { httpStatus: response.status, updatedAt: Number(next?.updatedAt) || null });
     } catch (error) {
+      if (!sendStillCurrent(task)) {
+        return checkinOutcome("aborted", error?.name === "AbortError" ? "cancelled" : "superseded");
+      }
       if (error?.name === "AbortError") return checkinOutcome("aborted", "cancelled");
       console.warn("Shared check-in failed", error);
       const note = document.getElementById("v010CheckinNote");
@@ -277,7 +288,7 @@
   function poll() {
     const currentPlanId = planId();
     const url = apiUrl();
-    if (!url || !currentPlanId || document.hidden || sending) return Promise.resolve();
+    if (!url || !currentPlanId || !documentOwned() || sending) return Promise.resolve();
     if (pollTask) return pollTask.promise;
 
     const generation = ++pollGeneration;
@@ -309,7 +320,7 @@
 
   function schedulePoll(delay = POLL_MS) {
     clearTimeout(timer);
-    if (document.hidden || !planId()) return;
+    if (!documentOwned() || !planId()) return;
     timer = setTimeout(async () => {
       await poll();
       schedulePoll();
@@ -378,6 +389,7 @@
   }
 
   function render() {
+    if (!documentOwned()) return;
     const panel = ensurePanel();
     if (!panel) return;
     const plan = sharedPlan();
@@ -453,7 +465,7 @@
   }
 
   function start() {
-    if (!planId() || !sharedPlan()) return;
+    if (!planId() || !sharedPlan() || !documentOwned()) return;
     sanitizeCapabilityUrl();
     ensurePanel();
     invalidatePoll();
@@ -471,12 +483,14 @@
     render();
   });
   window.addEventListener("pageshow", () => {
+    documentFrozen = false;
     invalidatePoll();
     void poll();
     schedulePoll();
     render();
   });
   window.addEventListener("pagehide", () => {
+    documentFrozen = true;
     clearTimeout(timer);
     invalidatePoll();
     invalidateSend();
@@ -485,12 +499,14 @@
     clearTimeout(timer);
     invalidatePoll();
     if (document.hidden) invalidateSend();
-    if (!document.hidden) {
+    if (documentOwned()) {
       void poll();
       schedulePoll();
+      render();
     }
   });
   window.addEventListener("online", () => {
+    if (!documentOwned()) return;
     invalidatePoll();
     void poll();
     schedulePoll();
