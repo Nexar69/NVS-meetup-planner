@@ -60,7 +60,7 @@ const window = {
   dispatchEvent(event) { dispatched.push(event); return true; },
 };
 const document = {
-  hidden: true,
+  hidden: false,
   documentElement: { dataset: {} },
   getElementById(id) {
     if (id === "v010StatusList") return list;
@@ -85,8 +85,8 @@ vm.runInNewContext(source, {
   Boolean,
   Array,
   Object,
-  setTimeout,
-  clearTimeout,
+  setTimeout() { return 1; },
+  clearTimeout() {},
 });
 
 const api = window.NVSSharedLiveFreshness0111;
@@ -166,4 +166,4 @@ assert.match(source, /setAttribute\?\.\("inert", ""\)/,
 assert.doesNotMatch(JSON.stringify(dispatched), /ABCDEF|BCDEFG|\/p\//,
   "scope-change lifecycle events must not leak shared plan IDs or paths");
 
-console.log("shared-live-freshness: stale timestamps and cross-plan same-document state fail closed");
+console.log("shared-live-freshness: stale timestamps and cross-plan same-document state fail closed while visible");
