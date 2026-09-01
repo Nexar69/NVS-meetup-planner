@@ -10,6 +10,10 @@
   let syncTimer = null;
   let syncGeneration = 0;
   let activePlanSync = null;
+  let createGeneration = 0;
+  let activeSecureCreate = null;
+  let rotateGeneration = 0;
+  let activeCapabilityRotation = null;
   let deliveryGeneration = 0;
   let activeDeliverySignature = null;
   let lifecycleFrozen = false;
@@ -160,12 +164,26 @@
     activePlanSync = null;
   }
 
+  function invalidateSecureCreate() {
+    activeSecureCreate?.controller?.abort?.();
+    createGeneration += 1;
+    activeSecureCreate = null;
+  }
+
+  function invalidateCapabilityRotation() {
+    activeCapabilityRotation?.controller?.abort?.();
+    rotateGeneration += 1;
+    activeCapabilityRotation = null;
+    rotating = false;
+  }
+
   function clearSecureCache(reason = "") {
     if (!secureCache) return;
     const id = secureCache.id;
     secureCache = null;
     cancelScheduledSync();
     invalidatePlanSync();
+    invalidateCapabilityRotation();
     renderManagement();
     window.dispatchEvent(new CustomEvent("nvs-share-session-cleared", {
       detail: { id, reason: String(reason || "cleared") },
@@ -288,6 +306,7 @@
   }
 
   async function createSecurePlan(expectedSignature = null) {
+    if (!ownsLifecycle()) return null;
     const plan = payload();
     if (!plan || !config.backendUrl) return null;
     const sig = signature(plan);
@@ -301,66 +320,83 @@
         clearSecureCache("identity-changed");
       } else {
         if (secureCache.signature !== sig) await syncExistingPlan(plan, expectedSignature);
+        if (!ownsLifecycle()) return null;
         if (expectedSignature && currentPlanSignature() !== expectedSignature) return null;
         if (secureCache?.signature === sig && !cacheExpired()) return { ...secureCache, plan };
       }
     }
 
-    const response = await fetch(`${String(config.backendUrl).replace(/\/$/, "")}/api/plans`, {
-      method: "POST",
-      mode: "cors",
-      credentials: "omit",
-      headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
-      body: JSON.stringify({ plan }),
-    });
-    if (!response.ok) throw new Error(`SECURE_SHARE_HTTP_${response.status}`);
-    const data = await response.json();
-    if (!data?.id || !data?.url || !data?.ownerKey || !Array.isArray(data.memberKeys) || data.memberKeys.length < plan.members.length) {
-      throw new Error("SECURE_SHARE_CAPABILITIES_MISSING");
+    const generation = ++createGeneration;
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    activeSecureCreate = { generation, controller };
+    try {
+      if (!ownsLifecycle() || generation !== createGeneration) return null;
+      const response = await fetch(`${String(config.backendUrl).replace(/\/$/, "")}/api/plans`, {
+        method: "POST",
+        mode: "cors",
+        credentials: "omit",
+        headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
+        body: JSON.stringify({ plan }),
+        ...(controller ? { signal: controller.signal } : {}),
+      });
+      if (!ownsLifecycle() || generation !== createGeneration) return null;
+      if (!response.ok) throw new Error(`SECURE_SHARE_HTTP_${response.status}`);
+      const data = await response.json();
+      if (!ownsLifecycle() || generation !== createGeneration) return null;
+      if (!data?.id || !data?.url || !data?.ownerKey || !Array.isArray(data.memberKeys) || data.memberKeys.length < plan.members.length) {
+        throw new Error("SECURE_SHARE_CAPABILITIES_MISSING");
+      }
+      if (expectedSignature && currentPlanSignature() !== expectedSignature) return null;
+      const expiry = Number(data?.expiresAt);
+      invalidatePlanSync();
+      secureCache = {
+        id: data.id,
+        identity,
+        signature: sig,
+        url: data.url,
+        ownerKey: data.ownerKey,
+        memberKeys: data.memberKeys,
+        revision: Number(data.revision) || 1,
+        expiresIn: data.expiresIn || 259200,
+        expiresAt: Number.isFinite(expiry) && expiry > 0 ? expiry : null,
+      };
+      renderManagement();
+      return { ...secureCache, plan };
+    } finally {
+      if (activeSecureCreate?.generation === generation) activeSecureCreate = null;
     }
-    if (expectedSignature && currentPlanSignature() !== expectedSignature) return null;
-    const expiry = Number(data?.expiresAt);
-    invalidatePlanSync();
-    secureCache = {
-      id: data.id,
-      identity,
-      signature: sig,
-      url: data.url,
-      ownerKey: data.ownerKey,
-      memberKeys: data.memberKeys,
-      revision: Number(data.revision) || 1,
-      expiresIn: data.expiresIn || 259200,
-      expiresAt: Number.isFinite(expiry) && expiry > 0 ? expiry : null,
-    };
-    renderManagement();
-    return { ...secureCache, plan };
   }
 
   async function rotateCapabilities(member = null) {
-    if (!secureCache?.id || !secureCache?.ownerKey || !config.backendUrl || rotating) return false;
+    if (!ownsLifecycle() || !secureCache?.id || !secureCache?.ownerKey || !config.backendUrl || rotating) return false;
     if (cacheExpired()) {
       clearSecureCache("expired");
       return false;
     }
     const session = secureCache;
+    const generation = ++rotateGeneration;
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    activeCapabilityRotation = { generation, controller, session };
     rotating = true;
     renderManagement();
     try {
+      if (!ownsLifecycle() || generation !== rotateGeneration || secureCache !== session) return false;
       const response = await fetch(`${String(config.backendUrl).replace(/\/$/, "")}/api/live/${session.id}/capabilities`, {
         method: "POST",
         mode: "cors",
         credentials: "omit",
         headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
         body: JSON.stringify({ key: session.ownerKey, ...(Number.isInteger(member) ? { member } : {}) }),
+        ...(controller ? { signal: controller.signal } : {}),
       });
-      if (secureCache !== session) return false;
+      if (!ownsLifecycle() || generation !== rotateGeneration || secureCache !== session) return false;
       if (response.status === 404) {
         clearSecureCache("missing-or-expired");
         return false;
       }
       if (!response.ok) throw new Error(`CAPABILITY_ROTATE_HTTP_${response.status}`);
       const data = await response.json();
-      if (secureCache !== session) return false;
+      if (!ownsLifecycle() || generation !== rotateGeneration || secureCache !== session) return false;
       if (!Array.isArray(data?.memberKeys) || data.memberKeys.length !== session.memberKeys.length) {
         throw new Error("CAPABILITY_ROTATE_BAD_RESPONSE");
       }
@@ -372,8 +408,11 @@
       }));
       return true;
     } finally {
-      rotating = false;
-      renderManagement();
+      if (activeCapabilityRotation?.generation === generation) {
+        activeCapabilityRotation = null;
+        rotating = false;
+        if (ownsLifecycle()) renderManagement();
+      }
     }
   }
 
@@ -432,6 +471,7 @@
           window.alert("That shared session has expired. Use Share again to create a fresh meetup link.");
         }
       } catch (error) {
+        if (error?.name === "AbortError" || !ownsLifecycle()) return;
         console.warn("Private link reset failed", error);
         window.alert("Could not reset the private link. Check your connection and try again.");
       }
@@ -584,24 +624,38 @@
     invalidatePlanSync();
   }
 
+  function suspendOrganizerControls() {
+    invalidateSecureCreate();
+    invalidateCapabilityRotation();
+  }
+
   window.addEventListener("nvs-group-recommendations-rendered", handlePlannerMutation);
   window.addEventListener("nvs-priority-change", handlePlannerMutation);
   window.addEventListener("nvs-timing-change", handlePlannerMutation);
   window.addEventListener("pagehide", () => {
     lifecycleFrozen = true;
     suspendPlanSync();
+    suspendOrganizerControls();
     invalidateDelivery({ dismissDialog: true });
   });
   window.addEventListener("pageshow", () => {
     lifecycleFrozen = false;
-    if (!document.hidden) scheduleSync();
+    if (!document.hidden) {
+      renderManagement();
+      scheduleSync();
+    }
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       suspendPlanSync();
+      suspendOrganizerControls();
+      invalidateDelivery({ dismissDialog: true });
       return;
     }
-    if (!lifecycleFrozen) scheduleSync();
+    if (!lifecycleFrozen) {
+      renderManagement();
+      scheduleSync();
+    }
   });
 
   window.NVSShare010 = Object.freeze({
