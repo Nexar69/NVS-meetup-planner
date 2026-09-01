@@ -206,7 +206,6 @@
     recommendationsActive = false;
     clearTimeout(timer);
     timer = null;
-    if (document.hidden) return;
     removeCard();
   }
 
