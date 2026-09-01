@@ -65,7 +65,7 @@ const window = {
 };
 
 const document = {
-  hidden: true,
+  hidden: false,
   body: null,
   addEventListener(name, handler) { listeners.set(`document:${name}`, handler); },
   getElementById(id) {
@@ -141,7 +141,6 @@ assert.ok(listeners.has("nvs-recommendations-cleared"), "empty recommendation tr
 assert.ok(listeners.has("pageshow"), "bfcache restores should schedule reconciliation");
 
 const initialTimerCount = timers.length;
-document.hidden = false;
 listeners.get("nvs-shared-live-change")();
 assert.equal(timers.length, initialTimerCount + 1, "a visible shared-live event should schedule exactly one reconciliation");
 assert.equal(timers.at(-1).delay, 60, "reconciliation should settle after the base intelligence render debounce");
@@ -171,8 +170,10 @@ assert.equal(timers.at(-1).delay, 30_000, "settled fresh recommendations should 
 
 const beforeHiddenEvent = timers.length;
 document.hidden = true;
+listeners.get("document:visibilitychange")();
 listeners.get("nvs-live-plan-synced")();
 assert.equal(timers.length, beforeHiddenEvent, "hidden pages should not arm reconciliation work");
+assert.equal(api.sync(now), false, "hidden pages should reject direct voluntary intelligence DOM work");
 
 assert.match(release, /intelligence-voluntary-sync-v0111\.js/, "release loader must include voluntary intelligence synchronization");
 assert.match(serviceWorker, /^const CACHE_NAME = "meet-schwerin-v0\.11\.1-r20";/, "PWA shell should use the current validated cache identity");
@@ -188,6 +189,7 @@ assert.match(source, /const SYNC_MS = 30_000/, "periodic safety reconciliation s
 assert.match(source, /const SETTLE_MS = 60/, "event-driven reconciliation should settle after the base intelligence renderer's short debounce");
 assert.match(source, /cancelScheduledSync/, "new events should replace obsolete pending reconciliations rather than stacking timers");
 assert.match(source, /clearRecommendationSurfaces/, "empty recommendation transitions should have an explicit command-center teardown path");
+assert.match(source, /ownsLifecycle/, "voluntary intelligence should share one visible lifecycle ownership boundary");
 assert.doesNotMatch(source, /MutationObserver/, "voluntary intelligence reconciliation should no longer observe DOM mutations");
 assert.doesNotMatch(source, /observer\.observe/, "the removed DOM observer must not quietly return");
 
