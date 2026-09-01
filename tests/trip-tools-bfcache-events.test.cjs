@@ -18,12 +18,12 @@ assert.match(source, /if \(lifecycleFrozen \|\| generation !== checkinUiGenerati
   'a check-in completion begun before pagehide must lose UI ownership');
 assert.match(source, /addEventListener\("nvs-shared-live-change", \(\) => \{\s*if \(!lifecycleFrozen\) render\(\);\s*\}\)/,
   'late Shared Live events must not repaint Trip Tools during the freeze');
-assert.match(source, /addEventListener\("nvs-shared-session-expired", \(\) => \{\s*invalidateCheckinUi\(\);\s*if \(!lifecycleFrozen\) render\(\);\s*\}\)/,
-  'authoritative expiry must still invalidate unsafe work without mutating frozen UI');
+assert.match(source, /addEventListener\("nvs-shared-session-expired", \(\) => \{\s*invalidateCheckinUi\(\);\s*if \(!lifecycleFrozen\) \{[\s\S]*reconcileCheckinUiMessage\(\);[\s\S]*render\(\);[\s\S]*\}\s*\}\)/,
+  'authoritative expiry must invalidate unsafe work and reconcile transient UI only when owned');
 assert.match(source, /addEventListener\("pagehide", \(\) => \{[\s\S]*lifecycleFrozen = true;[\s\S]*clearTimeout\(timer\);[\s\S]*wakeRequestGeneration \+= 1;/,
   'pagehide should cross check-in, timer, and wake-lock ownership boundaries');
-assert.match(source, /addEventListener\("pageshow", \(\) => \{\s*lifecycleFrozen = false;\s*start\(\);/,
-  'pageshow should reopen lifecycle ownership and reconcile fresh UI state');
+assert.match(source, /addEventListener\("pageshow", \(\) => \{\s*lifecycleFrozen = false;\s*reconcileCheckinUiMessage\(\);\s*start\(\);/,
+  'pageshow should reopen lifecycle ownership, clear stale transient UI, and reconcile fresh state');
 assert.match(source, /if \(lifecycleFrozen\) return;\s*if \(document\.hidden\)/,
   'visibility events must not independently mutate a bfcache-frozen document');
 
