@@ -2,6 +2,7 @@
   const FALLBACK_MS = 1_200;
   let navigating = false;
   let fallbackTimer = null;
+  let lifecycleFrozen = false;
 
   function reloadButtonFrom(target) {
     return target?.closest?.("#v010ReloadPlan") || null;
@@ -32,6 +33,7 @@
   }
 
   function tryAssign(button) {
+    if (lifecycleFrozen) return false;
     try {
       window.location.assign(window.location.href);
       return true;
@@ -42,7 +44,7 @@
   }
 
   function reloadUpdatedPlan(button = document.getElementById("v010ReloadPlan")) {
-    if (navigating) return false;
+    if (lifecycleFrozen || navigating) return false;
     navigating = true;
     setLoading(button, true);
 
@@ -52,7 +54,7 @@
 
     clearFallback();
     fallbackTimer = setTimeout(() => {
-      if (!navigating) return;
+      if (lifecycleFrozen || !navigating) return;
       tryAssign(button);
     }, FALLBACK_MS);
 
@@ -65,14 +67,21 @@
   }
 
   function resetAfterPageShow(event) {
+    lifecycleFrozen = false;
     recoverNavigation();
 
     if (!event?.persisted) return;
     setTimeout(() => {
+      if (lifecycleFrozen) return;
       try { window.NVSSharedLive?.refresh?.(); } catch {}
       try { window.NVSIntelligence?.refresh?.(); } catch {}
       try { window.dispatchEvent(new CustomEvent("nvs-shared-view-resumed")); } catch {}
     }, 0);
+  }
+
+  function freezeForPageHide() {
+    lifecycleFrozen = true;
+    clearFallback();
   }
 
   document.addEventListener("click", (event) => {
@@ -80,15 +89,17 @@
     if (!button) return;
     event.preventDefault?.();
     event.stopImmediatePropagation?.();
+    if (lifecycleFrozen) return;
     reloadUpdatedPlan(button);
   }, true);
 
   window.addEventListener("pageshow", resetAfterPageShow);
-  window.addEventListener("pagehide", clearFallback);
+  window.addEventListener("pagehide", freezeForPageHide);
 
   window.NVSSharedReload0111 = Object.freeze({
     reloadUpdatedPlan,
     resetAfterPageShow,
     isNavigating: () => navigating,
+    isLifecycleFrozen: () => lifecycleFrozen,
   });
 })();
