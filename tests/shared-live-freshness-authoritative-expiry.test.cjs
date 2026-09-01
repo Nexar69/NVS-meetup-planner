@@ -21,7 +21,8 @@ const guidance = {
   removeAttribute(name) { delete this.attributes[name]; },
 };
 const document = {
-  hidden: true,
+  hidden: false,
+  body: {},
   documentElement: { dataset: {} },
   getElementById(id) {
     if (id === "v0111TripGuidance") return guidance;
@@ -103,4 +104,4 @@ assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/i,
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i,
   "freshness hardening must not add hidden or continuous location tracking");
 
-console.log("shared-live-freshness-authoritative-expiry: sticky expiry outranks stale mixed-cache live state");
+console.log("shared-live-freshness-authoritative-expiry: sticky expiry outranks stale mixed-cache live state while visible");
