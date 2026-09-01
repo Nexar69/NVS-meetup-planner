@@ -160,13 +160,19 @@
     }, UPDATE_MS);
   }
 
+  function cancelQueuedRender() {
+    if (queuedTimer != null) clearTimeout(queuedTimer);
+    queuedTimer = null;
+    queued = false;
+  }
+
   function queueRender() {
-    if (lifecycleFrozen || queued || !recommendationsActive) return;
+    if (lifecycleFrozen || document.hidden || queued || !recommendationsActive) return;
     queued = true;
     queuedTimer = setTimeout(() => {
       queued = false;
       queuedTimer = null;
-      if (lifecycleFrozen || !recommendationsActive) return;
+      if (lifecycleFrozen || document.hidden || !recommendationsActive) return;
       render();
       observe();
     }, 0);
@@ -192,9 +198,7 @@
     recommendationsActive = false;
     clearTimeout(timer);
     timer = null;
-    if (queuedTimer != null) clearTimeout(queuedTimer);
-    queuedTimer = null;
-    queued = false;
+    cancelQueuedRender();
     observer?.disconnect?.();
     removeRow();
   }
@@ -209,9 +213,7 @@
     lifecycleFrozen = true;
     clearTimeout(timer);
     timer = null;
-    if (queuedTimer != null) clearTimeout(queuedTimer);
-    queuedTimer = null;
-    queued = false;
+    cancelQueuedRender();
     observer?.disconnect?.();
   }
 
@@ -226,6 +228,7 @@
     if (document.hidden) {
       clearTimeout(timer);
       timer = null;
+      cancelQueuedRender();
       observer?.disconnect?.();
     } else {
       refresh();
