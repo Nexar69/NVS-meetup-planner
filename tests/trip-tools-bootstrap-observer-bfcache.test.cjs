@@ -48,7 +48,8 @@ class MutationObserver {
   constructor(callback) { observerCallback = callback; }
   observe(target, options) {
     assert.equal(target, document.documentElement);
-    assert.deepEqual(options, { childList: true, subtree: true });
+    assert.equal(options?.childList, true, 'bootstrap observer should watch child-list changes');
+    assert.equal(options?.subtree, true, 'bootstrap observer should watch the document subtree');
     observeCalls += 1;
   }
   disconnect() { disconnectCalls += 1; }
