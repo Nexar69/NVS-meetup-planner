@@ -182,8 +182,10 @@ assert.match(sharedLive, /history\.replaceState/, "opened personal links should 
 assert.match(sharedLive, /params\.delete\("k"\)/, "URL sanitization must remove only the private capability parameter");
 assert.match(sharedLive, /sessionStorage\.getItem/, "reloads in the same tab should retain the check-in capability");
 assert.doesNotMatch(sharedLive, /localStorage\.setItem\([^\n]*capability/i, "personal write capabilities should not be persisted in long-lived localStorage");
-assert.match(sharedLive, /function schedulePoll/, "shared-live should use a visibility-aware polling scheduler");
-assert.match(sharedLive, /document\.hidden \|\| !planId\(\)/, "hidden shared pages should not schedule background polling wakeups");
+assert.match(sharedLive, /function documentOwned\(\)[\s\S]*!documentFrozen[\s\S]*!document\.hidden/, "Shared Live should require both bfcache and visibility ownership before DOM or network work");
+assert.match(sharedLive, /function schedulePoll[\s\S]*!documentOwned\(\) \|\| !planId\(\)/, "hidden or bfcache-frozen shared pages should not schedule background polling wakeups");
+assert.match(sharedLive, /addEventListener\("pagehide"[\s\S]*documentFrozen = true/, "pagehide should explicitly freeze Shared Live ownership");
+assert.match(sharedLive, /addEventListener\("pageshow"[\s\S]*documentFrozen = false/, "pageshow should explicitly reacquire Shared Live ownership");
 assert.doesNotMatch(sharedLive, /setInterval\(poll/, "shared-live must not keep a fixed poll interval running while hidden");
 
 const workerEntry = read("worker/src/entry.js");
@@ -204,4 +206,4 @@ assert.match(vmv, /plannedPlatformFrom/, "VMV adapter must preserve planned plat
 assert.match(vmv, /cancelled/, "VMV adapter must preserve cancellation state");
 assert.match(vmv, /remarks/, "VMV adapter must preserve disruption remarks");
 
-console.log("release-smoke: v0.11.1 wiring, r20 reconciled app shell, voluntary-status-aware guidance/command sync and no-op plan revision protection look consistent");
+console.log("release-smoke: v0.11.1 wiring, lifecycle, privacy and Worker contracts passed");
