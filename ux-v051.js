@@ -16,6 +16,10 @@
   const controllerState = new Map();
   let destinationDialog = null;
   let destinationChip = null;
+  let destinationFocusTimer = null;
+  let resultsObserver = null;
+  let lifecycleFrozen = false;
+  let lifecycleGeneration = 0;
 
   const PRESET_KINDS = Object.freeze({
     "Lankow-Siedlung": { kind: "tram", icon: "🚋", label: "Tram stop" },
@@ -25,6 +29,16 @@
     Hauptbahnhof: { kind: "rail", icon: "🚆", label: "Station" },
     "Schlosspark-Center": { kind: "place", icon: "📍", label: "Place" },
   });
+
+  function createLifecycleAbortError() {
+    const error = new Error("Document lifecycle suspended");
+    error.name = "AbortError";
+    return error;
+  }
+
+  function ensureLifecycleActive(generation = lifecycleGeneration) {
+    if (lifecycleFrozen || generation !== lifecycleGeneration) throw createLifecycleAbortError();
+  }
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -208,6 +222,8 @@
   }
 
   async function photonSearch(query, requestState = null) {
+    ensureLifecycleActive();
+    const lifecycle = lifecycleGeneration;
     const clean = normalizeText(query);
     requestState?.photonController?.abort();
     if (requestState) requestState.photonController = null;
@@ -235,8 +251,10 @@
         signal: controller.signal,
       });
 
+      ensureLifecycleActive(lifecycle);
       if (!response.ok) throw new Error(`PHOTON_${response.status}`);
       const data = await response.json();
+      ensureLifecycleActive(lifecycle);
       const items = (Array.isArray(data?.features) ? data.features : [])
         .map((feature, index) => normalizeFeature(feature, index))
         .filter(Boolean);
@@ -250,11 +268,13 @@
   }
 
   async function searchPlaces(query, requestState = null) {
+    ensureLifecycleActive();
     const local = localMatches(query);
     if (query.trim().length < 2) return local;
 
     try {
       const remote = await photonSearch(query, requestState);
+      ensureLifecycleActive();
       return dedupePlaces([...local, ...remote]).slice(0, 10);
     } catch (error) {
       if (error?.name === "AbortError") throw error;
@@ -264,6 +284,7 @@
   }
 
   function renderPlaceButtons(container, items, onSelect) {
+    if (lifecycleFrozen) return;
     container.innerHTML = "";
 
     if (!items.length) {
@@ -283,13 +304,15 @@
         </span>
         <span class="v051-place-kind" data-kind="${escapeHtml(item.kind)}">${escapeHtml(item.icon)} ${escapeHtml(item.kindLabel)}</span>
       `;
-      button.addEventListener("click", () => onSelect(item));
+      button.addEventListener("click", () => {
+        if (!lifecycleFrozen) onSelect(item);
+      });
       container.appendChild(button);
     });
   }
 
   function registerAndSelect(select, item) {
-    if (!select) return null;
+    if (lifecycleFrozen || !select) return null;
 
     let key = item.key;
     let normalized = null;
@@ -334,7 +357,7 @@
   }
 
   function updateKindChip(select, chip) {
-    if (!chip || !select) return;
+    if (lifecycleFrozen || !chip || !select) return;
     const info = selectedClassification(select);
     chip.dataset.kind = info.kind;
     chip.textContent = `${info.icon} ${info.kindLabel}`;
@@ -349,6 +372,7 @@
   }
 
   function closeAllOriginResults(except = null) {
+    if (lifecycleFrozen) return;
     controllerState.forEach((state) => {
       if (state !== except) {
         cancelOriginSearch(state);
@@ -359,9 +383,11 @@
   }
 
   async function runOriginSearch(state, value) {
+    if (lifecycleFrozen) return;
     const query = value.trim();
     cancelOriginSearch(state);
     const generation = state.generation;
+    const lifecycle = lifecycleGeneration;
 
     if (!query) {
       state.results.innerHTML = `<div class="v051-search-state">Type a stop, street or place.</div>`;
@@ -376,15 +402,18 @@
 
     state.timer = setTimeout(async () => {
       state.timer = null;
+      if (lifecycleFrozen || lifecycle !== lifecycleGeneration) return;
       try {
         const found = await searchPlaces(query, state);
         if (
+          lifecycleFrozen ||
+          lifecycle !== lifecycleGeneration ||
           state.generation !== generation ||
           !state.results.classList.contains("open") ||
           state.input.value.trim() !== value.trim()
         ) return;
         renderPlaceButtons(state.results, found, (item) => {
-          if (state.generation !== generation) return;
+          if (lifecycleFrozen || lifecycle !== lifecycleGeneration || state.generation !== generation) return;
           registerAndSelect(state.select, item);
           state.input.value = item.label;
           updateKindChip(state.select, state.chip);
@@ -395,7 +424,12 @@
         });
       } catch (error) {
         if (error?.name === "AbortError") return;
-        if (state.generation !== generation || !state.results.classList.contains("open")) return;
+        if (
+          lifecycleFrozen ||
+          lifecycle !== lifecycleGeneration ||
+          state.generation !== generation ||
+          !state.results.classList.contains("open")
+        ) return;
         state.results.innerHTML = `<div class="v051-search-state">Search is unavailable right now.</div>`;
       }
     }, SEARCH_DEBOUNCE_MS);
@@ -432,28 +466,34 @@
       timer: null,
       photonController: null,
       generation: 0,
+      syncFromSelect: null,
     };
     controllerState.set(select.id, state);
 
     const syncFromSelect = () => {
+      if (lifecycleFrozen) return;
       const key = select.value;
       const location = window.NVSTransit?.LOCATIONS?.[key];
       state.input.value = location?.label || select.selectedOptions?.[0]?.textContent || key || "";
       updateKindChip(select, state.chip);
     };
+    state.syncFromSelect = syncFromSelect;
 
     state.input.addEventListener("focus", () => {
+      if (lifecycleFrozen) return;
       closeAllOriginResults(state);
       state.input.select();
       runOriginSearch(state, state.input.value);
     });
 
     state.input.addEventListener("input", () => {
+      if (lifecycleFrozen) return;
       closeAllOriginResults(state);
       runOriginSearch(state, state.input.value);
     });
 
     state.input.addEventListener("keydown", (event) => {
+      if (lifecycleFrozen) return;
       if (event.key === "Escape") {
         cancelOriginSearch(state);
         state.results.classList.remove("open");
@@ -463,13 +503,14 @@
     });
 
     control.addEventListener("focusout", (event) => {
-      if (control.contains(event.relatedTarget)) return;
+      if (lifecycleFrozen || control.contains(event.relatedTarget)) return;
       cancelOriginSearch(state);
       state.results.classList.remove("open");
       state.input.setAttribute("aria-expanded", "false");
     });
 
     state.clear.addEventListener("click", () => {
+      if (lifecycleFrozen) return;
       state.input.value = "";
       state.input.focus();
       runOriginSearch(state, "");
@@ -481,6 +522,11 @@
     field.querySelector(".location-tools")?.querySelectorAll(".location-tool-button").forEach((button) => {
       if (/search place/i.test(button.textContent || "")) button.hidden = true;
     });
+  }
+
+  function cancelDestinationFocus() {
+    clearTimeout(destinationFocusTimer);
+    destinationFocusTimer = null;
   }
 
   function buildDestinationDialog() {
@@ -516,8 +562,10 @@
     };
 
     const perform = (query) => {
+      if (lifecycleFrozen) return;
       cancelSearch();
       const generation = searchState.generation;
+      const lifecycle = lifecycleGeneration;
       const clean = query.trim();
       if (!clean) {
         list.innerHTML = `<div class="v051-search-state">Type a stop, street, address or place.</div>`;
@@ -527,15 +575,23 @@
       list.innerHTML = `<div class="v051-search-state">Searching…</div>`;
       timer = setTimeout(async () => {
         timer = null;
+        if (lifecycleFrozen || lifecycle !== lifecycleGeneration) return;
         try {
           const found = await searchPlaces(clean, searchState);
           if (
+            lifecycleFrozen ||
+            lifecycle !== lifecycleGeneration ||
             searchState.generation !== generation ||
             !dialog.open ||
             input.value.trim() !== query.trim()
           ) return;
           renderPlaceButtons(list, found, (item) => {
-            if (searchState.generation !== generation || !dialog.open) return;
+            if (
+              lifecycleFrozen ||
+              lifecycle !== lifecycleGeneration ||
+              searchState.generation !== generation ||
+              !dialog.open
+            ) return;
             registerAndSelect(selects.destination, item);
             updateDestinationChip();
             dialog.close();
@@ -543,25 +599,45 @@
           });
         } catch (error) {
           if (error?.name === "AbortError") return;
-          if (searchState.generation !== generation || !dialog.open) return;
+          if (
+            lifecycleFrozen ||
+            lifecycle !== lifecycleGeneration ||
+            searchState.generation !== generation ||
+            !dialog.open
+          ) return;
           list.innerHTML = `<div class="v051-search-state">Search is unavailable right now.</div>`;
         }
       }, SEARCH_DEBOUNCE_MS);
     };
 
-    input.addEventListener("input", () => perform(input.value));
-    dialog.querySelector(".v051-dialog-close").addEventListener("click", () => dialog.close());
-    dialog.addEventListener("click", (event) => {
-      if (event.target === dialog) dialog.close();
+    input.addEventListener("input", () => {
+      if (!lifecycleFrozen) perform(input.value);
     });
-    dialog.addEventListener("close", cancelSearch);
-
-    dialog.openSearch = () => {
+    dialog.querySelector(".v051-dialog-close").addEventListener("click", () => {
+      if (!lifecycleFrozen) dialog.close();
+    });
+    dialog.addEventListener("click", (event) => {
+      if (!lifecycleFrozen && event.target === dialog) dialog.close();
+    });
+    dialog.addEventListener("close", () => {
+      cancelDestinationFocus();
       cancelSearch();
+    });
+
+    dialog.cancelSearch = cancelSearch;
+    dialog.openSearch = () => {
+      if (lifecycleFrozen) return;
+      cancelSearch();
+      cancelDestinationFocus();
       input.value = "";
       list.innerHTML = `<div class="v051-search-state">Type a stop, street, address or place.</div>`;
       dialog.showModal();
-      setTimeout(() => input.focus(), 40);
+      const lifecycle = lifecycleGeneration;
+      destinationFocusTimer = setTimeout(() => {
+        destinationFocusTimer = null;
+        if (lifecycleFrozen || lifecycle !== lifecycleGeneration || !dialog.open) return;
+        input.focus();
+      }, 40);
     };
 
     return dialog;
@@ -585,7 +661,9 @@
     button.type = "button";
     button.className = "location-tool-button v051-destination-search-button";
     button.innerHTML = `<span aria-hidden="true">⌕</span><span>Search stop / place</span>`;
-    button.addEventListener("click", () => destinationDialog?.openSearch?.());
+    button.addEventListener("click", () => {
+      if (!lifecycleFrozen) destinationDialog?.openSearch?.();
+    });
     tools.prepend(button);
 
     destinationChip = document.createElement("span");
@@ -596,7 +674,7 @@
   }
 
   function decorateViewingState() {
-    if (!results) return;
+    if (lifecycleFrozen || !results) return;
 
     [...results.querySelectorAll(":scope > .result[data-map-pair]")].forEach((card) => {
       const selected = card.classList.contains("map-selected");
@@ -617,7 +695,7 @@
   }
 
   function clearFocusMode() {
-    if (!results) return;
+    if (lifecycleFrozen || !results) return;
     results.classList.remove("v051-focus-mode");
     [...results.querySelectorAll(":scope > .result")].forEach((card) => {
       card.classList.remove("v051-focused", "v051-compact", "v051-compact-left", "v051-compact-right");
@@ -625,7 +703,7 @@
   }
 
   function focusCard(card) {
-    if (!results || !card) return;
+    if (lifecycleFrozen || !results || !card) return;
     const cards = [...results.querySelectorAll(":scope > .result")].filter(
       (item) => !item.classList.contains("unavailable-result"),
     );
@@ -650,7 +728,7 @@
   }
 
   function bindJourneyFocus() {
-    if (!results) return;
+    if (lifecycleFrozen || !results) return;
 
     [...results.querySelectorAll(":scope > .result")].forEach((card) => {
       const details = card.querySelector(".journey-details");
@@ -658,6 +736,7 @@
       details.dataset.v051FocusBound = "true";
 
       details.addEventListener("toggle", () => {
+        if (lifecycleFrozen) return;
         if (details.open) focusCard(card);
         else if (card.classList.contains("v051-focused")) clearFocusMode();
       });
@@ -666,6 +745,7 @@
 
   function installCompactCardSwitching() {
     results?.addEventListener("click", (event) => {
+      if (lifecycleFrozen) return;
       const card = event.target.closest(".result.v051-compact");
       if (!card) return;
       const details = card.querySelector(".journey-details");
@@ -674,14 +754,63 @@
   }
 
   function updateVersionCopy() {
+    if (lifecycleFrozen) return;
     const version = document.getElementById("versionLabel");
     if (version) version.textContent = "v0.5.1 · Stop-aware search + focused journey view";
   }
 
   function installGlobalClose() {
     document.addEventListener("pointerdown", (event) => {
+      if (lifecycleFrozen) return;
       if (!event.target.closest(".v051-origin-control")) closeAllOriginResults();
     });
+  }
+
+  function connectResultsObserver() {
+    if (!results || lifecycleFrozen || resultsObserver) return;
+    resultsObserver = new MutationObserver(() => {
+      if (lifecycleFrozen) return;
+      bindJourneyFocus();
+      decorateViewingState();
+    });
+    resultsObserver.observe(results, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "open"],
+    });
+  }
+
+  function disconnectResultsObserver() {
+    resultsObserver?.disconnect();
+    resultsObserver = null;
+  }
+
+  function freezeLifecycle() {
+    if (lifecycleFrozen) return;
+    lifecycleFrozen = true;
+    lifecycleGeneration += 1;
+    controllerState.forEach((state) => cancelOriginSearch(state));
+    destinationDialog?.cancelSearch?.();
+    cancelDestinationFocus();
+    disconnectResultsObserver();
+    if (destinationDialog?.open) destinationDialog.close();
+  }
+
+  function restoreLifecycle(event) {
+    if (!lifecycleFrozen && !event.persisted) return;
+    lifecycleFrozen = false;
+    lifecycleGeneration += 1;
+    controllerState.forEach((state) => {
+      cancelOriginSearch(state);
+      state.results.classList.remove("open");
+      state.input.setAttribute("aria-expanded", "false");
+      state.syncFromSelect?.();
+    });
+    updateDestinationChip();
+    connectResultsObserver();
+    bindJourneyFocus();
+    decorateViewingState();
   }
 
   buildOriginSearch(selects.personA, "your starting point");
@@ -691,21 +820,12 @@
   installCompactCardSwitching();
   installGlobalClose();
   updateVersionCopy();
-
-  if (results) {
-    new MutationObserver(() => {
-      bindJourneyFocus();
-      decorateViewingState();
-    }).observe(results, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["class", "open"],
-    });
-  }
-
+  connectResultsObserver();
   bindJourneyFocus();
   decorateViewingState();
+
+  window.addEventListener("pagehide", freezeLifecycle);
+  window.addEventListener("pageshow", restoreLifecycle);
 
   window.NVSUX051 = Object.freeze({
     classifyFeature,
