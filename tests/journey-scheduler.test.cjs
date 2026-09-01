@@ -34,12 +34,19 @@ assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i,
   "journey scheduler lifecycle must not introduce location tracking");
 
 assert.doesNotMatch(personal, /setInterval\(/, "personal itinerary must not keep a fixed interval alive in hidden tabs");
-assert.match(personal, /function scheduleClock\(/, "personal itinerary should use a one-shot clock scheduler");
-assert.match(personal, /if \(document\.hidden\) return;/, "personal itinerary render/scheduler should avoid hidden work");
-assert.match(personal, /document\.addEventListener\("visibilitychange"/, "personal itinerary should suspend and resume with visibility");
-assert.match(personal, /clearTimeout\(clockTimer\)/, "hidden personal views should cancel their clock timer");
-assert.match(personal, /clearTimeout\(refreshTimer\)/, "hidden personal views should cancel pending render work");
-assert.match(personal, /window\.addEventListener\("pageshow", resumePersonalItinerary\)/, "Safari bfcache restores should resume personal itinerary timing");
+assert.match(personal, /function isSuspended\(\)[\s\S]*frozenDocument \|\| document\.hidden/,
+  "personal itinerary should treat visibility and bfcache suspension as separate ownership signals");
+assert.match(personal, /function scheduleClock\([\s\S]*isSuspended\(\) \|\| !isPersonalView\(\)[\s\S]*setTimeout/,
+  "personal itinerary should use a one-shot clock scheduler only while visible, owned and scoped to a personal view");
+assert.match(personal, /function render\(\)[\s\S]*if \(isSuspended\(\) \|\| !isPersonalView\(\)\) return;/,
+  "personal itinerary rendering should avoid hidden, frozen or out-of-scope work");
+assert.match(personal, /document\.addEventListener\("visibilitychange"/, "personal itinerary should suspend and resume transient work with visibility");
+assert.match(personal, /function cancelTimers\(\)[\s\S]*clearTimeout\(clockTimer\)[\s\S]*clearTimeout\(refreshTimer\)/,
+  "personal itinerary suspension should cancel both clock and render timers");
+assert.match(personal, /window\.addEventListener\("pagehide", suspendDocument\)/,
+  "personal itinerary should explicitly revoke ownership on pagehide");
+assert.match(personal, /window\.addEventListener\("pageshow", restoreDocument\)/,
+  "personal itinerary should reconcile current scope after Safari bfcache restoration");
 assert.match(personal, /window\.addEventListener\("nvs-shared-view-resumed", resumePersonalItinerary\)/, "shared-view Safari resume should refresh personal itinerary timing");
 
 console.log("journey-scheduler: authoritative empty-state lifecycle, bfcache ownership, hidden suspension and personal-itinerary timers passed");
