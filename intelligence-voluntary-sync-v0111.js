@@ -225,10 +225,14 @@
     if (document.hidden) {
       clearPeriodicSync();
       cancelScheduledSync();
-    } else {
-      schedule();
-      arm();
+      return;
     }
+    if (!recommendationsActive) {
+      hideRecommendationSurfaces();
+      return;
+    }
+    schedule();
+    arm();
   });
 
   loadCheckinQueueAssets();
