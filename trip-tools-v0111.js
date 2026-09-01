@@ -17,6 +17,7 @@
   let lastRouteUpdate = 0;
   let timer = null;
   let lifecycleFrozen = false;
+  let bootstrapObserverConnected = false;
 
   function tripDialog() {
     return document.getElementById("v011TripDialog");
@@ -246,7 +247,6 @@
     clearTimeout(timer);
     timer = null;
     if (lifecycleFrozen || document.hidden) return;
-    if (document.hidden) return;
     if (!recommendationsActive) return;
     timer = setTimeout(() => {
       if (lifecycleFrozen) return;
@@ -273,6 +273,26 @@
     attachDialogLifecycle();
     render();
     scheduleRender();
+  }
+
+  const observer = new MutationObserver(() => {
+    if (lifecycleFrozen) return;
+    if (tripDialog()) {
+      disconnectBootstrapObserver();
+      start();
+    }
+  });
+
+  function disconnectBootstrapObserver() {
+    if (!bootstrapObserverConnected) return;
+    observer.disconnect();
+    bootstrapObserverConnected = false;
+  }
+
+  function connectBootstrapObserver() {
+    if (lifecycleFrozen || bootstrapObserverConnected || tripDialog()) return;
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    bootstrapObserverConnected = true;
   }
 
   window.addEventListener("nvs-group-recommendations-rendered", () => {
@@ -312,6 +332,7 @@
   });
   window.addEventListener("pagehide", () => {
     lifecycleFrozen = true;
+    disconnectBootstrapObserver();
     invalidateCheckinUi();
     clearTimeout(timer);
     timer = null;
@@ -322,6 +343,7 @@
     lifecycleFrozen = false;
     reconcileCheckinUiMessage();
     start();
+    connectBootstrapObserver();
     if (wakeWanted && tripDialog()?.open && !document.hidden) acquireWakeLock();
   });
   document.addEventListener("visibilitychange", () => {
@@ -339,13 +361,7 @@
     scheduleRender();
   });
 
-  const observer = new MutationObserver(() => {
-    if (tripDialog()) {
-      start();
-      observer.disconnect();
-    }
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  connectBootstrapObserver();
 
   window.NVSTripTools0111 = Object.freeze({
     refresh: render,
