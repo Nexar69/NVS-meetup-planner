@@ -3,6 +3,7 @@
   let timer = null;
   let lastAnnouncement = "";
   let mutationRefreshQueued = false;
+  let mutationRefreshTimer = null;
   let observer = null;
   let lifecycleFrozen = false;
 
@@ -201,17 +202,25 @@
   }
   function schedule(delay = UPDATE_MS) { clearTimeout(timer); if (lifecycleFrozen || document.hidden || !isPersonalSharedView()) return; timer = setTimeout(() => { if (lifecycleFrozen) return; renderGuidance(); schedule(); }, delay); }
   function refresh() { if (lifecycleFrozen) return; renderGuidance(); observeGuidanceSurfaces(); schedule(); }
+  function cancelMutationRefresh() {
+    if (mutationRefreshTimer != null) clearTimeout(mutationRefreshTimer);
+    mutationRefreshTimer = null;
+    mutationRefreshQueued = false;
+  }
   function queueMutationRefresh() {
-    if (lifecycleFrozen || mutationRefreshQueued) return; mutationRefreshQueued = true;
-    setTimeout(() => {
+    if (lifecycleFrozen || mutationRefreshQueued) return;
+    mutationRefreshQueued = true;
+    mutationRefreshTimer = setTimeout(() => {
+      mutationRefreshTimer = null;
       mutationRefreshQueued = false;
-      if (lifecycleFrozen) return;
+      if (lifecycleFrozen || document.hidden) return;
       if (document.getElementById("personalSharedPlan") || document.getElementById("sharedLiveV010") || document.getElementById("v0111TripGuidance")) renderGuidance();
       observeGuidanceSurfaces();
     }, 0);
   }
   function stopObserving() { observer?.disconnect?.(); }
   function clearRecommendationGuidance() {
+    cancelMutationRefresh();
     if (lifecycleFrozen) return;
     clearTimeout(timer);
     stopObserving();
@@ -231,6 +240,7 @@
   function freezeLifecycle() {
     lifecycleFrozen = true;
     clearTimeout(timer);
+    cancelMutationRefresh();
     stopObserving();
   }
   function resumeLifecycle() {
@@ -239,7 +249,7 @@
   }
   document.addEventListener("visibilitychange", () => {
     if (lifecycleFrozen) return;
-    if (document.hidden) { clearTimeout(timer); stopObserving(); }
+    if (document.hidden) { clearTimeout(timer); cancelMutationRefresh(); stopObserving(); }
     else refresh();
   });
   window.addEventListener("pagehide", freezeLifecycle);
