@@ -140,22 +140,24 @@ vm.runInNewContext(source, {
   assert.equal(events.filter((event) => event.type === 'nvs-shared-live-change').length, baselineEvents,
     'a stale post-pagehide completion must not emit a Shared Live change');
 
-  // While frozen, the previously authoritative session expires. Restoring the
-  // page triggers a fresh poll; the organizer revision is accepted, but the
-  // expired session must remain non-writable and marked as a pending plan update.
+  // While frozen, the previously authoritative session expires. A visibility
+  // transition alone must not thaw bfcache ownership; persisted pageshow is the
+  // boundary that reacquires the DOM/network owner and starts one fresh GET.
   now = 3_000;
   document.hidden = false;
   listeners.get('document:visibilitychange')?.();
+  assert.equal(fetchStep, 2,
+    'visibilitychange alone must remain inert after pagehide until pageshow reacquires ownership');
+  listeners.get('window:pageshow')?.({ persisted: true });
 
-  // visibilitychange intentionally starts refresh without returning its promise.
-  // Yield deterministically until the immediate fake response has crossed both
-  // fetch and response.json microtask boundaries.
+  // pageshow intentionally starts refresh without returning its promise. Yield
+  // deterministically until the fake response crosses fetch + json microtasks.
   for (let i = 0; i < 8 && api.getState()?.revision !== 4; i += 1) {
     await Promise.resolve();
   }
 
   assert.equal(fetchStep, 3,
-    'restoration should perform exactly one fresh reconnect request');
+    'restoration should perform exactly one fresh authoritative reconnect request');
   assert.equal(api.getState()?.revision, 4,
     'restoration should accept only the fresh reconnect response');
   assert.equal(api.hasPendingPlanUpdate(), true,
@@ -175,7 +177,7 @@ vm.runInNewContext(source, {
   assert.doesNotMatch(source, /localStorage|indexedDB/i,
     'voluntary Shared Live state must remain non-durable');
 
-  console.log('shared-live-reconnect-expiry-chaos: stale pre-freeze poll suppressed; reconnect revision accepted; expired session remains read-only');
+  console.log('shared-live-reconnect-expiry-chaos: visibility cannot thaw bfcache; stale poll suppressed; pageshow accepts revised expired state');
 })().catch((error) => {
   console.error(error);
   process.exit(1);
