@@ -99,7 +99,7 @@
   }
 
   function render(now = Date.now()) {
-    if (lifecycleFrozen) return;
+    if (lifecycleFrozen || document.hidden) return;
     const sync = document.getElementById("v010Sync");
     if (!sync) return;
     const model = connectionModel(now);
@@ -123,7 +123,7 @@
   }
 
   function markSuccess(now = Date.now()) {
-    if (lifecycleFrozen) return lastSuccessAt;
+    if (lifecycleFrozen || document.hidden) return lastSuccessAt;
     lastSuccessAt = Number(now) || Date.now();
     lastFailureAt = 0;
     lastFailureKind = "";
@@ -136,7 +136,7 @@
     return lastSuccessAt;
   }
   function markFailure(now = Date.now(), kind = "timeout") {
-    if (lifecycleFrozen) return lastFailureAt;
+    if (lifecycleFrozen || document.hidden) return lastFailureAt;
     lastFailureAt = Number(now) || Date.now();
     lastFailureKind = kind === "server" ? "server" : "timeout";
     clearStaleTimer();
@@ -177,26 +177,26 @@
   }
 
   function onLiveChange() {
-    if (lifecycleFrozen) return;
+    if (lifecycleFrozen || document.hidden) return;
     reconcilePlanUpdateBoundary();
     markSuccess(Date.now());
   }
   function onCheckinOutcome(event) {
-    if (lifecycleFrozen || event?.detail?.reason !== "plan_updated") return;
+    if (lifecycleFrozen || document.hidden || event?.detail?.reason !== "plan_updated") return;
     reconcilePlanUpdateBoundary();
     render();
     scheduleStale();
   }
-  function onLiveTimeout() { if (!lifecycleFrozen) markFailure(Date.now(), "timeout"); }
-  function onLiveDegraded() { if (!lifecycleFrozen) markFailure(Date.now(), "server"); }
+  function onLiveTimeout() { if (!lifecycleFrozen && !document.hidden) markFailure(Date.now(), "timeout"); }
+  function onLiveDegraded() { if (!lifecycleFrozen && !document.hidden) markFailure(Date.now(), "server"); }
   function onAuthoritativeExpiry() {
     crossRecoveryBoundary();
-    if (lifecycleFrozen) return;
+    if (lifecycleFrozen || document.hidden) return;
     render();
     scheduleStale();
   }
   function reconcileLifecycle() {
-    if (lifecycleFrozen) return;
+    if (lifecycleFrozen || document.hidden) return;
     reconcilePlanUpdateBoundary();
     render();
     scheduleStale();
@@ -204,7 +204,7 @@
   }
   function onPageShow() {
     lifecycleFrozen = false;
-    reconcileLifecycle();
+    if (!document.hidden) reconcileLifecycle();
   }
 
   window.addEventListener("nvs-shared-live-change", onLiveChange);
