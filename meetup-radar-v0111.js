@@ -160,7 +160,7 @@
   }
 
   function render(now = Date.now()) {
-    if (lifecycleFrozen) return null;
+    if (lifecycleFrozen || document.hidden) return null;
     const { group, liveState, analysis } = currentContext(now);
     const model = radarModel(group, liveState, analysis, now);
     if (!model) {
@@ -183,14 +183,14 @@
     timer = null;
     if (lifecycleFrozen || document.hidden || !recommendationsActive) return;
     timer = setTimeout(() => {
-      if (lifecycleFrozen) return;
+      if (lifecycleFrozen || document.hidden || !recommendationsActive) return;
       render();
       schedule();
     }, delay);
   }
 
   function refresh() {
-    if (lifecycleFrozen) return;
+    if (lifecycleFrozen || document.hidden) return;
     render();
     schedule();
   }
@@ -206,6 +206,7 @@
     recommendationsActive = false;
     clearTimeout(timer);
     timer = null;
+    if (document.hidden) return;
     removeCard();
   }
 
