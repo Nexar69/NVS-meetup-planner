@@ -6,18 +6,27 @@ const timeoutSource = fs.readFileSync(path.resolve(__dirname, "../shared-live-ti
 const connectionSource = fs.readFileSync(path.resolve(__dirname, "../shared-connection-v0111.js"), "utf8");
 
 // The timeout wrapper owns transport health, not UI. Safari may freeze or hide the page while
-// a bounded request is still settling, so any late timeout/degraded signal must terminate
-// at a lifecycle-aware consumer rather than mutating suspended UI directly.
+// a bounded request is still settling, so late timeout/degraded signals must fail closed before
+// they can wake lifecycle-aware consumers or transient UI.
 assert.match(timeoutSource, /nvs-shared-live-timeout/);
 assert.match(timeoutSource, /nvs-shared-live-degraded/);
-assert.doesNotMatch(timeoutSource, /\bdocument\b|innerHTML|textContent|classList|dataset/,
-  "transport timeout layer must remain DOM-free so suspended documents cannot be repainted directly");
+assert.match(timeoutSource, /let lifecycleFrozen = false/);
+assert.match(timeoutSource, /function ownsForegroundLifecycle\(\) \{ return !lifecycleFrozen && !document\.hidden; \}/,
+  "transport notices must require visible, non-bfcache-frozen lifecycle ownership");
+assert.match(timeoutSource, /function shouldAnnounceForRequest\(input\) \{[\s\S]*?if \(!ownsForegroundLifecycle\(\)\) return false/,
+  "late timeout/degraded completions must fail closed before dispatching transient events");
+assert.match(timeoutSource, /addEventListener\?\.\("pagehide", \(\) => \{ lifecycleFrozen = true; \}\)/,
+  "pagehide must close transport-notice ownership before in-flight requests can settle");
+assert.match(timeoutSource, /addEventListener\?\.\("pageshow", \(\) => \{ lifecycleFrozen = false; \}\)/,
+  "pageshow must reopen transport-notice ownership for foreground reconciliation");
+assert.doesNotMatch(timeoutSource, /innerHTML|textContent|classList|dataset/,
+  "transport timeout layer must remain DOM-mutation-free");
 
 assert.match(connectionSource, /let lifecycleFrozen = false/);
 assert.match(connectionSource, /function onLiveTimeout\(\) \{ if \(!lifecycleFrozen && !document\.hidden\) markFailure/,
-  "timeout events must be ignored while the shared document is frozen or hidden");
+  "timeout consumers must independently ignore events while frozen or hidden");
 assert.match(connectionSource, /function onLiveDegraded\(\) \{ if \(!lifecycleFrozen && !document\.hidden\) markFailure/,
-  "HTTP-overload/degraded events must be ignored while the shared document is frozen or hidden");
+  "HTTP-overload/degraded consumers must independently ignore events while frozen or hidden");
 assert.match(connectionSource, /addEventListener\("pagehide",[\s\S]*?lifecycleFrozen = true/,
   "pagehide must close Shared Connection UI ownership before late transport completions can arrive");
 assert.match(connectionSource, /function onPageShow\(\) \{[\s\S]*?lifecycleFrozen = false;[\s\S]*?!document\.hidden[\s\S]*?reconcileLifecycle\(\)/,
