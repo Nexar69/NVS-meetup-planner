@@ -15,6 +15,11 @@ assert.match(
 );
 assert.match(
   source,
+  /function foregroundOwned\(\) \{\s*return !lifecycleFrozen && !document\.hidden;\s*\}/s,
+  'Recovery Desk should centralize visible non-frozen foreground ownership',
+);
+assert.match(
+  source,
   /function shouldPoll\(\) \{[\s\S]*recommendationsActive \|\| Boolean\(window\.NVSSharedLive\?\.hasPendingPlanUpdate\?\.\(\)\);[\s\S]*\}/,
   'Recovery Desk should poll only while a route is active or a pending shared-plan update still needs attention',
 );
@@ -25,28 +30,28 @@ assert.match(
 );
 assert.match(
   source,
-  /function schedule\(\) \{[\s\S]*suspendWork\(\);[\s\S]*if \(lifecycleFrozen \|\| document\.hidden \|\| !shouldPoll\(\)\) return;/,
-  'Scheduling must clear older work and stay stopped when the page is frozen, hidden, or recovery context is absent',
+  /function schedule\(\) \{[\s\S]*suspendWork\(\);[\s\S]*if \(!foregroundOwned\(\) \|\| !shouldPoll\(\)\) return;[\s\S]*setTimeout\(\(\) => \{\s*if \(!foregroundOwned\(\)\) return;/s,
+  'Scheduling must clear older work and independently re-check foreground ownership when a queued callback executes',
 );
 assert.match(
   source,
-  /function render\(\) \{\s*if \(lifecycleFrozen\) return;/s,
-  'direct and event-driven Recovery Desk renders must be inert while the document is frozen',
+  /function render\(\) \{\s*if \(!foregroundOwned\(\)\) return;/s,
+  'direct and event-driven Recovery Desk renders must be inert while hidden or frozen',
 );
 assert.match(
   source,
-  /function ensureDesk\(\) \{\s*if \(lifecycleFrozen\) return null;/s,
-  'late lifecycle work must not create Recovery Desk DOM while frozen',
+  /function ensureDesk\(\) \{\s*if \(!foregroundOwned\(\)\) return null;/s,
+  'late lifecycle work must not create Recovery Desk DOM while hidden or frozen',
 );
 assert.match(
   source,
-  /addEventListener\("nvs-recommendations-cleared", \(\) => \{\s*if \(lifecycleFrozen\) return;[\s\S]*recommendationsActive = false;[\s\S]*render\(\);[\s\S]*schedule\(\);/,
-  'an authoritative recommendation clear must be ignored while frozen and disable polling immediately when active',
+  /addEventListener\("nvs-recommendations-cleared", \(\) => \{\s*recommendationsActive = false;[\s\S]*if \(!foregroundOwned\(\)\) \{\s*suspendWork\(\);\s*return;\s*\}[\s\S]*render\(\);[\s\S]*schedule\(\);/s,
+  'an authoritative recommendation clear must update memory while suspended but defer DOM work until foreground ownership returns',
 );
 assert.match(
   source,
-  /addEventListener\("nvs-group-recommendations-rendered", \(\) => \{\s*if \(lifecycleFrozen\) return;[\s\S]*recommendationsActive = Boolean\(window\.__NVS_LAST_RECOMMENDATIONS__\?\.primary\);[\s\S]*schedule\(\);/,
-  'only an active-lifecycle authoritative recommendation render should reactivate route polling',
+  /addEventListener\("nvs-group-recommendations-rendered", \(\) => \{\s*recommendationsActive = Boolean\(window\.__NVS_LAST_RECOMMENDATIONS__\?\.primary\);[\s\S]*if \(!foregroundOwned\(\)\) \{\s*suspendWork\(\);\s*return;\s*\}[\s\S]*schedule\(\);/s,
+  'authoritative recommendation state may update while suspended, but route polling must reactivate only in the foreground',
 );
 assert.match(
   source,
@@ -69,9 +74,9 @@ assert.match(
   'Safari/bfcache resume should continue through the explicit ownership-reopen path',
 );
 assert.doesNotMatch(source, /window\.addEventListener\("pageshow", start\)/, 'ordinary pageshow must not duplicate initial Recovery Desk startup');
-assert.match(source, /visibilitychange[\s\S]*if \(lifecycleFrozen\) return;/, 'visibility changes must not reopen frozen Recovery Desk work');
-assert.match(source, /reloadPendingPlan\(\) \{\s*if \(lifecycleFrozen\) return false;/s, 'reload actions must not execute from a frozen lifecycle');
+assert.match(source, /visibilitychange[\s\S]*if \(lifecycleFrozen\) return;[\s\S]*suspendWork\(\);[\s\S]*if \(!document\.hidden\)/, 'visibility changes must cancel hidden work and only reconcile once visible');
+assert.match(source, /reloadPendingPlan\(\) \{\s*if \(!foregroundOwned\(\)\) return false;/s, 'reload actions must fail closed outside visible foreground ownership');
 assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/i, 'Recovery Desk lifecycle state must remain memory-only');
 assert.doesNotMatch(source, /watchPosition\s*\(/, 'Recovery Desk must not introduce continuous GPS tracking');
 
-console.log('Recovery Desk lifecycle and bfcache ownership regression checks passed.');
+console.log('Recovery Desk lifecycle, hidden-tab and bfcache ownership regression checks passed.');
