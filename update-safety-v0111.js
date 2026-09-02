@@ -84,8 +84,7 @@
       return;
     }
     resetTimer = setTimeout(() => {
-      resetTimer = null;
-      if (!ownsForeground()) return;
+      if (!ownsForeground()) { resetTimer = null; return; }
       restoreBanner();
     }, remaining);
   }
