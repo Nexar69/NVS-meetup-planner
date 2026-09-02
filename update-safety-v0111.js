@@ -6,6 +6,10 @@
   let resetTimer = null;
   let lifecycleFrozen = false;
 
+  function ownsForeground() {
+    return !lifecycleFrozen && !document.hidden;
+  }
+
   function asTime(value) {
     if (value instanceof Date) return value.getTime();
     const numeric = Number(value);
@@ -55,7 +59,7 @@
   }
 
   function restoreBanner() {
-    if (lifecycleFrozen) return;
+    if (!ownsForeground()) return;
     clearTimeout(resetTimer);
     resetTimer = null;
     forceUntil = 0;
@@ -73,18 +77,21 @@
   function armRestoreTimer(now = Date.now()) {
     clearTimeout(resetTimer);
     resetTimer = null;
-    if (lifecycleFrozen) return;
+    if (!ownsForeground()) return;
     const remaining = forceUntil - Number(now);
     if (!forceUntil || !Number.isFinite(remaining) || remaining <= 0) {
       if (forceUntil) restoreBanner();
       return;
     }
-    if (document.hidden) return;
-    resetTimer = setTimeout(restoreBanner, remaining);
+    resetTimer = setTimeout(() => {
+      resetTimer = null;
+      if (!ownsForeground()) return;
+      restoreBanner();
+    }, remaining);
   }
 
   function showDeferredWarning(button, now = Date.now()) {
-    if (lifecycleFrozen) return;
+    if (!ownsForeground()) return;
     const banner = button?.closest?.("#v011UpdateBanner") || document.getElementById("v011UpdateBanner");
     if (!banner) return;
     forceUntil = Number(now) + FORCE_WINDOW_MS;
@@ -98,7 +105,7 @@
   }
 
   function handleUpdateClick(event, now = Date.now()) {
-    if (lifecycleFrozen) return false;
+    if (!ownsForeground()) return false;
     const button = updateButtonFromEvent(event);
     if (!button) return false;
     const stamp = Number(now);
@@ -118,28 +125,31 @@
     return true;
   }
 
-  function handlePageHide() {
-    lifecycleFrozen = true;
+  function suspendLifecycle() {
     clearTimeout(resetTimer);
     resetTimer = null;
   }
 
+  function handlePageHide() {
+    lifecycleFrozen = true;
+    suspendLifecycle();
+  }
+
   function handlePageShow() {
     lifecycleFrozen = false;
-    restoreBanner();
+    if (ownsForeground()) restoreBanner();
   }
 
   document.addEventListener("click", handleUpdateClick, true);
   window.addEventListener("pagehide", handlePageHide);
   window.addEventListener("pageshow", handlePageShow);
   window.addEventListener("nvs-group-recommendations-rendered", () => {
-    if (lifecycleFrozen) return;
+    if (!ownsForeground()) return;
     if (!isJourneyActive()) restoreBanner();
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden || lifecycleFrozen) {
-      clearTimeout(resetTimer);
-      resetTimer = null;
+    if (!ownsForeground()) {
+      suspendLifecycle();
       return;
     }
     armRestoreTimer();
