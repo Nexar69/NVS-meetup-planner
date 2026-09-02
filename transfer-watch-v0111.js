@@ -280,7 +280,7 @@
     recommendationsActive = false;
     clearTimeout(timer);
     timer = null;
-    removeCard();
+    if (!document.hidden) removeCard();
   }
 
   function activateRecommendationState() {
