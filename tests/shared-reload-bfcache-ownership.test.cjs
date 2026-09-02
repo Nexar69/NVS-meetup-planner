@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.resolve(__dirname, '../shared-reload-v0111.js'), 'utf8');
 
 let clickHandler;
+let visibilityHandler;
 let pagehideHandler;
 let pageshowHandler;
 let reloads = 0;
@@ -26,7 +27,11 @@ const button = {
 };
 
 const document = {
-  addEventListener(name, handler) { if (name === 'click') clickHandler = handler; },
+  hidden: false,
+  addEventListener(name, handler) {
+    if (name === 'click') clickHandler = handler;
+    if (name === 'visibilitychange') visibilityHandler = handler;
+  },
   getElementById(id) { return id === 'v010ReloadPlan' ? button : null; },
 };
 const window = {
@@ -67,15 +72,23 @@ vm.runInNewContext(source, {
   clearTimeout(id) { timers.delete(id); },
 });
 
+assert.equal(typeof visibilityHandler, 'function');
 assert.equal(typeof pagehideHandler, 'function');
 assert.equal(typeof pageshowHandler, 'function');
 assert.equal(window.NVSSharedReload0111.isLifecycleFrozen(), false);
 
-pagehideHandler({ persisted: true });
-assert.equal(window.NVSSharedReload0111.isLifecycleFrozen(), true, 'pagehide must freeze reload ownership');
-assert.equal(window.NVSSharedReload0111.reloadUpdatedPlan(button), false, 'direct reload calls must fail closed while frozen');
-assert.equal(reloads, 0);
-assert.equal(assigns, 0);
+assert.equal(window.NVSSharedReload0111.reloadUpdatedPlan(button), true, 'visible explicit reload may start navigation');
+assert.equal(reloads, 1);
+assert.equal(timers.size, 1, 'visible navigation should arm exactly one Safari fallback');
+const hiddenFallback = [...timers.values()][0];
+
+document.hidden = true;
+visibilityHandler();
+assert.equal(timers.size, 0, 'ordinary tab hiding must cancel Safari fallback navigation');
+assert.equal(window.NVSSharedReload0111.isNavigating(), false, 'hidden transition must release the navigation latch without repainting');
+assert.equal(window.NVSSharedReload0111.reloadUpdatedPlan(button), false, 'direct hidden reload calls must fail closed');
+hiddenFallback();
+assert.equal(assigns, 0, 'an already-dequeued fallback callback must re-check visibility before navigating');
 
 let prevented = 0;
 let stopped = 0;
@@ -84,9 +97,31 @@ clickHandler({
   preventDefault() { prevented += 1; },
   stopImmediatePropagation() { stopped += 1; },
 });
+assert.equal(prevented, 1, 'hidden delegated clicks should still be consumed');
+assert.equal(stopped, 1, 'hidden delegated clicks must not fall through to stale per-node handlers');
+assert.equal(reloads, 1, 'hidden clicks must not navigate');
+
+document.hidden = false;
+visibilityHandler();
+assert.equal(button.disabled, false, 'visible restoration should recover a button left busy by a hidden navigation interruption');
+assert.equal(button.attrs['aria-busy'], undefined);
+
+pagehideHandler({ persisted: true });
+assert.equal(window.NVSSharedReload0111.isLifecycleFrozen(), true, 'pagehide must freeze reload ownership');
+assert.equal(window.NVSSharedReload0111.reloadUpdatedPlan(button), false, 'direct reload calls must fail closed while frozen');
+assert.equal(reloads, 1);
+assert.equal(assigns, 0);
+
+prevented = 0;
+stopped = 0;
+clickHandler({
+  target: { closest() { return button; } },
+  preventDefault() { prevented += 1; },
+  stopImmediatePropagation() { stopped += 1; },
+});
 assert.equal(prevented, 1, 'frozen delegated clicks should still be consumed');
 assert.equal(stopped, 1, 'frozen delegated clicks must not fall through to stale per-node handlers');
-assert.equal(reloads, 0, 'frozen clicks must not navigate');
+assert.equal(reloads, 1, 'frozen clicks must not navigate');
 
 pageshowHandler({ persisted: true });
 assert.equal(window.NVSSharedReload0111.isLifecycleFrozen(), false, 'pageshow must reopen lifecycle ownership');
@@ -110,7 +145,7 @@ assert.equal(resumed, 1);
 assert.equal(timers.size, 0, 'resume timer should release ownership after it runs');
 
 assert.equal(window.NVSSharedReload0111.reloadUpdatedPlan(button), true, 'fresh explicit action after restore may navigate');
-assert.equal(reloads, 1);
+assert.equal(reloads, 2);
 assert.equal(timers.size, 1, 'fresh navigation should arm exactly one Safari fallback');
 
 pagehideHandler({ persisted: true });
@@ -120,4 +155,4 @@ assert.equal(assigns, 0, 'cancelled fallback must not navigate while frozen');
 assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/i, 'reload lifecycle ownership must stay memory-only');
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, 'reload lifecycle hardening must not add location access');
 
-console.log('shared-reload-bfcache-ownership: repeated freeze/restore cycles cancel stale resume and navigation work');
+console.log('shared-reload-bfcache-ownership: hidden and frozen transitions cancel stale navigation/reconciliation work');
