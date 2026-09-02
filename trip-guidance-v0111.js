@@ -7,6 +7,7 @@
   let observer = null;
   let lifecycleFrozen = false;
 
+  function ownsForeground() { return !lifecycleFrozen && !document.hidden; }
   function escapeHtml(value) {
     return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
   }
@@ -178,14 +179,14 @@
     return entry;
   }
   function positionSharedLivePanel() {
-    if (!isPersonalSharedView()) return;
+    if (!ownsForeground() || !isPersonalSharedView()) return;
     const personalPlan = document.getElementById("personalSharedPlan"); const sharedPanel = document.getElementById("sharedLiveV010");
     if (!personalPlan || !sharedPanel) return;
     if (personalPlan.nextElementSibling !== sharedPanel) personalPlan.insertAdjacentElement("afterend", sharedPanel);
   }
   function removeGuidance() { const card = document.getElementById("v0111TripGuidance"); if (card) card.remove(); lastAnnouncement = ""; }
   function renderGuidance() {
-    if (lifecycleFrozen) return;
+    if (!ownsForeground()) return;
     if (!isPersonalSharedView()) { removeGuidance(); return; }
     positionSharedLivePanel();
     const personalPlan = document.getElementById("personalSharedPlan"); const current = assignment();
@@ -200,20 +201,35 @@
     const announcement = `${guidance.title}. ${guidance.detail}`; if (announcement === lastAnnouncement && card.childElementCount) return; lastAnnouncement = announcement;
     card.innerHTML = `<span class="v0111-trip-guidance-icon" aria-hidden="true">${escapeHtml(guidance.icon)}</span><div><small>${escapeHtml(guidance.eyebrow)}</small><strong>${escapeHtml(guidance.title)}</strong><p>${escapeHtml(guidance.detail)}</p></div>`;
   }
-  function schedule(delay = UPDATE_MS) { clearTimeout(timer); if (lifecycleFrozen || document.hidden || !isPersonalSharedView()) return; timer = setTimeout(() => { if (lifecycleFrozen) return; renderGuidance(); schedule(); }, delay); }
-  function refresh() { if (lifecycleFrozen) return; renderGuidance(); observeGuidanceSurfaces(); schedule(); }
+  function schedule(delay = UPDATE_MS) {
+    clearTimeout(timer);
+    timer = null;
+    if (!ownsForeground() || !isPersonalSharedView()) return;
+    timer = setTimeout(() => {
+      timer = null;
+      if (!ownsForeground()) return;
+      renderGuidance();
+      schedule();
+    }, delay);
+  }
+  function refresh() {
+    if (!ownsForeground()) return;
+    renderGuidance();
+    observeGuidanceSurfaces();
+    schedule();
+  }
   function cancelMutationRefresh() {
     if (mutationRefreshTimer != null) clearTimeout(mutationRefreshTimer);
     mutationRefreshTimer = null;
     mutationRefreshQueued = false;
   }
   function queueMutationRefresh() {
-    if (lifecycleFrozen || mutationRefreshQueued) return;
+    if (!ownsForeground() || mutationRefreshQueued) return;
     mutationRefreshQueued = true;
     mutationRefreshTimer = setTimeout(() => {
       mutationRefreshTimer = null;
       mutationRefreshQueued = false;
-      if (lifecycleFrozen || document.hidden) return;
+      if (!ownsForeground()) return;
       if (document.getElementById("personalSharedPlan") || document.getElementById("sharedLiveV010") || document.getElementById("v0111TripGuidance")) renderGuidance();
       observeGuidanceSurfaces();
     }, 0);
@@ -221,13 +237,14 @@
   function stopObserving() { observer?.disconnect?.(); }
   function clearRecommendationGuidance() {
     cancelMutationRefresh();
-    if (lifecycleFrozen) return;
     clearTimeout(timer);
+    timer = null;
     stopObserving();
+    if (!ownsForeground()) return;
     removeGuidance();
   }
   function observeGuidanceSurfaces() {
-    if (lifecycleFrozen || document.hidden || !("MutationObserver" in window)) return;
+    if (!ownsForeground() || !("MutationObserver" in window)) return;
     if (!observer) observer = new MutationObserver(queueMutationRefresh);
     observer.disconnect();
     const resultsRoot = document.getElementById("results");
@@ -240,6 +257,7 @@
   function freezeLifecycle() {
     lifecycleFrozen = true;
     clearTimeout(timer);
+    timer = null;
     cancelMutationRefresh();
     stopObserving();
   }
@@ -249,8 +267,12 @@
   }
   document.addEventListener("visibilitychange", () => {
     if (lifecycleFrozen) return;
-    if (document.hidden) { clearTimeout(timer); cancelMutationRefresh(); stopObserving(); }
-    else refresh();
+    if (document.hidden) {
+      clearTimeout(timer);
+      timer = null;
+      cancelMutationRefresh();
+      stopObserving();
+    } else refresh();
   });
   window.addEventListener("pagehide", freezeLifecycle);
   window.addEventListener("pageshow", resumeLifecycle);
