@@ -118,7 +118,8 @@ assert.match(tripTools, /NVSSharedLive\.checkIn/, "Trip Mode should expose volun
 assert.match(tripTools, /wakeLock\.request\("screen"\)/, "Trip Mode should support optional screen wake lock");
 assert.match(tripTools, /No GPS/, "Trip Mode check-ins must keep the no-GPS privacy copy");
 assert.match(tripTools, /function scheduleRender/, "Trip Mode utilities should use a visibility-aware refresh scheduler");
-assert.match(tripTools, /if \(document\.hidden\) return;/, "hidden pages should stop periodic Trip Mode utility refreshes");
+assert.match(tripTools, /function ownsForeground\(\)[\s\S]*!lifecycleFrozen && !document\.hidden/, "hidden pages and bfcache suspension should share one Trip Mode foreground ownership boundary");
+assert.match(tripTools, /timer = setTimeout\(\(\) => \{\s*if \(!ownsForeground\(\)\) return;/, "periodic Trip Mode utility callbacks should re-check foreground ownership at execution time");
 assert.doesNotMatch(tripTools, /setInterval\(render/, "Trip Mode utilities must not keep a fixed render interval alive while hidden");
 
 const recovery = read("recovery-v0111.js");
