@@ -7,6 +7,7 @@ const source = fs.readFileSync(path.resolve(__dirname, "../shared-live-timeout-v
 const calls = [];
 const events = [];
 const listeners = new Map();
+const documentListeners = new Map();
 let reconnectHangCalls = 0;
 let hangSucceeds = false;
 
@@ -35,6 +36,10 @@ const window = {
   dispatchEvent(event) { events.push(event); return true; },
   addEventListener(name, handler) { listeners.set(name, handler); },
 };
+const document = {
+  hidden: false,
+  addEventListener(name, handler) { documentListeners.set(name, handler); },
+};
 
 class FastAbortController extends AbortController {}
 class FastDOMException extends DOMException {}
@@ -57,6 +62,7 @@ function fireTimeoutFor(promise) {
 
 vm.runInNewContext(source, {
   window,
+  document,
   URL,
   Date,
   Math,
@@ -108,6 +114,20 @@ assert.equal(api.getBackoffMs(8), 60_000, "automatic GET backoff must stay bound
   assert.deepEqual({ ...events[0].detail }, { method: "POST", timeoutMs: 8000 });
   assert.doesNotMatch(JSON.stringify(events[0].detail), /ABC234|hang|https?:/i, "timeout signal must not leak plan IDs or URLs");
   assert.equal(api.getConsecutiveGetTimeouts(), 0, "voluntary POST timeouts must never throttle later check-ins");
+
+  document.hidden = true;
+  documentListeners.get("visibilitychange")?.();
+  const hiddenPending = window.fetch(hangUrl, { method: "POST" });
+  await assert.rejects(fireTimeoutFor(hiddenPending), /timed out|TimeoutError/i);
+  assert.equal(events.length, 1, "a request settling while the document is hidden must not emit transient UI signals");
+  document.hidden = false;
+  documentListeners.get("visibilitychange")?.();
+
+  listeners.get("pagehide")?.({ persisted: true });
+  const frozenPending = window.fetch(hangUrl, { method: "POST" });
+  await assert.rejects(fireTimeoutFor(frozenPending), /timed out|TimeoutError/i);
+  assert.equal(events.length, 1, "a request settling during bfcache suspension must not emit transient UI signals");
+  listeners.get("pageshow")?.({ persisted: true });
 
   const external2 = new AbortController();
   const pending2 = window.fetch(hangUrl, { method: "GET", signal: external2.signal });
@@ -176,5 +196,5 @@ assert.equal(api.getBackoffMs(8), 60_000, "automatic GET backoff must stay bound
   assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB|geolocation|watchPosition|getCurrentPosition/,
     "timeout/backoff layer must not add storage or location behavior");
   assert.doesNotMatch(source, /setInterval\s*\(/, "polling backoff must not create another background loop");
-  console.log("shared-live-timeout: bounded GET/POST timeouts, privacy-safe signals, per-session repeated-GET backoff, explicit bypass, reconnect isolation and no-storage/no-GPS boundaries passed");
+  console.log("shared-live-timeout: bounded GET/POST timeouts, hidden/bfcache-safe privacy signals, per-session repeated-GET backoff, explicit bypass, reconnect isolation and no-storage/no-GPS boundaries passed");
 })().catch((error) => { console.error(error); process.exit(1); });
