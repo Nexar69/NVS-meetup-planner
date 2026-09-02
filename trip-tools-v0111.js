@@ -19,12 +19,16 @@
   let lifecycleFrozen = false;
   let bootstrapObserverConnected = false;
 
+  function ownsForeground() {
+    return !lifecycleFrozen && !document.hidden;
+  }
+
   function tripDialog() {
     return document.getElementById("v011TripDialog");
   }
 
   function canCheckIn() {
-    if (lifecycleFrozen) return false;
+    if (!ownsForeground()) return false;
     if (window.NVSSharedExpiry0111?.isAuthoritativelyExpired?.()) return false;
     return Boolean(window.NVSSharedLive?.canCheckIn?.());
   }
@@ -129,13 +133,13 @@
   }
 
   function reconcileCheckinUiMessage() {
-    if (lifecycleFrozen) return;
+    if (!ownsForeground()) return;
     const state = document.getElementById("v0111CheckinState");
     if (state?.textContent === "Updating…") state.textContent = CHECKIN_IDLE_TEXT;
   }
 
   async function sendStatus(status) {
-    if (lifecycleFrozen || !canCheckIn() || sendingStatus || !window.NVSSharedLive?.checkIn) return;
+    if (!ownsForeground() || !canCheckIn() || sendingStatus || !window.NVSSharedLive?.checkIn) return;
     const generation = ++checkinUiGeneration;
     sendingStatus = true;
     render();
@@ -146,7 +150,7 @@
     const beforeAt = Number(window.NVSSharedLive?.getState?.()?.members?.[String(focus)]?.at || 0);
     try {
       const outcome = await window.NVSSharedLive.checkIn(status);
-      if (lifecycleFrozen || generation !== checkinUiGeneration || document.hidden) return;
+      if (!ownsForeground() || generation !== checkinUiGeneration) return;
 
       const hasOutcome = Boolean(outcome && typeof outcome === "object" && typeof outcome.status === "string");
       if (!hasOutcome) {
@@ -162,11 +166,11 @@
       if (state) state.textContent = outcomeMessage(outcome, status);
       if (outcome.status === "sent") window.NVSSharedLive.refresh?.();
     } catch {
-      if (!lifecycleFrozen && generation === checkinUiGeneration && !document.hidden && state) {
+      if (ownsForeground() && generation === checkinUiGeneration && state) {
         state.textContent = "Could not confirm the update. Check the shared status before trying again.";
       }
     } finally {
-      if (!lifecycleFrozen && generation === checkinUiGeneration) {
+      if (ownsForeground() && generation === checkinUiGeneration) {
         sendingStatus = false;
         render();
       }
@@ -174,11 +178,11 @@
   }
 
   async function acquireWakeLock() {
-    if (lifecycleFrozen || !wakeWanted || document.hidden || !tripDialog()?.open || !navigator.wakeLock?.request || wakeLock) return;
+    if (!ownsForeground() || !wakeWanted || !tripDialog()?.open || !navigator.wakeLock?.request || wakeLock) return;
     const generation = ++wakeRequestGeneration;
     try {
       const lock = await navigator.wakeLock.request("screen");
-      if (lifecycleFrozen || generation !== wakeRequestGeneration || !wakeWanted || document.hidden || !tripDialog()?.open) {
+      if (!ownsForeground() || generation !== wakeRequestGeneration || !wakeWanted || !tripDialog()?.open) {
         try { await lock?.release?.(); } catch {}
         return;
       }
@@ -188,7 +192,7 @@
         render();
       }, { once: true });
     } catch {
-      if (!lifecycleFrozen && generation === wakeRequestGeneration) wakeLock = null;
+      if (ownsForeground() && generation === wakeRequestGeneration) wakeLock = null;
     }
     render();
   }
@@ -202,7 +206,7 @@
   }
 
   async function setWakeWanted(next) {
-    if (lifecycleFrozen) return;
+    if (!ownsForeground()) return;
     wakeWanted = Boolean(next);
     if (wakeWanted) await acquireWakeLock();
     else await releaseWakeLock();
@@ -210,7 +214,7 @@
   }
 
   function render() {
-    if (lifecycleFrozen) return;
+    if (!ownsForeground()) return;
     const tools = ensureTools();
     if (!tools) return;
 
@@ -246,11 +250,9 @@
   function scheduleRender() {
     clearTimeout(timer);
     timer = null;
-    if (lifecycleFrozen || document.hidden) return;
-    if (document.hidden) return;
-    if (!recommendationsActive) return;
+    if (!ownsForeground() || !recommendationsActive) return;
     timer = setTimeout(() => {
-      if (lifecycleFrozen) return;
+      if (!ownsForeground()) return;
       render();
       scheduleRender();
     }, 15_000);
@@ -269,7 +271,7 @@
   }
 
   function start() {
-    if (lifecycleFrozen) return;
+    if (!ownsForeground()) return;
     ensureTools();
     attachDialogLifecycle();
     render();
@@ -277,7 +279,7 @@
   }
 
   const observer = new MutationObserver(() => {
-    if (lifecycleFrozen) return;
+    if (!ownsForeground()) return;
     if (tripDialog()) {
       disconnectBootstrapObserver();
       start();
@@ -291,7 +293,7 @@
   }
 
   function connectBootstrapObserver() {
-    if (lifecycleFrozen || bootstrapObserverConnected || tripDialog()) return;
+    if (!ownsForeground() || bootstrapObserverConnected || tripDialog()) return;
     observer.observe(document.documentElement, { childList: true, subtree: true });
     bootstrapObserverConnected = true;
   }
@@ -299,7 +301,7 @@
   window.addEventListener("nvs-group-recommendations-rendered", () => {
     recommendationsActive = true;
     lastRouteUpdate = Date.now();
-    if (lifecycleFrozen) return;
+    if (!ownsForeground()) return;
     render();
     scheduleRender();
   });
@@ -311,25 +313,25 @@
     wakeWanted = false;
     lastRouteUpdate = 0;
     releaseWakeLock();
-    if (lifecycleFrozen) return;
+    if (!ownsForeground()) return;
     reconcileCheckinUiMessage();
     render();
   });
   window.addEventListener("nvs-shared-live-change", () => {
-    if (!lifecycleFrozen) render();
+    if (ownsForeground()) render();
   });
   window.addEventListener("nvs-shared-session-expired", () => {
     invalidateCheckinUi();
-    if (!lifecycleFrozen) {
+    if (ownsForeground()) {
       reconcileCheckinUiMessage();
       render();
     }
   });
   window.addEventListener("online", () => {
-    if (!lifecycleFrozen) render();
+    if (ownsForeground()) render();
   });
   window.addEventListener("offline", () => {
-    if (!lifecycleFrozen) render();
+    if (ownsForeground()) render();
   });
   window.addEventListener("pagehide", () => {
     lifecycleFrozen = true;
@@ -345,18 +347,22 @@
     reconcileCheckinUiMessage();
     start();
     connectBootstrapObserver();
-    if (wakeWanted && tripDialog()?.open && !document.hidden) acquireWakeLock();
+    if (wakeWanted && tripDialog()?.open && ownsForeground()) acquireWakeLock();
   });
   document.addEventListener("visibilitychange", () => {
     clearTimeout(timer);
     timer = null;
     if (lifecycleFrozen) return;
     if (document.hidden) {
+      disconnectBootstrapObserver();
       invalidateCheckinUi();
+      wakeRequestGeneration += 1;
       releaseWakeLock();
       return;
     }
     reconcileCheckinUiMessage();
+    start();
+    connectBootstrapObserver();
     if (wakeWanted && tripDialog()?.open) acquireWakeLock();
     render();
     scheduleRender();
