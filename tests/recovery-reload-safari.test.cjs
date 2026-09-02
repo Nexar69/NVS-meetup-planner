@@ -42,7 +42,7 @@ const desk = {
 };
 
 const document = {
-  hidden: true,
+  hidden: false,
   getElementById(id) {
     if (id === "v0111RecoveryDesk") return desk;
     if (id === "v0111RecoveryAction") return action;
@@ -109,6 +109,11 @@ window.location.reload = () => { throw new Error("reload blocked"); };
 assert.equal(api.reloadPendingPlan(), true);
 assert.equal(assignCalls, 1, "if direct reload throws, Recovery Desk should fall back to same-URL navigation");
 
+document.hidden = true;
+assert.equal(api.reloadPendingPlan(), false, "hidden Recovery Desk must not trigger either reload path");
+assert.equal(assignCalls, 1, "hidden reload rejection must not navigate");
+document.hidden = false;
+
 pendingPlanUpdate = false;
 currentAlerts = [{
   id: "transfer-missed:0:1",
@@ -129,7 +134,7 @@ assert.notEqual(escalatedSignature, firstSignature, "a material detail change un
 currentAlerts = [{ ...currentAlerts[0] }];
 assert.equal(api.getActiveSignature(), escalatedSignature, "an unchanged recovery condition should keep a stable snooze signature");
 
-assert.match(source, /if \(lifecycleFrozen \|\| document\.hidden \|\| !shouldPoll\(\)\) return;/, "Recovery Desk must not arm periodic work while Safari is frozen/hidden or recovery context is inactive");
+assert.match(source, /function schedule\(\) \{[\s\S]*if \(!foregroundOwned\(\) \|\| !shouldPoll\(\)\) return;[\s\S]*if \(!foregroundOwned\(\)\) return;/, "Recovery Desk must reject both arming and execution of periodic work outside foreground ownership");
 assert.doesNotMatch(source, /navigator\.geolocation|watchPosition|getCurrentPosition/, "Recovery reload hardening must not add location access");
 
-console.log("recovery-reload-safari: shared reload delegation, frozen/hidden scheduling and changed-condition snooze resurfacing passed");
+console.log("recovery-reload-safari: shared reload delegation, hidden rejection, scheduling and changed-condition snooze resurfacing passed");
