@@ -16,9 +16,9 @@ assert.match(source, /const hasOutcome = Boolean\(outcome && typeof outcome === 
 assert.match(source, /if \(!hasOutcome\)[\s\S]*statusWasApplied\(status, beforeAt\)/, 'legacy state inference may only be used when no structured outcome exists');
 assert.match(source, /let checkinUiGeneration = 0;/, 'Trip Tools check-in UI needs its own lifecycle generation');
 assert.match(source, /window\.addEventListener\("pagehide", \(\) => \{[\s\S]*lifecycleFrozen = true;[\s\S]*invalidateCheckinUi\(\)/, 'pagehide must freeze Trip Tools and invalidate stale check-in UI ownership');
-assert.match(source, /if \(document\.hidden\) \{\s*invalidateCheckinUi\(\)/, 'hidden pages must invalidate stale check-in UI ownership');
+assert.match(source, /if \(document\.hidden\) \{[\s\S]*disconnectBootstrapObserver\(\);[\s\S]*invalidateCheckinUi\(\)/, 'hidden pages must release bootstrap and stale check-in UI ownership');
 assert.match(source, /dialog\.addEventListener\("close", async \(\) => \{\s*invalidateCheckinUi\(\)/, 'closing Trip Mode must invalidate stale check-in UI ownership');
-assert.match(source, /if \(lifecycleFrozen \|\| generation !== checkinUiGeneration \|\| document\.hidden\) return;/, 'late check-in completions must not repaint a bfcache-frozen page');
+assert.match(source, /if \(!ownsForeground\(\) \|\| generation !== checkinUiGeneration\) return;/, 'late check-in completions must not repaint a suspended page');
 
 const directFetches = (source.match(/\bfetch\s*\(/g) || []).length;
 assert.strictEqual(directFetches, 0, 'Trip Tools must not create a second check-in network path');
