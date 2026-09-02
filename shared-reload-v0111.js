@@ -5,6 +5,10 @@
   let resumeTimer = null;
   let lifecycleFrozen = false;
 
+  function ownsVisibleLifecycle() {
+    return !lifecycleFrozen && !document.hidden;
+  }
+
   function reloadButtonFrom(target) {
     return target?.closest?.("#v010ReloadPlan") || null;
   }
@@ -38,8 +42,14 @@
     setLoading(button, false);
   }
 
+  function suspendVisibleWork() {
+    clearFallback();
+    clearResume();
+    navigating = false;
+  }
+
   function tryAssign(button) {
-    if (lifecycleFrozen) return false;
+    if (!ownsVisibleLifecycle()) return false;
     try {
       window.location.assign(window.location.href);
       return true;
@@ -50,7 +60,7 @@
   }
 
   function reloadUpdatedPlan(button = document.getElementById("v010ReloadPlan")) {
-    if (lifecycleFrozen || navigating) return false;
+    if (!ownsVisibleLifecycle() || navigating) return false;
     navigating = true;
     setLoading(button, true);
 
@@ -61,7 +71,7 @@
     clearFallback();
     fallbackTimer = setTimeout(() => {
       fallbackTimer = null;
-      if (lifecycleFrozen || !navigating) return;
+      if (!ownsVisibleLifecycle() || !navigating) return;
       tryAssign(button);
     }, FALLBACK_MS);
 
@@ -73,25 +83,39 @@
     return navigating;
   }
 
-  function resetAfterPageShow(event) {
-    lifecycleFrozen = false;
-    recoverNavigation();
+  function queueResumeReconciliation() {
     clearResume();
-
-    if (!event?.persisted) return;
+    if (!ownsVisibleLifecycle()) return;
     resumeTimer = setTimeout(() => {
       resumeTimer = null;
-      if (lifecycleFrozen) return;
+      if (!ownsVisibleLifecycle()) return;
       try { window.NVSSharedLive?.refresh?.(); } catch {}
       try { window.NVSIntelligence?.refresh?.(); } catch {}
       try { window.dispatchEvent(new CustomEvent("nvs-shared-view-resumed")); } catch {}
     }, 0);
   }
 
+  function resetAfterPageShow(event) {
+    lifecycleFrozen = false;
+    if (!ownsVisibleLifecycle()) {
+      suspendVisibleWork();
+      return;
+    }
+    recoverNavigation();
+    if (event?.persisted) queueResumeReconciliation();
+  }
+
   function freezeForPageHide() {
     lifecycleFrozen = true;
-    clearFallback();
-    clearResume();
+    suspendVisibleWork();
+  }
+
+  function handleVisibilityChange() {
+    if (document.hidden || lifecycleFrozen) {
+      suspendVisibleWork();
+      return;
+    }
+    recoverNavigation();
   }
 
   document.addEventListener("click", (event) => {
@@ -99,10 +123,11 @@
     if (!button) return;
     event.preventDefault?.();
     event.stopImmediatePropagation?.();
-    if (lifecycleFrozen) return;
+    if (!ownsVisibleLifecycle()) return;
     reloadUpdatedPlan(button);
   }, true);
 
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("pageshow", resetAfterPageShow);
   window.addEventListener("pagehide", freezeForPageHide);
 
