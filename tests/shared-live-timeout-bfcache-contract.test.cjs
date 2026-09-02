@@ -11,14 +11,16 @@ const connectionSource = fs.readFileSync(path.resolve(__dirname, "../shared-conn
 assert.match(timeoutSource, /nvs-shared-live-timeout/);
 assert.match(timeoutSource, /nvs-shared-live-degraded/);
 assert.match(timeoutSource, /let lifecycleFrozen = false/);
-assert.match(timeoutSource, /function ownsForegroundLifecycle\(\) \{ return !lifecycleFrozen && !document\.hidden; \}/,
-  "transport notices must require visible, non-bfcache-frozen lifecycle ownership");
+assert.match(timeoutSource, /function ownsForegroundLifecycle\(\) \{[\s\S]*?return !lifecycleFrozen && \(typeof document === "undefined" \|\| !document\.hidden\);[\s\S]*?\}/,
+  "transport notices must require visible, non-bfcache-frozen lifecycle ownership while remaining safe in non-DOM harnesses");
 assert.match(timeoutSource, /function shouldAnnounceForRequest\(input\) \{[\s\S]*?if \(!ownsForegroundLifecycle\(\)\) return false/,
   "late timeout/degraded completions must fail closed before dispatching transient events");
 assert.match(timeoutSource, /addEventListener\?\.\("pagehide", \(\) => \{ lifecycleFrozen = true; \}\)/,
   "pagehide must close transport-notice ownership before in-flight requests can settle");
 assert.match(timeoutSource, /addEventListener\?\.\("pageshow", \(\) => \{ lifecycleFrozen = false; \}\)/,
   "pageshow must reopen transport-notice ownership for foreground reconciliation");
+assert.match(timeoutSource, /if \(typeof document !== "undefined"\) \{[\s\S]*?visibilitychange/,
+  "visibility ownership hook must be guarded so transport-only harnesses stay valid");
 assert.doesNotMatch(timeoutSource, /innerHTML|textContent|classList|dataset/,
   "transport timeout layer must remain DOM-mutation-free");
 
