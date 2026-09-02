@@ -4,6 +4,12 @@
   const destinationInput = document.getElementById("destination");
   let refreshTimer = null;
   let clockTimer = null;
+  let frozenDocument = false;
+  let resultsObserver = null;
+
+  function isSuspended() {
+    return frozenDocument || document.hidden;
+  }
 
   function isPersonalView() {
     const plan = window.NVSShare?.getSharedPlan?.();
@@ -172,7 +178,7 @@
 
   function ensurePlanSection() {
     let section = document.getElementById("personalSharedPlan");
-    if (section) return section;
+    if (section || frozenDocument) return section;
     section = document.createElement("section");
     section.id = "personalSharedPlan";
     section.className = "personal-shared-plan";
@@ -181,6 +187,7 @@
   }
 
   function tuneDetailedTimeline(focus) {
+    if (frozenDocument) return;
     const primary = results?.querySelector(':scope > .result[data-map-pair="primary"]');
     if (!primary) return;
     const details = primary.querySelector("details.journey-v05");
@@ -196,10 +203,26 @@
     });
   }
 
+  function cancelTimers() {
+    clearTimeout(clockTimer);
+    clearTimeout(refreshTimer);
+    clockTimer = null;
+    refreshTimer = null;
+  }
+
+  function clearPersonalUi() {
+    if (frozenDocument) return;
+    document.getElementById("personalSharedPlan")?.remove();
+    document.body.classList.remove("personal-itinerary-view");
+  }
+
   function render() {
     clearTimeout(refreshTimer);
+    refreshTimer = null;
+    if (isSuspended() || !isPersonalView()) return;
     refreshTimer = setTimeout(() => {
-      if (!isPersonalView()) return;
+      refreshTimer = null;
+      if (isSuspended() || !isPersonalView()) return;
       const focus = focusIndex();
       const recommendations = window.__NVS_LAST_RECOMMENDATIONS__;
       const group = recommendations?.primary;
@@ -211,6 +234,7 @@
       const route = assignment.route;
       const analysis = analysisFor(group);
       const section = ensurePlanSection();
+      if (!section || frozenDocument) return;
       const status = leaveStatus(route.departure);
       const destination = destinationLocation();
 
@@ -236,13 +260,81 @@
     }, 50);
   }
 
+  function scheduleClock(delay = 15_000) {
+    clearTimeout(clockTimer);
+    clockTimer = null;
+    if (isSuspended() || !isPersonalView()) return;
+    clockTimer = setTimeout(() => {
+      clockTimer = null;
+      if (isSuspended() || !isPersonalView()) return;
+      render();
+      scheduleClock();
+    }, delay);
+  }
+
+  function connectObserver() {
+    if (frozenDocument || !results || resultsObserver) return;
+    resultsObserver = new MutationObserver(() => {
+      if (!frozenDocument) render();
+    });
+    resultsObserver.observe(results, { childList: true });
+  }
+
+  function disconnectObserver() {
+    resultsObserver?.disconnect();
+    resultsObserver = null;
+  }
+
+  function resumePersonalItinerary() {
+    if (isSuspended()) return;
+    if (!isPersonalView()) {
+      cancelTimers();
+      clearPersonalUi();
+      return;
+    }
+    document.body.classList.add("personal-itinerary-view");
+    connectObserver();
+    render();
+    scheduleClock();
+  }
+
+  function suspendDocument() {
+    frozenDocument = true;
+    cancelTimers();
+    disconnectObserver();
+  }
+
+  function restoreDocument() {
+    frozenDocument = false;
+    connectObserver();
+    resumePersonalItinerary();
+  }
+
+  function clearRecommendations() {
+    cancelTimers();
+    if (frozenDocument) return;
+    clearPersonalUi();
+  }
+
   if (!isPersonalView()) return;
 
   document.body.classList.add("personal-itinerary-view");
-  window.addEventListener("nvs-group-recommendations-rendered", render);
-  window.addEventListener("load", render);
-  if (results) new MutationObserver(() => render()).observe(results, { childList: true });
-  clearInterval(clockTimer);
-  clockTimer = setInterval(render, 15_000);
+  window.addEventListener("nvs-group-recommendations-rendered", () => {
+    if (!frozenDocument) render();
+  });
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendations);
+  window.addEventListener("load", resumePersonalItinerary);
+  window.addEventListener("pagehide", suspendDocument);
+  window.addEventListener("pageshow", restoreDocument);
+  window.addEventListener("nvs-shared-view-resumed", resumePersonalItinerary);
+  connectObserver();
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      cancelTimers();
+      return;
+    }
+    resumePersonalItinerary();
+  });
+  scheduleClock();
   render();
 })();

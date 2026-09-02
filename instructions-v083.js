@@ -1,6 +1,9 @@
 (() => {
   const results = document.getElementById("results");
   let timer = null;
+  let lifecycleFrozen = false;
+  let resultsObserver = null;
+  let bodyObserver = null;
 
   function text(value) {
     return String(value || "").trim();
@@ -98,6 +101,7 @@
   }
 
   function decorateFullTimeline(timeline, assignment) {
+    if (lifecycleFrozen) return;
     const segments = Array.isArray(assignment?.route?.segments) ? assignment.route.segments.filter(Boolean) : [];
     const steps = [...timeline.querySelectorAll(".timeline-step")];
     if (!segments.length || !steps.length) return;
@@ -132,6 +136,7 @@
   }
 
   function decoratePersonalPlan() {
+    if (lifecycleFrozen) return;
     const assignment = currentFocusAssignment();
     const container = document.getElementById("personalSharedPlan");
     if (!assignment?.route || !container) return;
@@ -156,7 +161,10 @@
 
   function decorate() {
     clearTimeout(timer);
+    if (lifecycleFrozen) return;
     timer = setTimeout(() => {
+      timer = null;
+      if (lifecycleFrozen) return;
       const recommendations = window.__NVS_LAST_RECOMMENDATIONS__;
       if (recommendations && results) {
         [...results.querySelectorAll(":scope > .result[data-map-pair]")].forEach((card) => {
@@ -171,11 +179,46 @@
     }, 40);
   }
 
+  function connectObservers() {
+    if (lifecycleFrozen) return;
+    if (results && !resultsObserver) {
+      resultsObserver = new MutationObserver(decorate);
+      resultsObserver.observe(results, { childList: true, subtree: true });
+    }
+    if (!bodyObserver) {
+      bodyObserver = new MutationObserver(decorate);
+      bodyObserver.observe(document.body, { childList: true, subtree: true });
+    }
+  }
+
+  function disconnectObservers() {
+    resultsObserver?.disconnect();
+    resultsObserver = null;
+    bodyObserver?.disconnect();
+    bodyObserver = null;
+  }
+
+  function freezeLifecycle() {
+    if (lifecycleFrozen) return;
+    lifecycleFrozen = true;
+    clearTimeout(timer);
+    timer = null;
+    disconnectObservers();
+  }
+
+  function restoreLifecycle(event) {
+    if (!event?.persisted && !lifecycleFrozen) return;
+    lifecycleFrozen = false;
+    connectObservers();
+    decorate();
+  }
+
   window.addEventListener("nvs-group-recommendations-rendered", decorate);
   window.addEventListener("nvs-display-options-change", decorate);
   window.addEventListener("load", decorate);
-  if (results) new MutationObserver(decorate).observe(results, { childList: true, subtree: true });
-  new MutationObserver(decorate).observe(document.body, { childList: true, subtree: true });
+  window.addEventListener("pagehide", freezeLifecycle);
+  window.addEventListener("pageshow", restoreLifecycle);
+  connectObservers();
 
   window.NVSInstructions = Object.freeze({ instructionFor });
   decorate();

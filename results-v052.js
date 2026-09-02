@@ -105,16 +105,67 @@
     `;
   }
 
+  function plannerLabelsSafe() {
+    return {
+      personA: document.getElementById("personA")?.selectedOptions?.[0]?.textContent || "You",
+      personB: document.getElementById("personB")?.selectedOptions?.[0]?.textContent || "Friend",
+      destination: document.getElementById("destination")?.selectedOptions?.[0]?.textContent || "meetup",
+    };
+  }
+
   function rewriteSummaryForAsap(recommendations) {
     if (recommendations?.timingMode !== "asap" || !recommendations.primary) return;
     setTimeout(() => {
       const summary = document.getElementById("summary");
-      const personA = document.getElementById("personA")?.selectedOptions?.[0]?.textContent || "You";
-      const personB = document.getElementById("personB")?.selectedOptions?.[0]?.textContent || "Friend";
-      const destination = document.getElementById("destination")?.selectedOptions?.[0]?.textContent || "meetup";
+      const { personA, personB, destination } = plannerLabelsSafe();
       if (!summary) return;
       summary.innerHTML = `<strong>${escapeHtmlSafe(personA)}</strong> + <strong>${escapeHtmlSafe(personB)}</strong> → ${escapeHtmlSafe(destination)} · <strong>ASAP</strong> · both there by <strong>${formatTimeSafe(recommendations.primary.latestArrival)}</strong>`;
     }, 0);
+  }
+
+  function clearRecommendationDependentSurfaces(recommendations) {
+    window.__NVS_LAST_RECOMMENDATIONS__ = null;
+    const tripDialog = document.getElementById("v011TripDialog");
+    if (tripDialog?.open && typeof tripDialog.close === "function") tripDialog.close();
+    window.dispatchEvent(new CustomEvent("nvs-recommendations-cleared", {
+      detail: { timingMode: recommendations?.timingMode || "target" },
+    }));
+  }
+
+  function renderNoRecommendedRoutes(results, recommendations, target) {
+    if (!results) return false;
+    const asap = recommendations?.timingMode === "asap";
+    results.classList.remove("v052-recommendations");
+    results.innerHTML = asap
+      ? `
+        <div class="loading-card no-routes-card" role="status">
+          <span aria-hidden="true">↻</span>
+          <div>
+            <strong>No fresh ASAP connection found</strong>
+            <p>The returned journeys have already arrived. Check again for a newer connection instead of using stale timetable results.</p>
+          </div>
+        </div>
+      `
+      : `
+        <div class="loading-card no-routes-card" role="status">
+          <span aria-hidden="true">↻</span>
+          <div>
+            <strong>No connection found for this target time</strong>
+            <p>There is no usable route pair for the selected target yet. Check again or adjust the target time.</p>
+          </div>
+        </div>
+      `;
+    clearRecommendationDependentSurfaces(recommendations);
+    setTimeout(() => {
+      const summary = document.getElementById("summary");
+      const { personA, personB, destination } = plannerLabelsSafe();
+      if (!summary) return;
+      const timingCopy = asap
+        ? `<strong>ASAP</strong> · no fresh connection yet`
+        : `${formatTimeSafe(target) === "—" ? "target time unavailable" : `target <strong>${formatTimeSafe(target)}</strong>`} · no connection yet`;
+      summary.innerHTML = `<strong>${escapeHtmlSafe(personA)}</strong> + <strong>${escapeHtmlSafe(personB)}</strong> → ${escapeHtmlSafe(destination)} · ${timingCopy}`;
+    }, 0);
+    return true;
   }
 
   function renderRecommendedConnections(routesA, routesB, target) {
@@ -122,10 +173,10 @@
     if (!engine?.recommend) return false;
 
     const recommendations = engine.recommend(routesA, routesB, target);
-    if (!recommendations.primary) return false;
-
     const results = document.getElementById("results");
     if (!results) return false;
+
+    if (!recommendations.primary) return renderNoRecommendedRoutes(results, recommendations, target);
 
     results.classList.add("v052-recommendations");
     results.innerHTML =

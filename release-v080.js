@@ -9,6 +9,10 @@
   let fallbackReason = "";
   let timer = null;
   let showIntermediateStops = false;
+  let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__);
+  let lifecycleFrozen = false;
+  let resultsObserver = null;
+  let displayObserver = null;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -33,6 +37,7 @@
   }
 
   function writeDisplayState() {
+    if (lifecycleFrozen) return;
     try {
       localStorage.setItem(DISPLAY_KEY, JSON.stringify({ showIntermediateStops }));
     } catch {
@@ -41,6 +46,7 @@
   }
 
   function applyDisplayState() {
+    if (lifecycleFrozen) return;
     document.documentElement.classList.toggle("nvs-hide-via", !showIntermediateStops);
     const toggle = document.getElementById("showIntermediateStopsToggle");
     if (toggle) {
@@ -52,15 +58,18 @@
   }
 
   function setIntermediateStops(next) {
+    if (lifecycleFrozen) return false;
     showIntermediateStops = Boolean(next);
     writeDisplayState();
     applyDisplayState();
     window.dispatchEvent(new CustomEvent("nvs-display-options-change", {
       detail: { showIntermediateStops },
     }));
+    return true;
   }
 
   function installDisplayOptions() {
+    if (lifecycleFrozen) return false;
     const control = document.getElementById("optimizationControl");
     if (!control || document.getElementById("displayOptionsBlock")) return Boolean(control);
 
@@ -93,6 +102,7 @@
   }
 
   function updateCopy() {
+    if (lifecycleFrozen) return;
     const v090OwnsReleaseCopy = window.NVSRelease090 || document.documentElement.dataset.nvsRelease === "090";
     if (!v090OwnsReleaseCopy) {
       const version = document.getElementById("versionLabel");
@@ -113,9 +123,22 @@
     }
   }
 
-  function decorateProviders() {
+  function cancelProviderDecoration() {
     clearTimeout(timer);
+    timer = null;
+  }
+
+  function removeProviderDecoration() {
+    if (lifecycleFrozen || !results) return;
+    results.querySelectorAll(".v080-provider-chip").forEach((chip) => chip.remove());
+  }
+
+  function decorateProviders() {
+    cancelProviderDecoration();
+    if (lifecycleFrozen || !recommendationsActive) return;
     timer = setTimeout(() => {
+      timer = null;
+      if (lifecycleFrozen || !recommendationsActive) return;
       const recommendations = window.__NVS_LAST_RECOMMENDATIONS__;
       if (!recommendations || !results) return;
       [...results.querySelectorAll(":scope > .result[data-map-pair]")].forEach((card) => {
@@ -138,29 +161,87 @@
     }, 30);
   }
 
+  function activateRecommendations() {
+    if (lifecycleFrozen) return;
+    recommendationsActive = true;
+    decorateProviders();
+  }
+
+  function clearRecommendations() {
+    if (lifecycleFrozen) return;
+    recommendationsActive = false;
+    cancelProviderDecoration();
+    removeProviderDecoration();
+  }
+
+  function connectObservers() {
+    if (lifecycleFrozen) return;
+    if (results && !resultsObserver) {
+      resultsObserver = new MutationObserver(decorateProviders);
+      resultsObserver.observe(results, { childList: true, subtree: true });
+    }
+    if (!document.getElementById("displayOptionsBlock") && !displayObserver) {
+      displayObserver = new MutationObserver(() => {
+        if (lifecycleFrozen) return;
+        if (installDisplayOptions()) {
+          displayObserver?.disconnect();
+          displayObserver = null;
+        }
+      });
+      displayObserver.observe(document.body, { childList: true, subtree: true });
+    }
+  }
+
+  function disconnectObservers() {
+    resultsObserver?.disconnect();
+    resultsObserver = null;
+    displayObserver?.disconnect();
+    displayObserver = null;
+  }
+
+  function freezeLifecycle() {
+    if (lifecycleFrozen) return;
+    lifecycleFrozen = true;
+    cancelProviderDecoration();
+    disconnectObservers();
+  }
+
+  function restoreLifecycle(event) {
+    if (!event?.persisted && !lifecycleFrozen) return;
+    lifecycleFrozen = false;
+    recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__);
+    readDisplayState();
+    installDisplayOptions();
+    applyDisplayState();
+    updateCopy();
+    connectObservers();
+    decorateProviders();
+  }
+
   readDisplayState();
   applyDisplayState();
 
   window.addEventListener("nvs-routing-provider", (event) => {
+    if (lifecycleFrozen) return;
     currentProvider = event.detail?.provider || currentProvider;
     fallback = Boolean(event.detail?.fallback);
     fallbackReason = String(event.detail?.reason || "");
     updateCopy();
   });
-  window.addEventListener("nvs-group-recommendations-rendered", decorateProviders);
+  window.addEventListener("nvs-group-recommendations-rendered", activateRecommendations);
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendations);
   window.addEventListener("load", () => {
+    if (lifecycleFrozen) return;
     updateCopy();
     decorateProviders();
     installDisplayOptions();
+    connectObservers();
   });
-  if (results) new MutationObserver(decorateProviders).observe(results, { childList: true, subtree: true });
+  window.addEventListener("pagehide", freezeLifecycle);
+  window.addEventListener("pageshow", restoreLifecycle);
 
-  if (!installDisplayOptions()) {
-    const observer = new MutationObserver(() => {
-      if (installDisplayOptions()) observer.disconnect();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
+  installDisplayOptions();
+  connectObservers();
 
   const style = document.createElement("style");
   style.textContent = `

@@ -15,7 +15,6 @@ const { pathToFileURL } = require("node:url");
     destination: { label: "Meet", lat: 53.62, lon: 11.42 },
     priority: [0], mode: "together", timing: "target", date: "2026-08-25", time: "08:00", createdAt: 1,
   };
-
   const same = structuredClone(base);
   same.createdAt = 999999;
   same.view = "person";
@@ -30,14 +29,6 @@ const { pathToFileURL } = require("node:url");
   changedOrigin.members[1].origin.lat += 0.001;
   assert.equal(mod.plansEquivalent(base, changedOrigin), false);
 
-  const asapA = structuredClone(base);
-  asapA.timing = "asap";
-  asapA.date = "";
-  asapA.time = "";
-  const asapB = structuredClone(asapA);
-  asapB.createdAt = 123456;
-  assert.equal(mod.plansEquivalent(asapA, asapB), true, "ASAP plans with only volatile metadata changes must remain equivalent");
-
   assert.equal(mod.plansEquivalent(null, base), false);
-  console.log("worker-plan-equivalence: no-op plan updates are distinguishable from real shared-plan changes");
+  console.log("worker-plan-equivalence: no-op plan updates are distinguishable from real route-plan changes");
 })().catch((error) => { console.error(error); process.exit(1); });

@@ -22,6 +22,12 @@
   let originalStorage = null;
   let restored = false;
   let shortPlanCache = null;
+  let shortPlanInflight = null;
+  let shortPlanGeneration = 0;
+  let deliveryInflight = null;
+  let deliveryGeneration = 0;
+  let lifecycleFrozen = false;
+  let resultsObserver = null;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -33,11 +39,13 @@
   }
 
   function showToast(message) {
-    if (!toast) return;
+    if (lifecycleFrozen || !toast) return;
     toast.textContent = message;
     toast.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove("show"), 3000);
+    toastTimer = setTimeout(() => {
+      if (!lifecycleFrozen) toast.classList.remove("show");
+    }, 3000);
   }
 
   function encode(value) {
@@ -214,6 +222,7 @@
   }
 
   function buildShareUrl(focus = -1) {
+    if (lifecycleFrozen) return null;
     const payload = currentPayload(focus);
     if (!payload) return null;
     const url = new URL(config.appUrl || window.location.href);
@@ -235,43 +244,79 @@
     });
   }
 
-  async function ensureShortPlan() {
-    if (!config.backendUrl) return null;
-    const payload = currentPayload(-1);
-    if (!payload) return null;
-    const signature = planSignature(payload);
-    if (shortPlanCache?.signature === signature) return shortPlanCache;
+  function invalidateShortPlan() {
+    shortPlanGeneration += 1;
+    shortPlanCache = null;
+  }
 
-    const response = await fetch(`${config.backendUrl}/api/plans`, {
-      method: "POST",
-      mode: "cors",
-      credentials: "omit",
-      headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
-      body: JSON.stringify({ plan: payload }),
-    });
-    if (!response.ok) throw new Error(`SHORT_LINK_HTTP_${response.status}`);
-    const data = await response.json();
-    if (!data?.id || !data?.url) throw new Error("SHORT_LINK_BAD_RESPONSE");
-    shortPlanCache = { signature, id: data.id, url: data.url, expiresIn: data.expiresIn || config.shareTtlSeconds || 259200 };
-    return shortPlanCache;
+  function invalidateDelivery() {
+    deliveryGeneration += 1;
+    deliveryInflight = null;
+  }
+
+  function groupPayloadFrom(payload) {
+    return payload ? { ...payload, view: "group", focus: -1 } : null;
+  }
+
+  async function ensureShortPlan(payload = currentPayload(-1)) {
+    if (lifecycleFrozen || !config.backendUrl || !payload) return null;
+    const canonicalPayload = groupPayloadFrom(payload);
+    const signature = planSignature(canonicalPayload);
+    if (shortPlanCache?.signature === signature) return shortPlanCache;
+    if (shortPlanInflight?.signature === signature && shortPlanInflight.generation === shortPlanGeneration) {
+      return shortPlanInflight.promise;
+    }
+
+    const generation = shortPlanGeneration;
+    const promise = (async () => {
+      const response = await fetch(`${config.backendUrl}/api/plans`, {
+        method: "POST",
+        mode: "cors",
+        credentials: "omit",
+        headers: { "content-type": "application/json", "x-meet-schwerin": "1" },
+        body: JSON.stringify({ plan: canonicalPayload }),
+      });
+      if (!response.ok) throw new Error(`SHORT_LINK_HTTP_${response.status}`);
+      const data = await response.json();
+      if (!data?.id || !data?.url) throw new Error("SHORT_LINK_BAD_RESPONSE");
+      const stored = { signature, id: data.id, url: data.url, expiresIn: data.expiresIn || config.shareTtlSeconds || 259200 };
+      if (!lifecycleFrozen && generation === shortPlanGeneration) shortPlanCache = stored;
+      return stored;
+    })();
+
+    shortPlanInflight = { signature, generation, promise };
+    try {
+      return await promise;
+    } finally {
+      if (shortPlanInflight?.promise === promise) shortPlanInflight = null;
+    }
   }
 
   async function buildBestShareUrl(focus = -1) {
+    if (lifecycleFrozen) return null;
     const fallback = buildShareUrl(focus);
     if (!fallback || !config.backendUrl) return fallback;
+    const signature = planSignature(fallback.payload);
+    const generation = shortPlanGeneration;
     try {
-      const stored = await ensureShortPlan();
-      if (!stored) return fallback;
+      const stored = await ensureShortPlan(fallback.payload);
+      if (lifecycleFrozen || !stored) return lifecycleFrozen ? null : fallback;
+      const latest = currentPayload(focus);
+      if (generation !== shortPlanGeneration || !latest || planSignature(latest) !== signature) {
+        return buildShareUrl(focus) || fallback;
+      }
       const url = new URL(stored.url);
       if (focus >= 0) url.searchParams.set("me", String(focus + 1));
       return { url: url.toString(), payload: fallback.payload, short: true, expiresIn: stored.expiresIn };
     } catch (error) {
+      if (lifecycleFrozen) return null;
       console.warn("Short-link backend unavailable; using encoded link:", error);
-      return fallback;
+      return buildShareUrl(focus) || fallback;
     }
   }
 
   function shareDialog() {
+    if (lifecycleFrozen) return null;
     let dialog = document.getElementById("groupShareDialog");
     if (dialog) return dialog;
     dialog = document.createElement("dialog");
@@ -289,37 +334,56 @@
   }
 
   async function deliver(focus = -1) {
-    const built = await buildBestShareUrl(focus);
-    if (!built) { showToast("Find a live group recommendation before sharing it."); return; }
-    const person = focus >= 0 ? built.payload.members[focus] : null;
-    const text = person ? `${person.name}'s read-only Meet Schwerin route to ${built.payload.destination.label}.` : `Read-only Meet Schwerin group plan to ${built.payload.destination.label}.`;
+    if (lifecycleFrozen) return;
+    if (deliveryInflight) return deliveryInflight.promise;
+    const generation = deliveryGeneration + 1;
+    deliveryGeneration = generation;
+    const promise = (async () => {
+      const built = await buildBestShareUrl(focus);
+      if (lifecycleFrozen || generation !== deliveryGeneration) return;
+      if (!built) { showToast("Find a live group recommendation before sharing it."); return; }
+      const person = focus >= 0 ? built.payload.members[focus] : null;
+      const text = person ? `${person.name}'s read-only Meet Schwerin route to ${built.payload.destination.label}.` : `Read-only Meet Schwerin group plan to ${built.payload.destination.label}.`;
+      try {
+        if (navigator.share) await navigator.share({ title: person ? `${person.name} · Meet Schwerin` : "Meet Schwerin group plan", text, url: built.url });
+        else if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(built.url);
+          if (!lifecycleFrozen && generation === deliveryGeneration) showToast(built.short ? (person ? `${person.name}'s short link copied.` : "Short group link copied.") : "Link copied.");
+        } else if (!lifecycleFrozen && generation === deliveryGeneration) window.prompt("Copy this link:", built.url);
+      } catch (error) {
+        if (!lifecycleFrozen && generation === deliveryGeneration && error?.name !== "AbortError") showToast("Could not share the link.");
+      }
+    })();
+    deliveryInflight = { generation, promise };
     try {
-      if (navigator.share) await navigator.share({ title: person ? `${person.name} · Meet Schwerin` : "Meet Schwerin group plan", text, url: built.url });
-      else if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(built.url);
-        showToast(built.short ? (person ? `${person.name}'s short link copied.` : "Short group link copied.") : "Link copied.");
-      } else window.prompt("Copy this link:", built.url);
-    } catch (error) {
-      if (error?.name !== "AbortError") showToast("Could not share the link.");
+      return await promise;
+    } finally {
+      if (deliveryInflight?.promise === promise) deliveryInflight = null;
     }
   }
 
   function confirmShare(focus = -1) {
-    if (sharedPlan) return;
+    if (lifecycleFrozen || sharedPlan) return;
     const built = buildShareUrl(focus);
     if (!built) { showToast("Find a live group recommendation before sharing it."); return; }
     const dialog = shareDialog();
+    if (!dialog) return;
     const person = focus >= 0 ? built.payload.members[focus] : null;
     const expiry = config.backendUrl ? `<p><strong>Short link:</strong> stored for about 72 hours, then it expires automatically.</p>` : `<p><strong>Fallback mode:</strong> the plan is encoded directly in the URL until the short-link backend is configured.</p>`;
     dialog.querySelector("#groupShareTitle").textContent = person ? `Share ${person.name}'s view` : "Share whole group map";
     dialog.querySelector("#groupShareCopy").innerHTML = person
       ? `<p>This opens a <strong>read-only personal view</strong> for ${escapeHtml(person.name)}.</p>${expiry}<p class="group-share-warning">The shared plan contains group names, starting locations, meetup place/time and route preferences so ★ joins can be rebuilt.</p>`
       : `<p>This opens the complete group map and recommendation in a <strong>read-only viewer</strong>.</p>${expiry}<p class="group-share-warning">The shared plan contains everyone's names and starting locations, plus the meetup place/time and route preferences.</p>`;
-    dialog.querySelector(".group-share-confirm").onclick = async () => { dialog.close(); await deliver(focus); };
+    dialog.querySelector(".group-share-confirm").onclick = async () => {
+      if (lifecycleFrozen) return;
+      dialog.close();
+      await deliver(focus);
+    };
     dialog.showModal();
   }
 
   function replaceTopShare() {
+    if (lifecycleFrozen) return;
     const existing = document.getElementById("shareMeetupButton");
     if (!existing) return;
     if (sharedPlan) { existing.hidden = true; return; }
@@ -332,6 +396,7 @@
   }
 
   function decorateCards() {
+    if (lifecycleFrozen) return;
     const rec = window.__NVS_LAST_RECOMMENDATIONS__;
     if (!rec || !results) return;
     [...results.querySelectorAll(":scope > .result[data-map-pair]")].forEach((card) => {
@@ -361,7 +426,7 @@
   }
 
   function personalFocus() {
-    if (!sharedPlan || sharedPlan.view !== "person") return;
+    if (lifecycleFrozen || !sharedPlan || sharedPlan.view !== "person") return;
     const focus = sharedPlan.focus;
     document.querySelectorAll(".group-card-person").forEach((row) => {
       const index = Number(row.dataset.shareMemberIndex);
@@ -381,7 +446,7 @@
   }
 
   function viewerBanner() {
-    if (!sharedPlan || document.getElementById("sharedViewerBanner")) return;
+    if (lifecycleFrozen || !sharedPlan || document.getElementById("sharedViewerBanner")) return;
     const hero = document.querySelector(".hero");
     if (!hero) return;
     const person = sharedPlan.focus >= 0 ? sharedPlan.members[sharedPlan.focus] : null;
@@ -394,8 +459,10 @@
   }
 
   function decorate() {
+    if (lifecycleFrozen) return;
     clearTimeout(decorationTimer);
     decorationTimer = setTimeout(() => {
+      if (lifecycleFrozen) return;
       decorateCards();
       personalFocus();
       const version = document.getElementById("versionLabel");
@@ -403,17 +470,55 @@
     }, 35);
   }
 
+  function disconnectResultsObserver() {
+    resultsObserver?.disconnect();
+    resultsObserver = null;
+  }
+
+  function connectResultsObserver() {
+    if (lifecycleFrozen || !results || resultsObserver) return;
+    resultsObserver = new MutationObserver(() => {
+      if (!lifecycleFrozen) decorate();
+    });
+    resultsObserver.observe(results, { childList: true, subtree: true });
+  }
+
+  function freezeLifecycle() {
+    lifecycleFrozen = true;
+    clearTimeout(toastTimer);
+    clearTimeout(decorationTimer);
+    invalidateShortPlan();
+    disconnectResultsObserver();
+    const dialog = document.getElementById("groupShareDialog");
+    if (dialog?.open) dialog.close();
+  }
+
+  function restoreLifecycle(event) {
+    if (!event?.persisted || !lifecycleFrozen) return;
+    lifecycleFrozen = false;
+    connectResultsObserver();
+    viewerBanner();
+    decorate();
+  }
+
   replaceTopShare();
   viewerBanner();
   decorate();
+  connectResultsObserver();
 
-  window.addEventListener("nvs-group-recommendations-rendered", () => { if (sharedPlan) restoreStorage(); decorate(); });
-  window.addEventListener("nvs-group-change", () => { shortPlanCache = null; decorate(); });
-  window.addEventListener("nvs-priority-change", () => { shortPlanCache = null; decorate(); });
-  window.addEventListener("nvs-timing-change", () => { shortPlanCache = null; decorate(); });
+  window.addEventListener("nvs-group-recommendations-rendered", () => {
+    if (lifecycleFrozen) return;
+    if (sharedPlan) restoreStorage();
+    decorate();
+  });
+  window.addEventListener("nvs-group-change", () => { invalidateShortPlan(); invalidateDelivery(); decorate(); });
+  window.addEventListener("nvs-priority-change", () => { invalidateShortPlan(); invalidateDelivery(); decorate(); });
+  window.addEventListener("nvs-timing-change", () => { invalidateShortPlan(); invalidateDelivery(); decorate(); });
   window.addEventListener("load", decorate);
-  window.addEventListener("beforeunload", restoreStorage);
-  if (results) new MutationObserver(decorate).observe(results, { childList: true, subtree: true });
+  window.addEventListener("pagehide", freezeLifecycle);
+  window.addEventListener("pagehide", invalidateDelivery);
+  window.addEventListener("pageshow", restoreLifecycle);
+  window.addEventListener("beforeunload", () => { invalidateDelivery(); restoreStorage(); });
 
   window.NVSShare = Object.freeze({
     isViewer: () => Boolean(sharedPlan),

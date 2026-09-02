@@ -9,6 +9,11 @@
     context: null,
     selectedType: "primary",
     refreshTimer: null,
+    refreshPending: false,
+    refreshGeneration: 0,
+    frozen: false,
+    dataBadgeObserver: null,
+    resultsObserver: null,
   };
 
   const mapElement = document.getElementById("meetupMap");
@@ -22,6 +27,8 @@
   const dateInput = document.getElementById("date");
   const timeInput = document.getElementById("time");
   const legend = document.querySelector(".map-legend");
+
+  function isSuspended() { return state.frozen || document.hidden; }
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -291,6 +298,7 @@
   }
 
   function tagResultCards() {
+    if (!results) return;
     [...results.querySelectorAll(":scope > .result[data-map-pair]")].forEach((card) => {
       const type = card.dataset.mapPair;
       card.classList.toggle("map-selected", type === state.selectedType);
@@ -299,7 +307,7 @@
   }
 
   function renderPreview() {
-    if (!state.map || !state.routeLayer) return;
+    if (isSuspended() || !state.map || !state.routeLayer) return;
     clearRoutes();
     const context = getContext();
     updateLegend(context.members, false, false);
@@ -327,6 +335,19 @@
     if (mapStatus) mapStatus.innerHTML = "Choose your meetup preferences to load <strong>every group route</strong>. Dashed lines are only a preview.";
   }
 
+  function showRoutePreview() {
+    state.recommendations = null;
+    state.context = null;
+    state.selectedType = "primary";
+    if (isSuspended()) {
+      state.refreshPending = true;
+      return;
+    }
+    updateTabs();
+    tagResultCards();
+    renderPreview();
+  }
+
   function modeLabel(recommendations) {
     if (recommendations?.mode === "fastest") return "⚡ Fastest group match";
     if (recommendations?.mode === "easy") return "😌 Easiest group match";
@@ -350,6 +371,10 @@
   }
 
   function drawSelectedPair() {
+    if (isSuspended()) {
+      state.refreshPending = true;
+      return;
+    }
     const group = state.recommendations?.[state.selectedType];
     const context = state.context;
     if (!state.map || !group || !context) { renderPreview(); return; }
@@ -400,26 +425,27 @@
   }
 
   function selectPair(type) {
-    if (!state.recommendations?.[type]) return;
+    if (isSuspended() || !state.recommendations?.[type]) return;
     state.selectedType = type;
     drawSelectedPair();
   }
 
   async function refreshFromLiveRoutes() {
+    if (isSuspended()) {
+      state.refreshPending = true;
+      return;
+    }
+    const refreshId = ++state.refreshGeneration;
     const context = getContext();
-    if (!context.target || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommendGroup) { renderPreview(); return; }
+    if (!context.target || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommendGroup) { showRoutePreview(); return; }
 
     if (!dataBadge?.classList.contains("live")) {
-      state.recommendations = null;
-      state.context = context;
-      updateTabs();
-      tagResultCards();
-      renderPreview();
+      showRoutePreview();
       return;
     }
 
     if (context.members.some((member) => !member.originKey)) {
-      renderPreview();
+      showRoutePreview();
       return;
     }
 
@@ -427,29 +453,112 @@
       const routeSets = await Promise.all(
         context.members.map((member) => window.NVSTransit.fetchRoutes(member.originKey, context.destination, context.target)),
       );
-      if (routeSets.some((routes) => !routes.length)) { renderPreview(); return; }
+      if (isSuspended() || refreshId !== state.refreshGeneration) {
+        state.refreshPending = true;
+        return;
+      }
+      if (routeSets.some((routes) => !routes.length)) { showRoutePreview(); return; }
       const recommendations = window.NVSRecommend.recommendGroup(routeSets, context.members, context.target, {
         priorityIds: window.NVSGroup?.getPriorityIds?.() || [],
       });
-      if (!recommendations.primary) { renderPreview(); return; }
+      if (!recommendations.primary) { showRoutePreview(); return; }
       state.recommendations = recommendations;
       state.context = context;
       if (!recommendations[state.selectedType]) state.selectedType = "primary";
+      state.refreshPending = false;
       drawSelectedPair();
     } catch (error) {
+      if (isSuspended() || refreshId !== state.refreshGeneration) {
+        state.refreshPending = true;
+        return;
+      }
       console.warn("Group map refresh failed:", error);
-      renderPreview();
+      showRoutePreview();
     }
   }
 
   function scheduleRefresh(delay = 80) {
     clearTimeout(state.refreshTimer);
-    state.refreshTimer = setTimeout(refreshFromLiveRoutes, delay);
+    state.refreshTimer = null;
+    if (isSuspended()) {
+      state.refreshPending = true;
+      return;
+    }
+    state.refreshPending = false;
+    state.refreshTimer = setTimeout(() => {
+      state.refreshTimer = null;
+      void refreshFromLiveRoutes();
+    }, delay);
+  }
+
+  function suspendRefresh() {
+    clearTimeout(state.refreshTimer);
+    state.refreshTimer = null;
+    state.refreshPending = true;
+    state.refreshGeneration += 1;
+  }
+
+  function resumeRefresh() {
+    if (isSuspended()) return;
+    state.map?.invalidateSize({ pan: false });
+    if (state.refreshPending) scheduleRefresh(60);
+  }
+
+  function clearRecommendationState() {
+    clearTimeout(state.refreshTimer);
+    state.refreshTimer = null;
+    state.refreshGeneration += 1;
+    state.refreshPending = false;
+    state.recommendations = null;
+    state.context = null;
+    state.selectedType = "primary";
+    if (isSuspended()) {
+      state.refreshPending = true;
+      return;
+    }
+    updateTabs();
+    tagResultCards();
+    renderPreview();
+  }
+
+  function observeMapDom() {
+    if (dataBadge) {
+      state.dataBadgeObserver ||= new MutationObserver(() => {
+        if (!isSuspended()) scheduleRefresh(120);
+      });
+      state.dataBadgeObserver.observe(dataBadge, { attributes: true, attributeFilter: ["class"] });
+    }
+    if (results) {
+      state.resultsObserver ||= new MutationObserver(() => {
+        if (!isSuspended()) tagResultCards();
+      });
+      state.resultsObserver.observe(results, { childList: true });
+    }
+  }
+
+  function suspendDocument() {
+    state.frozen = true;
+    suspendRefresh();
+    state.dataBadgeObserver?.disconnect();
+    state.resultsObserver?.disconnect();
+  }
+
+  function resumeDocument() {
+    state.frozen = false;
+    observeMapDom();
+    if (!document.hidden) {
+      tagResultCards();
+      resumeRefresh();
+    }
   }
 
   document.querySelectorAll(".map-tabs [data-map-pair]").forEach((button) => button.addEventListener("click", () => selectPair(button.dataset.mapPair)));
-  document.getElementById("mapFitButton")?.addEventListener("click", () => state.recommendations?.[state.selectedType] ? drawSelectedPair() : renderPreview());
+  document.getElementById("mapFitButton")?.addEventListener("click", () => {
+    if (isSuspended()) return;
+    state.recommendations?.[state.selectedType] ? drawSelectedPair() : renderPreview();
+  });
   results?.addEventListener("click", (event) => {
+    if (isSuspended()) return;
     const card = event.target.closest(".result[data-map-pair]");
     if (card) selectPair(card.dataset.mapPair);
   });
@@ -457,8 +566,13 @@
   [personAInput, personBInput, destinationInput, dateInput, timeInput].forEach((input) => input?.addEventListener("change", () => scheduleRefresh(220)));
   window.addEventListener("nvs-priority-change", () => { state.selectedType = "primary"; scheduleRefresh(20); });
   window.addEventListener("nvs-timing-change", () => { state.selectedType = "primary"; scheduleRefresh(20); });
-  window.addEventListener("nvs-group-change", () => { state.selectedType = "primary"; state.recommendations = null; renderPreview(); scheduleRefresh(40); });
+  window.addEventListener("nvs-group-change", () => { clearRecommendationState(); scheduleRefresh(40); });
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendationState);
   window.addEventListener("nvs-group-recommendations-rendered", (event) => {
+    if (isSuspended()) {
+      state.refreshPending = true;
+      return;
+    }
     const detail = event.detail || {};
     if (!detail.recommendations) return;
     state.recommendations = detail.recommendations;
@@ -471,10 +585,18 @@
     drawSelectedPair();
   });
 
-  if (dataBadge) new MutationObserver(() => scheduleRefresh(120)).observe(dataBadge, { attributes: true, attributeFilter: ["class"] });
-  if (results) new MutationObserver(() => { tagResultCards(); }).observe(results, { childList: true });
+  observeMapDom();
 
-  window.addEventListener("resize", () => state.map?.invalidateSize({ pan: false }));
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) suspendRefresh();
+    else resumeRefresh();
+  });
+  window.addEventListener("pagehide", suspendDocument);
+  window.addEventListener("pageshow", resumeDocument);
+  window.addEventListener("nvs-shared-view-resumed", resumeRefresh);
+  window.addEventListener("resize", () => {
+    if (!isSuspended()) state.map?.invalidateSize({ pan: false });
+  });
   initMap();
   scheduleRefresh(400);
 

@@ -175,6 +175,14 @@
       document.head.appendChild(link);
     }
 
+    if (!document.querySelector('script[data-shared-live-timeout-v0111="true"]')) {
+      const script = document.createElement("script");
+      script.src = "./shared-live-timeout-v0111.js";
+      script.async = false;
+      script.dataset.sharedLiveTimeoutV0111 = "true";
+      document.body.appendChild(script);
+    }
+
     if (!document.querySelector('script[data-shared-live-v010="true"]')) {
       const script = document.createElement("script");
       script.src = "./shared-live-v010.js";
@@ -226,30 +234,49 @@
     }
   }
 
-  function loadTestLab() {
-    if (!document.querySelector('link[data-test-lab-v012="true"]')) {
+  function loadTripTools0111() {
+    if (!document.querySelector('link[data-trip-tools-v0111="true"]')) {
       const link = document.createElement("link");
       link.rel = "stylesheet";
-      link.href = "./test-lab-v012.css";
-      link.dataset.testLabV012 = "true";
+      link.href = "./trip-tools-v0111.css";
+      link.dataset.tripToolsV0111 = "true";
       document.head.appendChild(link);
     }
 
-    if (!document.querySelector('script[data-test-lab-v012="true"]')) {
+    if (!document.querySelector('script[data-trip-tools-v0111="true"]')) {
       const script = document.createElement("script");
-      script.src = "./test-lab-v012.js";
+      script.src = "./trip-tools-v0111.js";
       script.async = false;
-      script.dataset.testLabV012 = "true";
+      script.dataset.tripToolsV0111 = "true";
       document.body.appendChild(script);
+    }
+  }
+
+  function loadRecovery0111() {
+    if (!document.querySelector('link[data-recovery-v0111="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "./recovery-v0111.css";
+      link.dataset.recoveryV0111 = "true";
+      document.head.appendChild(link);
     }
 
-    if (!document.querySelector('script[data-release-v012="true"]')) {
+    if (!document.querySelector('script[data-recovery-v0111="true"]')) {
       const script = document.createElement("script");
-      script.src = "./release-v012.js";
+      script.src = "./recovery-v0111.js";
       script.async = false;
-      script.dataset.releaseV012 = "true";
+      script.dataset.recoveryV0111 = "true";
       document.body.appendChild(script);
     }
+  }
+
+  function loadUpdateSafety0111() {
+    if (document.querySelector('script[data-update-safety-v0111="true"]')) return;
+    const script = document.createElement("script");
+    script.src = "./update-safety-v0111.js";
+    script.async = false;
+    script.dataset.updateSafetyV0111 = "true";
+    document.body.appendChild(script);
   }
 
   installDepartureGuard();
@@ -261,5 +288,7 @@
   loadLiveMeetup();
   loadSharedLiveMeetup();
   loadMeetupIntelligence();
-  loadTestLab();
+  loadTripTools0111();
+  loadRecovery0111();
+  loadUpdateSafety0111();
 })();

@@ -19,9 +19,20 @@
   let activeSelect = null;
   let searchTimer = null;
   let searchController = null;
+  let searchGeneration = 0;
   let toastTimer = null;
   const searchCache = new Map();
   const customPlaces = new Map();
+
+  function invalidateSearch({ clearActive = false } = {}) {
+    clearTimeout(searchTimer);
+    searchTimer = null;
+    searchGeneration += 1;
+    searchController?.abort();
+    searchController = null;
+    if (clearActive) activeSelect = null;
+    return searchGeneration;
+  }
 
   function escapeHtml(value) {
     return String(value)
@@ -148,6 +159,7 @@
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
+    dialog.addEventListener("close", () => invalidateSearch({ clearActive: true }));
 
     input.addEventListener("input", () => schedulePlaceSearch(input.value, results, state));
     return { dialog, input, results, state };
@@ -156,6 +168,7 @@
   const placeDialog = buildDialog();
 
   function openSearch(select) {
+    invalidateSearch({ clearActive: true });
     activeSelect = select;
     placeDialog.input.value = "";
     placeDialog.results.innerHTML = "";
@@ -233,36 +246,41 @@
     if (cached && Date.now() - cached.createdAt < SEARCH_CACHE_MS) return cached.results;
 
     searchController?.abort();
-    searchController = new AbortController();
+    const controller = new AbortController();
+    searchController = controller;
 
-    const params = new URLSearchParams({
-      q: query.trim(),
-      lat: "53.628",
-      lon: "11.415",
-      limit: "6",
-      lang: "de",
-      bbox: SEARCH_BBOX,
-    });
+    try {
+      const params = new URLSearchParams({
+        q: query.trim(),
+        lat: "53.628",
+        lon: "11.415",
+        limit: "6",
+        lang: "de",
+        bbox: SEARCH_BBOX,
+      });
 
-    const response = await fetch(`${PHOTON_API}?${params.toString()}`, {
-      headers: { Accept: "application/json" },
-      credentials: "omit",
-      mode: "cors",
-      signal: searchController.signal,
-    });
+      const response = await fetch(`${PHOTON_API}?${params.toString()}`, {
+        headers: { Accept: "application/json" },
+        credentials: "omit",
+        mode: "cors",
+        signal: controller.signal,
+      });
 
-    if (!response.ok) throw new Error(`PHOTON_${response.status}`);
-    const data = await response.json();
-    const found = (Array.isArray(data?.features) ? data.features : [])
-      .map(normalizeFeature)
-      .filter(Boolean);
+      if (!response.ok) throw new Error(`PHOTON_${response.status}`);
+      const data = await response.json();
+      const found = (Array.isArray(data?.features) ? data.features : [])
+        .map(normalizeFeature)
+        .filter(Boolean);
 
-    const deduped = found.filter((place, index, list) =>
-      list.findIndex((other) => other.label === place.label && Math.abs(other.lat - place.lat) < 0.00005 && Math.abs(other.lon - place.lon) < 0.00005) === index,
-    );
+      const deduped = found.filter((place, index, list) =>
+        list.findIndex((other) => other.label === place.label && Math.abs(other.lat - place.lat) < 0.00005 && Math.abs(other.lon - place.lon) < 0.00005) === index,
+      );
 
-    searchCache.set(normalizedQuery, { createdAt: Date.now(), results: deduped });
-    return deduped;
+      searchCache.set(normalizedQuery, { createdAt: Date.now(), results: deduped });
+      return deduped;
+    } finally {
+      if (searchController === controller) searchController = null;
+    }
   }
 
   function renderSearchResults(found, resultsElement, stateElement) {
@@ -293,9 +311,12 @@
 
   function schedulePlaceSearch(query, resultsElement, stateElement) {
     clearTimeout(searchTimer);
+    searchTimer = null;
+    const generation = ++searchGeneration;
     const clean = query.trim();
     if (clean.length < 2) {
       searchController?.abort();
+      searchController = null;
       resultsElement.innerHTML = "";
       stateElement.textContent = "Type at least 2 characters.";
       return;
@@ -305,9 +326,10 @@
     searchTimer = setTimeout(async () => {
       try {
         const found = await searchPlaces(clean);
+        if (generation !== searchGeneration || !placeDialog.dialog.open) return;
         renderSearchResults(found, resultsElement, stateElement);
       } catch (error) {
-        if (error?.name === "AbortError") return;
+        if (error?.name === "AbortError" || generation !== searchGeneration || !placeDialog.dialog.open) return;
         console.warn("Place search failed:", error);
         stateElement.textContent = "Search is unavailable right now. Your saved presets still work.";
       }
@@ -315,7 +337,7 @@
   }
 
   function selectPlace(place) {
-    if (!activeSelect) return;
+    if (!activeSelect || !placeDialog.dialog.open) return;
     const registered = registerPlace(place);
     activeSelect.value = registered.key;
     activeSelect.dispatchEvent(new Event("change", { bubbles: true }));

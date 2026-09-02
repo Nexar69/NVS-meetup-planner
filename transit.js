@@ -131,6 +131,11 @@
     return labels[normalized] || (normalized ? normalized[0] + normalized.slice(1).toLowerCase() : "Transit");
   }
 
+  function isTransitMode(mode) {
+    const normalized = String(mode || "").toUpperCase();
+    return Boolean(normalized) && !["WALK", "BIKE", "BICYCLE", "CAR"].includes(normalized);
+  }
+
   function legDurationMinutes(leg) {
     if (typeof leg.duration === "number" && Number.isFinite(leg.duration)) return Math.max(1, Math.round(leg.duration / 60));
     const departure = legDeparture(leg);
@@ -154,9 +159,28 @@
     return firstText(value.name, value.displayName, value.label, value.stopName, valueAt(value, ["stop.name"]), valueAt(value, ["station.name"]), fallback);
   }
 
+  function scheduledPlatformName(value) {
+    if (!value || typeof value !== "object") return "";
+    return firstText(
+      value.scheduledTrack,
+      value.scheduledPlatform,
+      value.scheduledPlatformCode,
+      valueAt(value, ["stop.scheduledTrack"]),
+      valueAt(value, ["stop.scheduledPlatform"]),
+      valueAt(value, ["stop.scheduledPlatformCode"]),
+    );
+  }
+
   function platformName(value) {
     if (!value || typeof value !== "object") return "";
-    return firstText(value.track, value.platform, value.platformCode, value.scheduledTrack, valueAt(value, ["stop.platformCode"]), valueAt(value, ["stop.track"]));
+    return firstText(
+      value.track,
+      value.platform,
+      value.platformCode,
+      valueAt(value, ["stop.platformCode"]),
+      valueAt(value, ["stop.track"]),
+      scheduledPlatformName(value),
+    );
   }
 
   function delayMinutes(real, scheduled) {
@@ -173,8 +197,9 @@
       arrival: firstDate(place.arrival, place.scheduledArrival),
       departure: firstDate(place.departure, place.scheduledDeparture),
       track: platformName(place),
+      plannedTrack: scheduledPlatformName(place),
       point: placePoint(place),
-      cancelled: place.cancelled === true,
+      cancelled: place.cancelled === true || place.isCancelled === true,
     };
   }
 
@@ -275,7 +300,9 @@
       arrival,
       duration: legDurationMinutes(leg),
       platformFrom: platformName(fromObject),
+      plannedPlatformFrom: scheduledPlatformName(fromObject),
       platformTo: platformName(toObject),
+      plannedPlatformTo: scheduledPlatformName(toObject),
       headsign,
       tripId: firstText(leg.tripId),
       intermediateStops,
@@ -300,6 +327,14 @@
     return combined;
   }
 
+  function providerTransferCount(rawValue) {
+    if (rawValue === null || rawValue === undefined) return null;
+    if (typeof rawValue !== "number" && typeof rawValue !== "string") return null;
+    if (typeof rawValue === "string" && !rawValue.trim()) return null;
+    const value = Number(rawValue);
+    return Number.isInteger(value) && value >= 0 ? value : null;
+  }
+
   function normalizeItinerary(itinerary, index, origin, destination) {
     const legs = Array.isArray(itinerary.legs) ? itinerary.legs : [];
     const { departure, arrival } = itineraryTimes(itinerary);
@@ -311,9 +346,9 @@
       : Math.max(1, Math.round((arrival - departure) / 60_000));
 
     const descriptionParts = legs.map(describeLeg).filter(Boolean).filter((part, i, parts) => part !== parts[i - 1]);
-    const transitLegs = legs.filter((leg) => String(leg.mode || "").toUpperCase() !== "WALK");
-    const transfersRaw = Number(itinerary.transfers);
-    const transfers = Number.isFinite(transfersRaw) ? Math.max(0, transfersRaw) : Math.max(0, transitLegs.length - 1);
+    const transitLegs = legs.filter((leg) => isTransitMode(leg.mode));
+    const providerTransfers = providerTransferCount(itinerary.transfers);
+    const transfers = providerTransfers ?? Math.max(0, transitLegs.length - 1);
     const realtime = legs.some((leg) => leg.realTime === true);
 
     return {
@@ -440,7 +475,7 @@
           index: 0, mode: "WALK", modeLabel: "Walk", line: "", title: "Walk",
           from: LOCATIONS[origin]?.label || origin, to: LOCATIONS[destination]?.label || destination,
           fromPoint: exactPoint, toPoint: exactPoint,
-          departure, arrival: target, duration: 5, platformFrom: "", platformTo: "", headsign: "",
+          departure, arrival: target, duration: 5, platformFrom: "", plannedPlatformFrom: "", platformTo: "", plannedPlatformTo: "", headsign: "",
           intermediateStops: [], instructions: [], geometry: exactPoint ? [exactPoint, exactPoint] : [],
           departureDelay: 0, arrivalDelay: 0, realtime: false,
         }],

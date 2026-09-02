@@ -12,6 +12,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -62,8 +63,20 @@ jobs:
           console.log(`Verified ${refs.length} app-shell entries.`);
           NODE
 
-      - name: Run meetup intelligence tests
+      - name: Run meetup regression tests
+        shell: bash
         run: |
-          node tests/intelligence-core.test.cjs
-          node tests/release-smoke.test.cjs
-          node tests/worker-plan-equivalence.test.cjs
+          set -euo pipefail
+          test_count=0
+          while IFS= read -r -d '' test_file; do
+            echo "Running $test_file"
+            timeout --signal=TERM --kill-after=5s 60s node "$test_file"
+            test_count=$((test_count + 1))
+          done < <(find tests -maxdepth 1 -type f -name '*.test.cjs' -print0 | sort -z)
+
+          if (( test_count == 0 )); then
+            echo "No regression tests were discovered." >&2
+            exit 1
+          fi
+
+          echo "Ran $test_count regression test files."

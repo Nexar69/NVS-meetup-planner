@@ -126,4 +126,76 @@
     hasBackend: Boolean(backendUrl),
     release: "v0.8.1",
   });
+
+  function loadTestLabIfRequested() {
+    let active = false;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      active = params.get("test") === "1" || params.get("test") === "true";
+    } catch {}
+    if (!active) return;
+
+    if (!document.querySelector('link[data-test-lab-v0111="true"]')) {
+      if (document.readyState === "loading") {
+        document.write('<link rel="stylesheet" href="./test-lab-v0111.css" data-test-lab-v0111="true">');
+      } else {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = "./test-lab-v0111.css";
+        link.dataset.testLabV0111 = "true";
+        document.head.appendChild(link);
+      }
+    }
+
+    const loadScenarioPresets = () => {
+      if (!window.NVSTestJourney?.active || document.querySelector('script[data-test-lab-scenarios-v0111="true"]')) return;
+      if (document.readyState === "loading") {
+        document.write('<script src="./test-lab-scenarios-v0111.js" data-test-lab-scenarios-v0111="true"><\/script>');
+      } else {
+        const scenarios = document.createElement("script");
+        scenarios.src = "./test-lab-scenarios-v0111.js";
+        scenarios.async = false;
+        scenarios.dataset.testLabScenariosV0111 = "true";
+        document.body.appendChild(scenarios);
+      }
+    };
+
+    const loadJourneySimulator = () => {
+      if (!window.NVSTestLab?.active) return;
+      if (window.NVSTestJourney?.active) {
+        loadScenarioPresets();
+        return;
+      }
+      if (document.querySelector('script[data-test-lab-journey-v0111="true"]')) return;
+      if (document.readyState === "loading") {
+        document.write('<script src="./test-lab-journey-v0111.js" data-test-lab-journey-v0111="true"><\/script>');
+        loadScenarioPresets();
+      } else {
+        const journey = document.createElement("script");
+        journey.src = "./test-lab-journey-v0111.js";
+        journey.async = false;
+        journey.dataset.testLabJourneyV0111 = "true";
+        journey.addEventListener("load", loadScenarioPresets, { once: true });
+        document.body.appendChild(journey);
+      }
+    };
+
+    if (!document.querySelector('script[data-test-lab-v0111="true"]') && !window.NVSTestLab?.active) {
+      if (document.readyState === "loading") {
+        document.write('<script src="./test-lab-v0111.js" data-test-lab-v0111="true"><\/script>');
+        loadJourneySimulator();
+      } else {
+        const script = document.createElement("script");
+        script.src = "./test-lab-v0111.js";
+        script.async = false;
+        script.dataset.testLabV0111 = "true";
+        script.addEventListener("load", loadJourneySimulator, { once: true });
+        document.body.appendChild(script);
+      }
+    } else {
+      loadJourneySimulator();
+    }
+  }
+
+  loadTestLabIfRequested();
 })();

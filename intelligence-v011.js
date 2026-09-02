@@ -23,6 +23,7 @@
   let notified = new Map();
   let reloadingForUpdate = false;
   let updateRegistration = null;
+  let recommendationsActive = Boolean(assignments().length);
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -228,6 +229,7 @@
     dialog.querySelector("#v011TripSettings")?.addEventListener("click", openSettings);
     dialog.querySelector("#v011TripReplan")?.addEventListener("click", replan);
     dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+    dialog.addEventListener("close", scheduleTick);
     return dialog;
   }
 
@@ -239,8 +241,8 @@
     dialog.className = "v011-settings-dialog";
     dialog.innerHTML = `
       <div class="v011-settings-shell">
-        <div class="v011-settings-head"><div><span class="v011-kicker">Alerts</span><h2>Travel alert settings</h2></div><button type="button" class="v011-settings-close" aria-label="Close">×</button></div>
-        <p class="v011-settings-copy">Choose what Meet Schwerin should surface. System notifications are optional and only requested when you turn them on.</p>
+        <div class="v011-settings-head"><div><span class="v011-kicker">Alerts</span><h2 id="v011SettingsTitle">Travel alert settings</h2></div><button type="button" class="v011-settings-close" aria-label="Close alert settings">×</button></div>
+        <p class="v011-settings-copy" id="v011SettingsDescription">Choose what Meet Schwerin should surface. System notifications are optional and only requested when you turn them on.</p>
         <div class="v011-settings-list">
           ${settingRow("leave", "Leave & get-off alerts", "Tell me when to start and when my stop is coming up.")}
           ${settingRow("transfer", "Transfer alerts", "Warn about the next connection and tight transfers.")}
@@ -317,6 +319,7 @@
     const dialog = ensureTripDialog();
     renderTripMode();
     if (!dialog.open) dialog.showModal();
+    scheduleTick();
   }
 
   function replan() {
@@ -445,20 +448,41 @@
     }
   }
 
+  async function showSystemNotification(item) {
+    const options = {
+      body: item.detail || "Meet Schwerin travel alert",
+      icon: "./icons/icon-192.png",
+      badge: "./icons/icon-192.png",
+      tag: `meet-schwerin-${item.id}`,
+      renotify: false,
+      data: { url: "./" },
+    };
+
+    if ("serviceWorker" in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        if (registration?.showNotification) {
+          await registration.showNotification(item.title, options);
+          return true;
+        }
+      } catch {}
+    }
+
+    try {
+      new Notification(item.title, options);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function maybeNotify(item) {
     if (!prefs.systemNotifications || !item || !("Notification" in window) || Notification.permission !== "granted") return;
     if (!["critical", "warn", "action"].includes(item.severity)) return;
     const previous = notified.get(item.id) || 0;
     if (Date.now() - previous < 120_000) return;
     notified.set(item.id, Date.now());
-    try {
-      new Notification(item.title, {
-        body: item.detail || "Meet Schwerin travel alert",
-        icon: "./icons/icon-192.png",
-        tag: `meet-schwerin-${item.id}`,
-        renotify: false,
-      });
-    } catch {}
+    void showSystemNotification(item);
     if (notified.size > 80) {
       notified = new Map([...notified.entries()].slice(-40));
     }
@@ -521,9 +545,47 @@
     mark.querySelectorAll(".brand-node").forEach((node) => { node.hidden = true; });
   }
 
+  function clearTick() {
+    if (tick) clearTimeout(tick);
+    tick = null;
+  }
+
+  function clearRecommendationState() {
+    recommendationsActive = false;
+    clearTick();
+    clearTimeout(renderTimer);
+    renderTimer = null;
+    document.getElementById("v011CommandCenter")?.classList.remove("visible");
+    const dialog = document.getElementById("v011TripDialog");
+    if (dialog?.open) dialog.close();
+  }
+
+  function nextTickDelay() {
+    if (document.hidden) return null;
+    if (!recommendationsActive) return null;
+    return document.getElementById("v011TripDialog")?.open ? 1_000 : 5_000;
+  }
+
+  function scheduleTick() {
+    clearTick();
+    const delay = nextTickDelay();
+    if (delay == null) return;
+    tick = setTimeout(() => {
+      tick = null;
+      render();
+      scheduleTick();
+    }, delay);
+  }
+
   function scheduleRender(delay = 20) {
     clearTimeout(renderTimer);
-    renderTimer = setTimeout(render, delay);
+    renderTimer = null;
+    if (!recommendationsActive) return;
+    renderTimer = setTimeout(() => {
+      renderTimer = null;
+      render();
+      scheduleTick();
+    }, delay);
   }
 
   function start() {
@@ -534,14 +596,19 @@
     ensureSettingsDialog();
     ensureUpdateBanner();
     renderSettings();
+    recommendationsActive = Boolean(assignments().length);
     render();
-    clearInterval(tick);
-    tick = setInterval(render, 1_000);
+    scheduleTick();
     installUpdateWatcher();
   }
 
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendationState);
+  window.addEventListener("nvs-group-recommendations-rendered", () => {
+    recommendationsActive = Boolean(assignments().length);
+    scheduleRender();
+  });
+
   [
-    "nvs-group-recommendations-rendered",
     "nvs-routing-provider",
     "nvs-shared-live-change",
     "nvs-group-change",
@@ -551,7 +618,10 @@
     "offline",
   ].forEach((name) => window.addEventListener(name, () => scheduleRender()));
 
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleRender(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) clearTick();
+    else scheduleRender();
+  });
   window.addEventListener("pageshow", () => scheduleRender());
   window.addEventListener("load", start);
   if (results) new MutationObserver(() => scheduleRender(40)).observe(results, { childList: true, subtree: true });

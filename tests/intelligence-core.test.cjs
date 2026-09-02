@@ -65,6 +65,27 @@ function assignment(overrides = {}) {
 
 {
   const item = assignment();
+  item.route.segments[0].departureDelay = -8;
+  item.route.segments[0].arrivalDelay = -5;
+  const alerts = core.routeAlerts(item, at(15));
+  assert.equal(alerts.some((entry) => entry.kind === "disruption" && entry.delayMinutes), false, "an early-running vehicle must not be described as late");
+  assert.equal(core.segmentDelay(item.route.segments[0]), 0, "negative delay values should not count as lateness");
+}
+
+{
+  const item = assignment();
+  item.route.segments[0].arrival = at(31);
+  item.route.segments[1].departure = at(28);
+  const alerts = core.routeAlerts(item, at(20));
+  const missed = alerts.find((entry) => entry.id.startsWith("transfer-missed:"));
+  assert.ok(missed, "an impossible realtime transfer should produce an alert");
+  assert.equal(missed.severity, "critical");
+  assert.equal(missed.replan, true);
+  assert.equal(missed.transferMinutes, -3);
+}
+
+{
+  const item = assignment();
   item.route.segments[0].plannedPlatformFrom = "B";
   item.route.segments[0].platformFrom = "C";
   const alerts = core.routeAlerts(item, at(15));
@@ -89,6 +110,31 @@ function assignment(overrides = {}) {
   const alerts = core.sharedAlerts(state, [{ name: "You" }], at(30));
   assert.equal(alerts.some((entry) => entry.kind === "stale-checkin"), true, "old check-ins should become stale");
   assert.equal(alerts.some((entry) => entry.kind === "recovery"), false, "stale missed status must not keep forcing recovery");
+}
+
+{
+  const now = at(20);
+  const tolerated = core.checkinFreshness({ at: now.getTime() + 5 * core.MINUTE }, now);
+  assert.equal(tolerated.fresh, true, "up to five minutes of future clock skew should remain usable");
+  assert.equal(tolerated.invalidTime, false);
+  assert.equal(tolerated.futureSkew, true);
+
+  const impossible = core.checkinFreshness({ at: now.getTime() + 5 * core.MINUTE + 1 }, now);
+  assert.equal(impossible.fresh, false, "future timestamps beyond the skew boundary must not remain authoritative");
+  assert.equal(impossible.stale, true);
+  assert.equal(impossible.invalidTime, true);
+  assert.equal(impossible.futureSkew, true);
+}
+
+{
+  const now = at(20);
+  const state = { members: { "0": { status: "missed", at: now.getTime() + 8 * core.MINUTE } } };
+  const alerts = core.sharedAlerts(state, [{ name: "You" }], now);
+  const invalid = alerts.find((entry) => entry.invalidTime);
+  assert.ok(invalid, "impossible future check-ins should produce a timetable-priority trust warning");
+  assert.equal(invalid.kind, "stale-checkin");
+  assert.match(invalid.detail, /clock-skew|timetable/i);
+  assert.equal(alerts.some((entry) => entry.kind === "recovery"), false, "an impossible future missed status must never force recovery");
 }
 
 {

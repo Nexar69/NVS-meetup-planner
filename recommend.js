@@ -1,6 +1,9 @@
 (() => {
   const STORAGE_KEY = "meet-schwerin-optimization-v2";
   const TIMING_KEY = "meet-schwerin-timing-v1";
+  const NON_TRANSIT_MODES = new Set(["WALK", "BIKE", "BICYCLE", "CAR"]);
+  const ASAP_PAST_TOLERANCE_MS = 2 * 60_000;
+  const ASAP_SOON_HORIZON_MINUTES = 180;
 
   const MODES = Object.freeze({
     together: {
@@ -84,40 +87,77 @@
     return Math.round((date.getTime() - target.getTime()) / 60_000);
   }
 
+  function validDate(value) {
+    return value instanceof Date && Number.isFinite(value.getTime());
+  }
+
+  function numericValue(value) {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value !== "string" || !value.trim()) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function positiveMinutes(value) {
+    const parsed = numericValue(value);
+    return parsed !== null && parsed > 0 ? parsed : null;
+  }
+
+  function fallbackTransfers(route) {
+    const segments = Array.isArray(route?.segments) ? route.segments : [];
+    const transitLegs = segments.filter((segment) => {
+      const modeName = String(segment?.mode || "").trim().toUpperCase();
+      return Boolean(modeName) && !NON_TRANSIT_MODES.has(modeName);
+    }).length;
+    return Math.max(0, transitLegs - 1);
+  }
+
   function walkingMinutes(route) {
     const segments = Array.isArray(route?.segments) ? route.segments : [];
     return segments
       .filter((segment) => String(segment?.mode || "").toUpperCase() === "WALK")
-      .reduce((sum, segment) => sum + (Number(segment?.duration) || 0), 0);
+      .reduce((sum, segment) => sum + (positiveMinutes(segment?.duration) || 0), 0);
   }
 
   function transfers(route) {
-    return Math.max(0, Number(route?.transfers) || 0);
+    const parsed = numericValue(route?.transfers);
+    return parsed !== null && Number.isInteger(parsed) && parsed >= 0 ? parsed : fallbackTransfers(route);
   }
 
-  function createPairs(routesA, routesB, target) {
+  function travelMinutes(route) {
+    const explicit = positiveMinutes(route?.duration);
+    if (explicit !== null) return explicit;
+    const timetable = Math.round((route.arrival.getTime() - route.departure.getTime()) / 60_000);
+    return Math.max(1, timetable);
+  }
+
+  function createPairs(routesA, routesB, target, nowValue) {
     const pairs = [];
-    const now = new Date();
+    const now = validDate(nowValue) ? nowValue : new Date();
+    const hasValidTarget = validDate(target);
 
     for (const routeA of routesA || []) {
       for (const routeB of routesB || []) {
-        if (!(routeA?.arrival instanceof Date) || !(routeB?.arrival instanceof Date)) continue;
-        if (!(routeA?.departure instanceof Date) || !(routeB?.departure instanceof Date)) continue;
+        if (!validDate(routeA?.arrival) || !validDate(routeB?.arrival)) continue;
+        if (!validDate(routeA?.departure) || !validDate(routeB?.departure)) continue;
+        if (routeA.arrival < routeA.departure || routeB.arrival < routeB.departure) continue;
 
         const latestArrival = routeA.arrival > routeB.arrival ? routeA.arrival : routeB.arrival;
         const earliestArrival = routeA.arrival < routeB.arrival ? routeA.arrival : routeB.arrival;
         const waitingDifference = minutesBetween(routeA.arrival, routeB.arrival);
-        const targetDifference = signedMinutesBetween(latestArrival, target);
-        const targetDistance = Math.abs(targetDifference);
-        const travelA = Number(routeA.duration) || Math.max(1, minutesBetween(routeA.departure, routeA.arrival));
-        const travelB = Number(routeB.duration) || Math.max(1, minutesBetween(routeB.departure, routeB.arrival));
+        const targetDifference = hasValidTarget ? signedMinutesBetween(latestArrival, target) : null;
+        const targetDistance = targetDifference === null ? null : Math.abs(targetDifference);
+        const travelA = travelMinutes(routeA);
+        const travelB = travelMinutes(routeB);
         const totalTravel = travelA + travelB;
         const maxTravel = Math.max(travelA, travelB);
         const walkA = walkingMinutes(routeA);
         const walkB = walkingMinutes(routeB);
         const totalWalk = walkA + walkB;
         const totalTransfers = transfers(routeA) + transfers(routeB);
-        const asapMinutes = Math.max(0, Math.round((latestArrival - now) / 60_000));
+        const asapDeltaMs = latestArrival.getTime() - now.getTime();
+        const asapEligible = asapDeltaMs >= -ASAP_PAST_TOLERANCE_MS;
+        const asapMinutes = Math.max(0, Math.round(asapDeltaMs / 60_000));
 
         pairs.push({
           routeA,
@@ -135,6 +175,7 @@
           walkB,
           totalWalk,
           totalTransfers,
+          asapEligible,
           asapMinutes,
         });
       }
@@ -170,7 +211,7 @@
       return pair.asapMinutes * 5.5 + preference;
     }
 
-    return preference + pair.targetDistance * 1.2;
+    return preference + (Number.isFinite(pair.targetDistance) ? pair.targetDistance * 1.2 : 0);
   }
 
   function distinctEnough(a, b) {
@@ -186,9 +227,11 @@
 
     const timingLead = selectedTiming === "asap"
       ? `Both can be there in about ${pair.asapMinutes} min.`
-      : pair.targetDifference === 0
-        ? "It lands exactly on your target time."
-        : `It stays ${pair.targetDistance} min from your target.`;
+      : !Number.isFinite(pair.targetDistance)
+        ? "The target time is unavailable, so route quality decides this recommendation."
+        : pair.targetDifference === 0
+          ? "It lands exactly on your target time."
+          : `It stays ${pair.targetDistance} min from your target.`;
 
     if (selectedMode === "fastest") {
       return `${timingLead} ${pair.totalTravel} min combined travel, with a ${pair.waitingDifference} min arrival gap.`;
@@ -203,24 +246,28 @@
     return `${timingLead} You arrive only ${pair.waitingDifference} min apart, so neither person waits long.`;
   }
 
-  function recommend(routesA, routesB, target, selectedMode = mode, selectedTiming = timingMode) {
-    const allPairs = createPairs(routesA, routesB, target);
+  function recommend(routesA, routesB, target, selectedMode = mode, selectedTiming = timingMode, nowValue) {
+    const allPairs = createPairs(routesA, routesB, target, nowValue);
     if (!allPairs.length) return { primary: null, backup: null, mode: selectedMode, timingMode: selectedTiming, pairs: [] };
 
     let candidates = allPairs;
     if (selectedTiming === "target") {
-      const nearTarget = allPairs.filter((pair) => pair.targetDifference >= -25 && pair.targetDifference <= 20);
+      const nearTarget = allPairs.filter((pair) => Number.isFinite(pair.targetDifference) && pair.targetDifference >= -25 && pair.targetDifference <= 20);
       candidates = nearTarget.length ? nearTarget : allPairs;
     } else {
-      const soon = allPairs.filter((pair) => pair.asapMinutes >= 0 && pair.asapMinutes <= 180);
-      candidates = soon.length ? soon : allPairs;
+      const fresh = allPairs.filter((pair) => pair.asapEligible);
+      if (!fresh.length) return { primary: null, backup: null, mode: selectedMode, timingMode: selectedTiming, pairs: [] };
+      const soon = fresh.filter((pair) => pair.asapMinutes <= ASAP_SOON_HORIZON_MINUTES);
+      candidates = soon.length ? soon : fresh;
     }
 
     const ranked = [...candidates]
       .map((pair) => ({ ...pair, recommendationScore: pairScore(pair, selectedMode, selectedTiming) }))
       .sort((a, b) =>
         a.recommendationScore - b.recommendationScore ||
-        (selectedTiming === "asap" ? a.asapMinutes - b.asapMinutes : a.targetDistance - b.targetDistance) ||
+        (selectedTiming === "asap"
+          ? a.asapMinutes - b.asapMinutes
+          : (Number.isFinite(a.targetDistance) ? a.targetDistance : Infinity) - (Number.isFinite(b.targetDistance) ? b.targetDistance : Infinity)) ||
         a.waitingDifference - b.waitingDifference,
       );
 

@@ -11,8 +11,17 @@
 
   let refreshTimer = null;
   let clockTimer = null;
+  let refreshGeneration = 0;
   let currentRecommendations = null;
   let currentContext = null;
+  let recommendationsActive = false;
+  let frozenDocument = false;
+  let dataBadgeObserver = null;
+  let resultsObserver = null;
+
+  function isSuspended() {
+    return frozenDocument || document.hidden;
+  }
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -51,7 +60,7 @@
 
   function ensureDepartureBoard() {
     let board = document.getElementById("departureBoard");
-    if (board || !resultsSection) return board;
+    if (board || frozenDocument || !resultsSection) return board;
 
     board = document.createElement("section");
     board.id = "departureBoard";
@@ -72,7 +81,9 @@
     const heading = resultsSection.querySelector(".results-heading");
     if (heading) heading.insertAdjacentElement("afterend", board);
     else resultsSection.prepend(board);
-    board.querySelector("#recalculateButton")?.addEventListener("click", () => plannerForm?.requestSubmit());
+    board.querySelector("#recalculateButton")?.addEventListener("click", () => {
+      if (!frozenDocument) plannerForm?.requestSubmit();
+    });
     return board;
   }
 
@@ -125,6 +136,7 @@
   }
 
   function updateDepartureBoard() {
+    if (frozenDocument) return;
     const board = ensureDepartureBoard();
     const group = currentRecommendations?.primary;
     if (!board || !group || !currentContext) {
@@ -150,6 +162,24 @@
       const now = Date.now();
       recalcButton.hidden = !assignments.some((assignment) => assignment.route.departure.getTime() < now - 30_000);
     }
+  }
+
+  function clearJourneyState() {
+    refreshGeneration += 1;
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+    currentRecommendations = null;
+    currentContext = null;
+    if (frozenDocument) return;
+    results?.querySelectorAll(".journey-v05").forEach((details) => details.remove());
+    updateDepartureBoard();
+  }
+
+  function clearAuthoritativeJourneyState() {
+    recommendationsActive = false;
+    clearTimeout(clockTimer);
+    clockTimer = null;
+    clearJourneyState();
   }
 
   function delayLabel(segment) {
@@ -246,6 +276,7 @@
   }
 
   function enrichCard(card, group) {
+    if (frozenDocument) return;
     card.querySelector(".journey-v05")?.remove();
     if (!group) return;
     const assignments = assignmentsFor(group);
@@ -257,7 +288,7 @@
   }
 
   function enrichResultCards() {
-    if (!results || !currentRecommendations) return;
+    if (frozenDocument || !results || !currentRecommendations) return;
     const cards = [...results.querySelectorAll(":scope > .result")];
     const types = ["primary", "backup"];
     cards.forEach((card, index) => {
@@ -267,50 +298,142 @@
   }
 
   async function refreshJourneyData() {
-    if (!dataBadge?.classList.contains("live") || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommendGroup) {
-      currentRecommendations = null;
-      currentContext = null;
-      updateDepartureBoard();
+    const generation = ++refreshGeneration;
+    if (isSuspended() || !recommendationsActive || !dataBadge?.classList.contains("live") || !window.NVSTransit?.fetchRoutes || !window.NVSRecommend?.recommendGroup) {
+      if (!isSuspended() && generation === refreshGeneration && recommendationsActive) clearJourneyState();
       return;
     }
 
     const context = currentContextFromForm();
-    if (!context.target || !context.destination || context.members.some((member) => !member.originKey)) return;
+    if (!context.target || !context.destination || context.members.some((member) => !member.originKey)) {
+      if (!isSuspended() && generation === refreshGeneration) clearJourneyState();
+      return;
+    }
 
     try {
       const routeSets = await Promise.all(
         context.members.map((member) => window.NVSTransit.fetchRoutes(member.originKey, context.destination, context.target)),
       );
-      if (routeSets.some((routes) => !routes.length)) return;
-      currentRecommendations = window.NVSRecommend.recommendGroup(routeSets, context.members, context.target, {
+      if (isSuspended() || generation !== refreshGeneration || !recommendationsActive) return;
+      if (routeSets.some((routes) => !routes.length)) {
+        clearJourneyState();
+        return;
+      }
+      const recommendations = window.NVSRecommend.recommendGroup(routeSets, context.members, context.target, {
         priorityIds: window.NVSGroup?.getPriorityIds?.() || [],
       });
-      if (!currentRecommendations?.primary) return;
+      if (isSuspended() || generation !== refreshGeneration || !recommendationsActive) return;
+      if (!recommendations?.primary) {
+        clearJourneyState();
+        return;
+      }
+      currentRecommendations = recommendations;
       currentContext = context;
       updateDepartureBoard();
       enrichResultCards();
     } catch (error) {
+      if (isSuspended() || generation !== refreshGeneration || !recommendationsActive) return;
+      clearJourneyState();
       console.warn("v0.7 journey enrichment failed:", error);
     }
   }
 
   function scheduleRefresh(delay = 100) {
     clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(refreshJourneyData, delay);
+    refreshTimer = null;
+    if (isSuspended() || !recommendationsActive) return;
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      if (isSuspended() || !recommendationsActive) return;
+      void refreshJourneyData();
+    }, delay);
   }
 
-  if (dataBadge) new MutationObserver(() => scheduleRefresh(100)).observe(dataBadge, { attributes: true, attributeFilter: ["class"] });
-  if (results) new MutationObserver(() => {
-    if (dataBadge?.classList.contains("live")) scheduleRefresh(80);
-  }).observe(results, { childList: true });
+  function scheduleClock(delay = 15_000) {
+    clearTimeout(clockTimer);
+    clockTimer = null;
+    if (isSuspended() || !recommendationsActive) return;
+    clockTimer = setTimeout(() => {
+      clockTimer = null;
+      if (isSuspended() || !recommendationsActive) return;
+      updateDepartureBoard();
+      scheduleClock();
+    }, delay);
+  }
+
+  function resumeJourney() {
+    if (isSuspended() || !recommendationsActive) return;
+    updateDepartureBoard();
+    enrichResultCards();
+    scheduleClock();
+    if (dataBadge?.classList.contains("live")) scheduleRefresh(0);
+  }
+
+  function connectObservers() {
+    if (frozenDocument) return;
+    if (dataBadge && !dataBadgeObserver) {
+      dataBadgeObserver = new MutationObserver(() => {
+        if (!frozenDocument && recommendationsActive) scheduleRefresh(100);
+      });
+      dataBadgeObserver.observe(dataBadge, { attributes: true, attributeFilter: ["class"] });
+    }
+    if (results && !resultsObserver) {
+      resultsObserver = new MutationObserver(() => {
+        if (!frozenDocument && recommendationsActive && dataBadge?.classList.contains("live")) scheduleRefresh(80);
+      });
+      resultsObserver.observe(results, { childList: true });
+    }
+  }
+
+  function disconnectObservers() {
+    dataBadgeObserver?.disconnect();
+    dataBadgeObserver = null;
+    resultsObserver?.disconnect();
+    resultsObserver = null;
+  }
+
+  function cancelJourneyWork() {
+    clearTimeout(clockTimer);
+    clearTimeout(refreshTimer);
+    clockTimer = null;
+    refreshTimer = null;
+    refreshGeneration += 1;
+  }
+
+  function suspendDocument() {
+    frozenDocument = true;
+    cancelJourneyWork();
+    disconnectObservers();
+  }
+
+  function restoreDocument() {
+    frozenDocument = false;
+    recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary);
+    currentRecommendations = recommendationsActive ? window.__NVS_LAST_RECOMMENDATIONS__ : null;
+    currentContext = recommendationsActive ? currentContextFromForm() : null;
+    connectObservers();
+    if (!recommendationsActive) {
+      results?.querySelectorAll(".journey-v05").forEach((details) => details.remove());
+      updateDepartureBoard();
+      return;
+    }
+    resumeJourney();
+  }
 
   [personAInput, personBInput, destinationInput, dateInput, timeInput].forEach((input) => input?.addEventListener("change", () => scheduleRefresh(180)));
   window.addEventListener("nvs-priority-change", () => scheduleRefresh(30));
   window.addEventListener("nvs-timing-change", () => scheduleRefresh(30));
   window.addEventListener("nvs-group-change", () => scheduleRefresh(30));
+  window.addEventListener("nvs-recommendations-cleared", clearAuthoritativeJourneyState);
   window.addEventListener("nvs-group-recommendations-rendered", (event) => {
+    if (frozenDocument) return;
     const detail = event.detail || {};
-    if (!detail.recommendations) return;
+    if (!detail.recommendations?.primary) {
+      clearAuthoritativeJourneyState();
+      return;
+    }
+    recommendationsActive = true;
+    refreshGeneration += 1;
     currentRecommendations = detail.recommendations;
     currentContext = {
       members: detail.members || groupMembers(),
@@ -319,12 +442,26 @@
     };
     updateDepartureBoard();
     enrichResultCards();
+    scheduleClock();
   });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      cancelJourneyWork();
+      return;
+    }
+    resumeJourney();
+  });
+  window.addEventListener("pagehide", suspendDocument);
+  window.addEventListener("pageshow", restoreDocument);
+  window.addEventListener("nvs-shared-view-resumed", resumeJourney);
 
+  connectObservers();
   ensureDepartureBoard();
-  clearInterval(clockTimer);
-  clockTimer = setInterval(updateDepartureBoard, 15_000);
-  scheduleRefresh(350);
 
-  window.NVSJourney = Object.freeze({ refresh: scheduleRefresh, recalculate: () => plannerForm?.requestSubmit() });
+  window.NVSJourney = Object.freeze({
+    refresh: scheduleRefresh,
+    recalculate: () => {
+      if (!frozenDocument) plannerForm?.requestSubmit();
+    },
+  });
 })();

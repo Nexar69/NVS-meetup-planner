@@ -5,6 +5,7 @@
 
   const cache = new Map();
   const CACHE_MS = 90_000;
+  const NON_TRANSIT_MODES = new Set(["WALK", "BIKE", "BICYCLE", "CAR"]);
   let lastProvider = "Transitous";
   let lastFallbackReason = "";
 
@@ -13,6 +14,31 @@
     if (!value) return null;
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function numericValue(value) {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value !== "string" || !value.trim()) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function nonNegativeInteger(value) {
+    const parsed = numericValue(value);
+    return parsed !== null && Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+  }
+
+  function positiveNumber(value) {
+    const parsed = numericValue(value);
+    return parsed !== null && parsed > 0 ? parsed : null;
+  }
+
+  function transitTransferFallback(segments) {
+    const transitLegs = (Array.isArray(segments) ? segments : []).filter((segment) => {
+      const mode = String(segment?.mode || "").trim().toUpperCase();
+      return mode && !NON_TRANSIT_MODES.has(mode);
+    }).length;
+    return Math.max(0, transitLegs - 1);
   }
 
   function revivePoint(point) {
@@ -118,24 +144,31 @@
     const departure = asDate(route?.departure);
     const arrival = asDate(route?.arrival);
     if (!departure || !arrival || arrival <= departure) return null;
+
+    const segments = Array.isArray(route.segments) ? route.segments.map((segment) => ({
+      ...segment,
+      departure: asDate(segment.departure),
+      arrival: asDate(segment.arrival),
+      fromPoint: revivePoint(segment.fromPoint),
+      toPoint: revivePoint(segment.toPoint),
+      geometry: Array.isArray(segment.geometry) ? segment.geometry.map(revivePoint).filter(Boolean) : [],
+      intermediateStops: Array.isArray(segment.intermediateStops) ? segment.intermediateStops.map(reviveStop) : [],
+    })) : [];
+    const providerTransfers = nonNegativeInteger(route?.transfers);
+    const providerDuration = positiveNumber(route?.duration);
+
     return normalizeRouteGeometry({
       ...route,
       origin,
       destination,
       departure,
       arrival,
+      duration: providerDuration ?? Math.max(1, Math.round((arrival - departure) / 60_000)),
+      transfers: providerTransfers ?? transitTransferFallback(segments),
       provider: route.provider || "VMV / MV FÄHRT GUT",
       source: "vmv",
       geometry: Array.isArray(route.geometry) ? route.geometry.map(revivePoint).filter(Boolean) : [],
-      segments: Array.isArray(route.segments) ? route.segments.map((segment) => ({
-        ...segment,
-        departure: asDate(segment.departure),
-        arrival: asDate(segment.arrival),
-        fromPoint: revivePoint(segment.fromPoint),
-        toPoint: revivePoint(segment.toPoint),
-        geometry: Array.isArray(segment.geometry) ? segment.geometry.map(revivePoint).filter(Boolean) : [],
-        intermediateStops: Array.isArray(segment.intermediateStops) ? segment.intermediateStops.map(reviveStop) : [],
-      })) : [],
+      segments,
     }, origin, destination);
   }
 

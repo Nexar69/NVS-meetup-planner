@@ -1,7 +1,8 @@
 (() => {
   const LIVE_KEY = "meet-schwerin-live-v1";
   const AUTO_REFRESH_MS = 120_000;
-  const TICK_MS = 1_000;
+  const TICK_MS = 5_000;
+  const AUTO_CHECK_MS = 30_000;
 
   const results = document.getElementById("results");
   const resultsSection = document.querySelector(".results-section");
@@ -14,6 +15,7 @@
   let renderTimer = null;
   let refreshing = false;
   let lastAutoRefresh = 0;
+  let recommendationsActive = false;
 
   function asDate(value) {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -305,7 +307,7 @@
       enabled = !enabled;
       writeState();
       scheduleTimers();
-      render();
+      if (recommendationsActive) render();
     });
     panel.querySelector("#live090Refresh")?.addEventListener("click", () => refreshPlan(false));
     return panel;
@@ -348,7 +350,7 @@
   function render() {
     const panel = ensurePanel();
     const group = recommendation();
-    if (!panel || !group || !assignments(group).length) {
+    if (!panel || !recommendationsActive || !group || !assignments(group).length) {
       panel?.classList.remove("visible");
       return;
     }
@@ -414,9 +416,9 @@
 
   async function refreshPlan(auto = false) {
     if (refreshing || !window.NVSGroup?.search) return;
-    if (auto && !enabled) return;
+    if (auto && (!enabled || !recommendationsActive)) return;
     refreshing = true;
-    render();
+    if (recommendationsActive) render();
     try {
       await window.NVSGroup.search();
       lastAutoRefresh = Date.now();
@@ -424,12 +426,12 @@
       console.warn("Live meetup refresh failed:", error);
     } finally {
       refreshing = false;
-      render();
+      if (recommendationsActive) render();
     }
   }
 
   function autoRefresh() {
-    if (!enabled || refreshing) return;
+    if (!recommendationsActive || !enabled || refreshing || document.hidden) return;
     const group = recommendation();
     const groupAssignments = assignments(group);
     if (!groupAssignments.length) return;
@@ -437,14 +439,60 @@
     const earliest = Math.min(...groupAssignments.map((item) => asDate(item.route.departure)?.getTime() || Infinity));
     if (!Number.isFinite(earliest) || now >= earliest - 30_000) return;
     if (now - lastAutoRefresh < AUTO_REFRESH_MS - 5_000) return;
-    refreshPlan(true);
+    void refreshPlan(true);
+  }
+
+  function scheduleTick(delay = TICK_MS) {
+    clearTimeout(tickTimer);
+    tickTimer = null;
+    if (document.hidden || !recommendationsActive) return;
+    tickTimer = setTimeout(() => {
+      render();
+      scheduleTick();
+    }, delay);
+  }
+
+  function scheduleAutoRefresh(delay = AUTO_CHECK_MS) {
+    clearTimeout(autoRefreshTimer);
+    autoRefreshTimer = null;
+    if (document.hidden || !enabled || !recommendationsActive) return;
+    autoRefreshTimer = setTimeout(() => {
+      autoRefresh();
+      scheduleAutoRefresh();
+    }, delay);
+  }
+
+  function stopTimers() {
+    clearTimeout(tickTimer);
+    clearTimeout(autoRefreshTimer);
+    tickTimer = null;
+    autoRefreshTimer = null;
   }
 
   function scheduleTimers() {
-    clearInterval(tickTimer);
-    clearInterval(autoRefreshTimer);
-    tickTimer = setInterval(render, TICK_MS);
-    if (enabled) autoRefreshTimer = setInterval(autoRefresh, 30_000);
+    stopTimers();
+    if (document.hidden || !recommendationsActive) return;
+    scheduleTick();
+    scheduleAutoRefresh();
+  }
+
+  function clearRecommendationState() {
+    recommendationsActive = false;
+    clearTimeout(renderTimer);
+    renderTimer = null;
+    stopTimers();
+    document.getElementById("liveMeetupPanel")?.classList.remove("visible");
+  }
+
+  function activateRecommendationState(event) {
+    const detailGroup = event?.detail?.recommendations?.primary || null;
+    recommendationsActive = assignments(detailGroup || recommendation()).length > 0;
+    if (!recommendationsActive) {
+      clearRecommendationState();
+      return;
+    }
+    scheduleRender();
+    scheduleTimers();
   }
 
   function showToast(message) {
@@ -523,28 +571,59 @@
 
   function scheduleRender() {
     clearTimeout(renderTimer);
-    renderTimer = setTimeout(render, 45);
+    renderTimer = null;
+    if (document.hidden || !recommendationsActive) return;
+    renderTimer = setTimeout(() => {
+      renderTimer = null;
+      render();
+    }, 45);
   }
 
   readState();
   ensurePanel();
   ensureShareControls();
+  recommendationsActive = assignments().length > 0;
   scheduleTimers();
-  render();
+  if (recommendationsActive) render();
 
-  window.addEventListener("nvs-group-recommendations-rendered", scheduleRender);
+  window.addEventListener("nvs-group-recommendations-rendered", activateRecommendationState);
+  window.addEventListener("nvs-recommendations-cleared", clearRecommendationState);
   window.addEventListener("nvs-group-change", scheduleRender);
   window.addEventListener("nvs-priority-change", scheduleRender);
   window.addEventListener("nvs-timing-change", scheduleRender);
   window.addEventListener("nvs-routing-provider", scheduleRender);
-  window.addEventListener("visibilitychange", () => { if (!document.hidden) render(); });
-  window.addEventListener("pageshow", render);
-  window.addEventListener("load", render);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      clearTimeout(renderTimer);
+      renderTimer = null;
+      stopTimers();
+      return;
+    }
+    if (!recommendationsActive) return;
+    render();
+    autoRefresh();
+    scheduleTimers();
+  });
+  window.addEventListener("pageshow", () => {
+    if (!recommendationsActive) return;
+    render();
+    scheduleTimers();
+  });
+  window.addEventListener("load", () => {
+    if (!recommendationsActive) return;
+    render();
+    scheduleTimers();
+  });
   if (results) new MutationObserver(scheduleRender).observe(results, { childList: true, subtree: true });
 
   window.NVSLiveMeetup = Object.freeze({
     isEnabled: () => enabled,
-    setEnabled: (value) => { enabled = Boolean(value); writeState(); scheduleTimers(); render(); },
+    setEnabled: (value) => {
+      enabled = Boolean(value);
+      writeState();
+      scheduleTimers();
+      if (recommendationsActive) render();
+    },
     refresh: () => refreshPlan(false),
     routeState,
     joinHealth,

@@ -5,6 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   const MINUTE = 60_000;
   const DEFAULT_STALE_MS = 15 * MINUTE;
+  const DEFAULT_FUTURE_SKEW_MS = 5 * MINUTE;
   const SEVERITY = { critical: 5, warn: 4, action: 3, info: 2, good: 1 };
 
   function asDate(value) {
@@ -24,10 +25,12 @@
     return minutesBetween(now, value);
   }
 
+  // VMV delay values may be negative when a vehicle is running early. Only
+  // positive delay should be described as "late" or used as group-impact delay.
   function segmentDelay(segment) {
     const values = [Number(segment?.departureDelay), Number(segment?.arrivalDelay)]
       .filter(Number.isFinite);
-    return values.length ? Math.max(...values.map((value) => Math.abs(value))) : 0;
+    return values.length ? Math.max(0, ...values) : 0;
   }
 
   function isCancelled(segment) {
@@ -149,9 +152,19 @@
       }
 
       const next = segments[currentIndex + 1];
-      if (next) {
+      if (next && next?.mode !== "WALK") {
         const gap = minutesBetween(current?.arrival, next?.departure);
-        if (gap != null && gap >= 0 && gap <= 6 && next?.mode !== "WALK") {
+        if (gap != null && gap < 0) {
+          const missedBy = Math.max(1, Math.ceil(Math.abs(gap)));
+          alerts.push(alert(
+            `transfer-missed:${member.id || "member"}:${currentIndex + 1}`,
+            "critical",
+            "transfer",
+            `Connection no longer works`,
+            `${vehicleLabel(next)} is due to leave ${current.to || next.from || "the transfer stop"} about ${missedBy} min before this leg now arrives. Refresh & replan.`,
+            { memberId: member.id, segmentIndex: currentIndex + 1, transferMinutes: gap, replan: true },
+          ));
+        } else if (gap != null && gap <= 6) {
           alerts.push(alert(
             `transfer:${member.id || "member"}:${currentIndex + 1}`,
             gap <= 3 ? "warn" : "info",
@@ -191,11 +204,32 @@
     )];
   }
 
-  function checkinFreshness(entry, now = new Date(), staleMs = DEFAULT_STALE_MS) {
+  function checkinFreshness(entry, now = new Date(), staleMs = DEFAULT_STALE_MS, futureSkewMs = DEFAULT_FUTURE_SKEW_MS) {
     const at = Number(entry?.at);
-    if (!Number.isFinite(at)) return { fresh: false, stale: true, ageMs: Infinity, ageMinutes: Infinity };
-    const ageMs = Math.max(0, (asDate(now) || new Date()).getTime() - at);
-    return { fresh: ageMs <= staleMs, stale: ageMs > staleMs, ageMs, ageMinutes: ageMs / MINUTE };
+    const nowMs = (asDate(now) || new Date()).getTime();
+    if (!Number.isFinite(at)) {
+      return { fresh: false, stale: true, invalidTime: true, futureSkew: false, ageMs: Infinity, ageMinutes: Infinity };
+    }
+    const rawAgeMs = nowMs - at;
+    if (rawAgeMs < -futureSkewMs) {
+      return {
+        fresh: false,
+        stale: true,
+        invalidTime: true,
+        futureSkew: true,
+        ageMs: rawAgeMs,
+        ageMinutes: rawAgeMs / MINUTE,
+      };
+    }
+    const ageMs = Math.max(0, rawAgeMs);
+    return {
+      fresh: ageMs <= staleMs,
+      stale: ageMs > staleMs,
+      invalidTime: false,
+      futureSkew: rawAgeMs < 0,
+      ageMs,
+      ageMinutes: ageMs / MINUTE,
+    };
   }
 
   function sharedAlerts(sharedState, members = [], now = new Date()) {
@@ -208,6 +242,17 @@
       if (!entry) return;
       const freshness = checkinFreshness(entry, now);
       const name = member?.name || `Person ${index + 1}`;
+      if (freshness.invalidTime) {
+        alerts.push(alert(
+          `invalid-checkin-time:${index}:${entry.at}`,
+          "info",
+          "stale-checkin",
+          `${name}'s check-in time cannot be trusted`,
+          "The timestamp is outside the allowed clock-skew window; timetable estimates should take priority now.",
+          { memberIndex: index, stale: true, invalidTime: true },
+        ));
+        return;
+      }
       if (freshness.stale) {
         alerts.push(alert(
           `stale:${index}:${entry.at}`,
@@ -295,6 +340,7 @@
   return Object.freeze({
     MINUTE,
     DEFAULT_STALE_MS,
+    DEFAULT_FUTURE_SKEW_MS,
     asDate,
     minutesBetween,
     minutesUntil,
