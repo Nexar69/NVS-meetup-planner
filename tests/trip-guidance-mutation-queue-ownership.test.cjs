@@ -95,18 +95,27 @@ assert.equal(timers.has(clearedRecommendationTimer), false,
 observerCallback();
 assert.equal(timers.size, 1);
 const hiddenTimer = [...timers.keys()][0];
+const lateHiddenCallback = timers.get(hiddenTimer);
 document.hidden = true;
 documentHandlers.get("visibilitychange")();
 assert.equal(timers.has(hiddenTimer), false, "hidden transition must cancel queued mutation work");
+lateHiddenCallback();
+assert.equal(timers.size, 0, "a mutation callback already dequeued before hiding must not requeue work while hidden");
+observerCallback();
+assert.equal(timers.size, 0, "observer delivery itself must be inert without foreground ownership");
 assert.ok(observerDisconnects >= 3, "freeze/clear/hidden transitions should stop mutation observation");
 
 assert.match(source, /let mutationRefreshTimer = null;/,
   "queued mutation work should have explicit timer ownership");
+assert.match(source, /function ownsForeground\(\) \{ return !lifecycleFrozen && !document\.hidden; \}/,
+  "queued mutation work should share the centralized foreground ownership boundary");
 assert.match(source, /function cancelMutationRefresh\(\)/,
   "Trip Guidance should centralize cancellation of queued mutation work");
+assert.match(source, /if \(!ownsForeground\(\) \|\| mutationRefreshQueued\) return;/,
+  "MutationObserver delivery must refuse to queue work while hidden or frozen");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i,
   "mutation lifecycle hardening must not introduce location tracking");
 assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/i,
   "Trip Guidance lifecycle ownership should remain memory-only");
 
-console.log("trip-guidance-mutation-queue-ownership: freeze, hidden and authoritative clear cancel stale queued guidance work");
+console.log("trip-guidance-mutation-queue-ownership: freeze, hidden and authoritative clear cancel stale queued guidance work, including already-dequeued callbacks");
