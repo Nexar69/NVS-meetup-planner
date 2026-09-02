@@ -7,7 +7,10 @@ const source = fs.readFileSync(path.resolve(__dirname, "../shared-freshness-v011
 assert.match(source, /const REFRESH_MS = 30_000;/, "stale-status freshness should retain its 30-second foreground cadence");
 assert.doesNotMatch(source, /setInterval\(/, "stale-status freshness must not keep a fixed background interval");
 assert.match(source, /let lifecycleFrozen = false;/, "freshness UI should explicitly own bfcache suspension state");
-assert.match(source, /function schedule\([\s\S]*!ownsDocument\(\) \|\| document\.hidden[\s\S]*setTimeout/, "freshness timer should only arm while the visible document owns lifecycle work");
+assert.match(source, /function ownsDocument\(\)\s*{\s*return !lifecycleFrozen && !document\.hidden;\s*}/, "freshness ownership should centrally require a visible, non-frozen document");
+assert.match(source, /function schedule\([\s\S]*if \(!ownsDocument\(\)\) return;[\s\S]*setTimeout\(\(\) => \{[\s\S]*if \(!ownsDocument\(\)\) return;[\s\S]*render\(\);[\s\S]*schedule\(\);/, "freshness timer should validate visible lifecycle ownership both when armed and when its callback executes");
+assert.match(source, /function render\(\)\s*{\s*if \(!ownsDocument\(\)\) return;/, "direct stale-status rendering must fail closed while hidden or frozen");
+assert.match(source, /function refresh\(\)\s*{\s*if \(!ownsDocument\(\)\) return;/, "event-driven stale-status refreshes must fail closed while hidden or frozen");
 assert.match(source, /pagehide[\s\S]*freezeLifecycle/, "pagehide should revoke stale-status DOM and timer ownership");
 assert.match(source, /function freezeLifecycle\([\s\S]*lifecycleFrozen = true;[\s\S]*clearTimeout\(timer\)/, "freezing should cancel pending freshness work");
 assert.match(source, /pageshow[\s\S]*resumeLifecycle/, "bfcache restoration should reacquire stale-state ownership");
@@ -16,4 +19,4 @@ assert.match(source, /visibilitychange[\s\S]*document\.hidden \|\| lifecycleFroz
 assert.match(source, /nvs-shared-view-resumed/, "Safari shared-view restoration should immediately refresh stale-state semantics");
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "freshness scheduling must remain no-GPS");
 
-console.log("shared-freshness-scheduler: one-shot cadence, explicit bfcache ownership, Safari resume and no-GPS boundary passed");
+console.log("shared-freshness-scheduler: visible execution-time ownership, one-shot cadence, Safari resume and no-GPS boundary passed");
