@@ -7,7 +7,7 @@
   let lifecycleFrozen = false;
 
   function ownsDocument() {
-    return !lifecycleFrozen;
+    return !lifecycleFrozen && !document.hidden;
   }
 
   function ago(entry) {
@@ -46,7 +46,7 @@
   function schedule(delay = REFRESH_MS) {
     clearTimeout(timer);
     timer = null;
-    if (!ownsDocument() || document.hidden) return;
+    if (!ownsDocument()) return;
     timer = setTimeout(() => {
       timer = null;
       if (!ownsDocument()) return;
