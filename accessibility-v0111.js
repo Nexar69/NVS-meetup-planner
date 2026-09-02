@@ -20,7 +20,7 @@
   let focusFrame = 0;
 
   function ownsDocument(generation = focusGeneration) {
-    return !lifecycleFrozen && generation === focusGeneration;
+    return !lifecycleFrozen && !document.hidden && generation === focusGeneration;
   }
 
   function isUsableOpener(element) {
@@ -44,7 +44,7 @@
   }
 
   function enhanceDialog(dialog) {
-    if (lifecycleFrozen) return;
+    if (!ownsDocument()) return;
     const config = DIALOGS[dialog?.id];
     if (!dialog || !config || dialog.dataset.v0111A11y === "true") return;
     dialog.dataset.v0111A11y = "true";
@@ -61,14 +61,14 @@
     });
 
     dialog.addEventListener("cancel", () => {
-      if (lifecycleFrozen) return;
+      if (!ownsDocument()) return;
       // Native <dialog> handles Escape; the close listener restores focus.
       OPENERS.set(dialog.id, activeOpenerFor(dialog));
     });
   }
 
   function enhanceSharedStatusList() {
-    if (lifecycleFrozen) return;
+    if (!ownsDocument()) return;
     const list = document.getElementById("v010StatusList");
     if (!list) return;
     list.setAttribute("role", "list");
@@ -79,7 +79,7 @@
   }
 
   function enhanceLiveRegions() {
-    if (lifecycleFrozen) return;
+    if (!ownsDocument()) return;
     const primary = document.getElementById("v011PrimaryAlert");
     if (primary) {
       primary.setAttribute("role", "status");
@@ -113,13 +113,13 @@
   }
 
   function enhance() {
-    if (lifecycleFrozen || document.hidden) return;
+    if (!ownsDocument()) return;
     Object.keys(DIALOGS).forEach((id) => enhanceDialog(document.getElementById(id)));
     enhanceLiveRegions();
   }
 
   function rememberDialogOpener(event) {
-    if (lifecycleFrozen) return;
+    if (!ownsDocument()) return;
     const button = event.target?.closest?.("#v011TripModeButton,#v011AlertSettingsButton,#v011TripSettings");
     if (!button) return;
     const dialogId = button.id === "v011TripModeButton" ? "v011TripDialog" : "v011SettingsDialog";
@@ -138,12 +138,16 @@
     });
   }
 
-  function freezeLifecycle() {
-    lifecycleFrozen = true;
+  function suspendFocusOwnership() {
     focusGeneration += 1;
     OPENERS.clear();
     if (focusFrame && typeof cancelAnimationFrame === "function") cancelAnimationFrame(focusFrame);
     focusFrame = 0;
+  }
+
+  function freezeLifecycle() {
+    lifecycleFrozen = true;
+    suspendFocusOwnership();
   }
 
   function resumeLifecycle(event) {
@@ -153,10 +157,17 @@
     enhance();
   }
 
+  function reconcileVisibility() {
+    if (document.hidden) {
+      suspendFocusOwnership();
+      return;
+    }
+    focusGeneration += 1;
+    enhance();
+  }
+
   document.addEventListener("click", rememberDialogOpener, true);
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) enhance();
-  });
+  document.addEventListener("visibilitychange", reconcileVisibility);
   window.addEventListener("pagehide", freezeLifecycle);
   window.addEventListener("pageshow", resumeLifecycle);
   [
