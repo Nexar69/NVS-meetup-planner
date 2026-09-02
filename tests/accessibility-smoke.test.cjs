@@ -33,7 +33,10 @@ assert.match(runtime, /nvs-shared-live-change/, "shared-live lifecycle events sh
 assert.match(runtime, /nvs-live-plan-synced/, "plan sync should refresh accessibility semantics");
 assert.match(runtime, /nvs-shared-view-resumed/, "Safari shared-view resume should refresh accessibility semantics");
 assert.match(runtime, /visibilitychange/, "foreground resume should refresh accessibility semantics");
-assert.match(runtime, /if \(!document\.hidden\) enhance\(\)/, "hidden pages should not perform accessibility rescans");
+assert.match(runtime, /return !lifecycleFrozen && !document\.hidden && generation === focusGeneration;/,
+  "accessibility work should require visible lifecycle ownership");
+assert.match(runtime, /function reconcileVisibility\(\)[\s\S]*if \(document\.hidden\)[\s\S]*suspendFocusOwnership\(\)[\s\S]*enhance\(\)/,
+  "visibility changes should revoke hidden focus ownership and reconcile only after returning visible");
 assert.match(runtime, /pagehide/, "Safari/PWA suspension should explicitly revoke accessibility DOM ownership");
 assert.match(runtime, /pageshow/, "Safari/PWA restoration should explicitly reacquire accessibility DOM ownership");
 
