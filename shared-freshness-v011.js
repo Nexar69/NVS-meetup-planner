@@ -5,9 +5,19 @@
   const REFRESH_MS = 30_000;
   let timer = null;
   let lifecycleFrozen = false;
+  let style = null;
 
   function ownsDocument() {
     return !lifecycleFrozen && !document.hidden;
+  }
+
+  function ensureStyle() {
+    if (!ownsDocument()) return null;
+    if (style?.isConnected) return style;
+    style = document.createElement("style");
+    style.textContent = `.v010-person.v011-stale{border-style:dashed!important;background:#f9fafb!important;opacity:.78}.v010-person.v011-stale .v010-source{background:#eaecf0!important;color:#667085!important}`;
+    document.head.appendChild(style);
+    return style;
   }
 
   function ago(entry) {
@@ -18,6 +28,7 @@
 
   function render() {
     if (!ownsDocument()) return;
+    ensureStyle();
     const panel = document.getElementById("sharedLiveV010");
     const state = window.NVSSharedLive?.getState?.();
     if (!panel || !state?.members) return;
@@ -72,10 +83,6 @@
     lifecycleFrozen = false;
     refresh();
   }
-
-  const style = document.createElement("style");
-  style.textContent = `.v010-person.v011-stale{border-style:dashed!important;background:#f9fafb!important;opacity:.78}.v010-person.v011-stale .v010-source{background:#eaecf0!important;color:#667085!important}`;
-  document.head.appendChild(style);
 
   window.addEventListener("nvs-shared-live-change", refresh);
   window.addEventListener("nvs-group-recommendations-rendered", refresh);
