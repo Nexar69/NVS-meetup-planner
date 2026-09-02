@@ -4,6 +4,10 @@
   let recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary);
   let lifecycleFrozen = false;
 
+  function foregroundOwned() {
+    return !lifecycleFrozen && !document.hidden;
+  }
+
   function alerts() {
     const values = window.NVSIntelligence?.getAlerts?.();
     return Array.isArray(values) ? values : [];
@@ -131,7 +135,7 @@
   }
 
   function reloadPendingPlan() {
-    if (lifecycleFrozen) return false;
+    if (!foregroundOwned()) return false;
     const button = document.getElementById("v0111RecoveryAction");
     const reliableReload = window.NVSSharedReload0111?.reloadUpdatedPlan;
     if (typeof reliableReload === "function") return reliableReload(button);
@@ -150,7 +154,7 @@
   }
 
   function ensureDesk() {
-    if (lifecycleFrozen) return null;
+    if (!foregroundOwned()) return null;
     let desk = document.getElementById("v0111RecoveryDesk");
     if (desk) return desk;
     desk = document.createElement("section");
@@ -179,12 +183,12 @@
     else document.querySelector("main.app")?.appendChild(desk);
 
     desk.querySelector("#v0111RecoveryLater")?.addEventListener("click", () => {
-      if (lifecycleFrozen) return;
+      if (!foregroundOwned()) return;
       snoozedSignature = activeSignature();
       render();
     });
     desk.querySelector("#v0111RecoveryAction")?.addEventListener("click", () => {
-      if (lifecycleFrozen) return;
+      if (!foregroundOwned()) return;
       if (window.NVSSharedLive?.hasPendingPlanUpdate?.()) {
         reloadPendingPlan();
         return;
@@ -235,7 +239,7 @@
   }
 
   function render() {
-    if (lifecycleFrozen) return;
+    if (!foregroundOwned()) return;
     const desk = ensureDesk();
     if (!desk) return;
     const item = recoveryAlert();
@@ -280,16 +284,16 @@
 
   function schedule() {
     suspendWork();
-    if (lifecycleFrozen || document.hidden || !shouldPoll()) return;
+    if (!foregroundOwned() || !shouldPoll()) return;
     timer = setTimeout(() => {
-      if (lifecycleFrozen) return;
+      if (!foregroundOwned()) return;
       render();
       schedule();
     }, 5_000);
   }
 
   function start() {
-    if (lifecycleFrozen) return;
+    if (!foregroundOwned()) return;
     ensureDesk();
     render();
     schedule();
@@ -308,16 +312,22 @@
   }
 
   window.addEventListener("nvs-group-recommendations-rendered", () => {
-    if (lifecycleFrozen) return;
     recommendationsActive = Boolean(window.__NVS_LAST_RECOMMENDATIONS__?.primary);
     if (snoozedSignature && activeSignature() !== snoozedSignature) snoozedSignature = "";
+    if (!foregroundOwned()) {
+      suspendWork();
+      return;
+    }
     render();
     schedule();
   });
   window.addEventListener("nvs-recommendations-cleared", () => {
-    if (lifecycleFrozen) return;
     recommendationsActive = false;
     if (snoozedSignature && activeSignature() !== snoozedSignature) snoozedSignature = "";
+    if (!foregroundOwned()) {
+      suspendWork();
+      return;
+    }
     render();
     schedule();
   });
@@ -327,7 +337,7 @@
     "online",
     "offline",
   ].forEach((name) => window.addEventListener(name, () => {
-    if (lifecycleFrozen) return;
+    if (!foregroundOwned()) return;
     if (snoozedSignature && activeSignature() !== snoozedSignature) snoozedSignature = "";
     render();
     schedule();
