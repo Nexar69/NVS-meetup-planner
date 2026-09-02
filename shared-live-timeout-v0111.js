@@ -81,7 +81,9 @@
     if (Object.prototype.hasOwnProperty.call(init || {}, "signal")) return init.signal || null;
     return input?.signal || null;
   }
-  function ownsForegroundLifecycle() { return !lifecycleFrozen && !document.hidden; }
+  function ownsForegroundLifecycle() {
+    return !lifecycleFrozen && (typeof document === "undefined" || !document.hidden);
+  }
 
   function getHealthState(key, create = false) {
     if (!key) return null;
@@ -310,9 +312,11 @@
   window.addEventListener?.("online", handleOnline);
   window.addEventListener?.("pagehide", () => { lifecycleFrozen = true; });
   window.addEventListener?.("pageshow", () => { lifecycleFrozen = false; });
-  document.addEventListener?.("visibilitychange", () => {
-    if (!document.hidden) lifecycleFrozen = false;
-  });
+  if (typeof document !== "undefined") {
+    document.addEventListener?.("visibilitychange", () => {
+      if (!document.hidden) lifecycleFrozen = false;
+    });
+  }
   window.fetch = boundedFetch;
   window.NVSSharedLiveTimeout0111 = Object.freeze({
     REQUEST_TIMEOUT_MS,
