@@ -86,23 +86,45 @@ vm.runInNewContext(source, context, { filename: "shared-freshness-v011.js" });
 assert.equal(row.stale, false, "initial fresh state should render normally");
 const initialMutations = classMutations;
 assert.ok(timers.size > 0, "foreground freshness should arm its one-shot timer");
+const staleForegroundTimer = [...timers.values()][0];
 
-windowEvents.dispatch("pagehide", { persisted: true });
-assert.equal(timers.size, 0, "pagehide should cancel pending freshness timers");
+document.hidden = true;
+documentEvents.dispatch("visibilitychange");
+assert.equal(timers.size, 0, "hidden transition should cancel pending freshness timers");
 
 stale = true;
 windowEvents.dispatch("nvs-shared-live-change");
-assert.equal(classMutations, initialMutations, "shared-live events must not mutate stale-state DOM while frozen");
-assert.equal(row.stale, false, "frozen DOM should retain its pre-suspension presentation");
-assert.equal(timers.size, 0, "frozen events must not restart freshness timers");
+windowEvents.dispatch("nvs-group-recommendations-rendered");
+windowEvents.dispatch("nvs-shared-view-resumed");
+assert.equal(classMutations, initialMutations, "hidden events must not mutate stale-state DOM");
+assert.equal(row.stale, false, "hidden DOM should retain its pre-suspension presentation");
+assert.equal(timers.size, 0, "hidden events must not restart freshness timers");
 
-windowEvents.dispatch("pageshow", { persisted: true });
-assert.equal(row.stale, true, "pageshow should reconcile the current authoritative freshness state");
+staleForegroundTimer();
+assert.equal(classMutations, initialMutations, "an already-dequeued timer must re-check hidden ownership before DOM work");
+assert.equal(timers.size, 0, "a stale hidden timer must not rearm itself");
+
+document.hidden = false;
+documentEvents.dispatch("visibilitychange");
+assert.equal(row.stale, true, "visibility restoration should reconcile the current authoritative freshness state");
 assert.equal(row.source.textContent, "STALE", "restoration should refresh stale semantics from current state");
 assert.match(row.detail.textContent, /last confirmed 42 min ago/, "restoration should compute current freshness copy");
-assert.ok(timers.size > 0, "restoration should restart the foreground one-shot cadence");
+assert.ok(timers.size > 0, "visibility restoration should restart the foreground one-shot cadence");
+
+const visibleMutations = classMutations;
+windowEvents.dispatch("pagehide", { persisted: true });
+assert.equal(timers.size, 0, "pagehide should cancel pending freshness timers");
+
+stale = false;
+windowEvents.dispatch("nvs-shared-live-change");
+assert.equal(classMutations, visibleMutations, "bfcache-frozen events must not mutate stale-state DOM");
+assert.equal(row.stale, true, "frozen DOM should retain its pre-suspension presentation");
+
+windowEvents.dispatch("pageshow", { persisted: true });
+assert.equal(row.stale, false, "pageshow should reconcile the current authoritative freshness state");
+assert.ok(timers.size > 0, "pageshow should restart the foreground one-shot cadence");
 
 assert.doesNotMatch(source, /geolocation|getCurrentPosition|watchPosition/i, "freshness lifecycle must remain no-GPS");
 assert.doesNotMatch(source, /localStorage|sessionStorage|indexedDB/i, "freshness lifecycle ownership should remain memory-only");
 
-console.log("shared-freshness-bfcache-ownership: frozen events stay DOM-inert and restore reconciles current state");
+console.log("shared-freshness-bfcache-ownership: hidden and frozen callbacks stay DOM-inert; restore reconciles current state");
