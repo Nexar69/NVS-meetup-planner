@@ -10,6 +10,7 @@
   let bypassNextGet = false;
   let bypassPlanId = "";
   let getGenerationEpoch = 0;
+  let lifecycleFrozen = false;
   const getGenerationByKey = new Map();
   const pendingGets = new Map();
 
@@ -80,6 +81,7 @@
     if (Object.prototype.hasOwnProperty.call(init || {}, "signal")) return init.signal || null;
     return input?.signal || null;
   }
+  function ownsForegroundLifecycle() { return !lifecycleFrozen && !document.hidden; }
 
   function getHealthState(key, create = false) {
     if (!key) return null;
@@ -208,6 +210,7 @@
   }
 
   function shouldAnnounceForRequest(input) {
+    if (!ownsForegroundLifecycle()) return false;
     const pagePlanId = currentPagePlanId();
     if (!pagePlanId) return true;
     return planIdFromLiveUrl(input) === pagePlanId;
@@ -305,6 +308,11 @@
   }
 
   window.addEventListener?.("online", handleOnline);
+  window.addEventListener?.("pagehide", () => { lifecycleFrozen = true; });
+  window.addEventListener?.("pageshow", () => { lifecycleFrozen = false; });
+  document.addEventListener?.("visibilitychange", () => {
+    if (!document.hidden) lifecycleFrozen = false;
+  });
   window.fetch = boundedFetch;
   window.NVSSharedLiveTimeout0111 = Object.freeze({
     REQUEST_TIMEOUT_MS,
